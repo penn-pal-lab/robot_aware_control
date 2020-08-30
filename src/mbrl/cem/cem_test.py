@@ -2,12 +2,12 @@ import os
 
 import numpy as np
 import torch
-from gym.envs.robotics import FetchPushEnv, FetchReachEnv
+from env import FetchPushEnv
 from gym.wrappers.monitoring.video_recorder import VideoRecorder
 from torch.distributions.normal import Normal
 
 # Hyperparameters
-L = 3      # Prediction window size
+L = 1      # Prediction window size
 I = 10      # Number of optimization iterations
 J = 30     # Number of candidate action sequences
 K = 5      # Number of top K candidate action sequences to select for optimization
@@ -30,7 +30,7 @@ def cem_planner(env):
         m = Normal(mean, std)
         act_seq = m.sample((J,))    # of shape (J, L, A)
 
-        # Generate rollout
+        # Generate J rollouts
         ret_preds = torch.zeros(J)
         for j in range(J):
             # Copy environment with its state, goal, and set to dense reward
@@ -48,8 +48,6 @@ def cem_planner(env):
         ret_topks.append("%.3f" % ret_topk.mean())     # Record mean of top returns
 
         # Update parameters for normal distribution
-        # mean = top_act_seq.mean(dim=0)
-        # std = torch.sqrt(((top_act_seq - mean).pow(2)).sum(dim=0) / (K - 1))
         std, mean = torch.std_mean(top_act_seq, dim=0)
 
     # Print means of top returns, for debugging
@@ -57,26 +55,26 @@ def cem_planner(env):
     # Return first action mean, of shape (A)
     return mean[0, :]
 
-base_cls = FetchPushEnv
-class FetchEnv(base_cls):
-    def get_state(self):
-        return self.sim.get_state()
+# base_cls = FetchPushEnv
+# class FetchEnv(base_cls):
+#     def get_state(self):
+#         return self.sim.get_state()
 
-    def set_state(self, env_state):
-        assert env_state.qpos.shape == (self.sim.model.nq,) and env_state.qvel.shape == (self.sim.model.nv,)
-        self.sim.set_state(env_state)
-        self.sim.forward()
+#     def set_state(self, env_state):
+#         assert env_state.qpos.shape == (self.sim.model.nq,) and env_state.qvel.shape == (self.sim.model.nv,)
+#         self.sim.set_state(env_state)
+#         self.sim.forward()
 
 
 video_folder = os.path.join(os.path.dirname(__file__), "../../../videos")
 os.makedirs(video_folder, exist_ok=True)
-env = FetchEnv()
+env = FetchPushEnv()
 env.unwrapped.reward_type = 'dense'     # Set environment to dense rewards
 # Do rollouts of CEM control
 success_record = np.zeros(num_episodes)
 for i in range(num_episodes):
     env.reset()
-    vr = VideoRecorder(env, metadata=None, path=f'videos/test_{i}.mp4')
+    vr = VideoRecorder(env, metadata=None, path=f'{video_folder}/test_{i}.mp4')
 
     ret = 0     # Episode return
     s = 0       # Step count

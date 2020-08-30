@@ -1,8 +1,8 @@
 # Robot aware cost and dynamics
 Use python 3.8.1
-
-- Implement a block pushing environment, and get CEM running on ground truth state, dynamics, and cost function
-- Then test pixel observation, ground truth dynamics, and MSE pixel cost function
+```
+pip install -r requirements.txt
+```
 
 ## Troubleshooting
 
