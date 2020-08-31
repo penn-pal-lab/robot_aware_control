@@ -7,7 +7,7 @@ from gym.wrappers.monitoring.video_recorder import VideoRecorder
 from torch.distributions.normal import Normal
 
 # Hyperparameters
-L = 1      # Prediction window size
+L = 10      # Prediction window size
 I = 10      # Number of optimization iterations
 J = 30     # Number of candidate action sequences
 K = 5      # Number of top K candidate action sequences to select for optimization
