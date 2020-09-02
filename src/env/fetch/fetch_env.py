@@ -1,9 +1,8 @@
 import numpy as np
 
-from env.fetch.rotations import mat2euler
-from env.fetch.robot_env import RobotEnv
-import env.fetch.utils as utils
-
+from src.env.fetch.rotations import mat2euler
+from src.env.fetch.robot_env import RobotEnv
+import src.env.fetch.utils as utils
 
 def goal_distance(goal_a, goal_b):
     assert goal_a.shape == goal_b.shape
@@ -123,8 +122,7 @@ class FetchEnv(RobotEnv):
         }
 
     def _viewer_setup(self):
-        body_id = self.sim.model.body_name2id('robot0:gripper_link')
-        lookat = self.sim.data.body_xpos[body_id]
+        lookat = [1.11194246, 0.74910045, 0.45469137]
         for idx, value in enumerate(lookat):
             self.viewer.cam.lookat[idx] = value
         self.viewer.cam.distance = 2.5

@@ -2,12 +2,13 @@ import os
 
 import numpy as np
 import torch
-from env import FetchPushEnv
 from gym.wrappers.monitoring.video_recorder import VideoRecorder
 from torch.distributions.normal import Normal
 
+from src.env import FetchPushEnv
+
 # Hyperparameters
-L = 10      # Prediction window size
+L = 3      # Prediction window size
 I = 10      # Number of optimization iterations
 J = 30     # Number of candidate action sequences
 K = 5      # Number of top K candidate action sequences to select for optimization
@@ -54,16 +55,6 @@ def cem_planner(env):
     # print("\tMeans of top returns: ", ret_topks)
     # Return first action mean, of shape (A)
     return mean[0, :]
-
-# base_cls = FetchPushEnv
-# class FetchEnv(base_cls):
-#     def get_state(self):
-#         return self.sim.get_state()
-
-#     def set_state(self, env_state):
-#         assert env_state.qpos.shape == (self.sim.model.nq,) and env_state.qvel.shape == (self.sim.model.nv,)
-#         self.sim.set_state(env_state)
-#         self.sim.forward()
 
 
 video_folder = os.path.join(os.path.dirname(__file__), "../../../videos")
