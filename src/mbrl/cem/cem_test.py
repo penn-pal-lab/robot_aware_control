@@ -1,11 +1,12 @@
 import os
+from collections import defaultdict
 
 import numpy as np
 import torch
 from gym.wrappers.monitoring.video_recorder import VideoRecorder
 from torch.distributions.normal import Normal
 
-from src.env import FetchPushEnv
+from src.env.fetch.fetch_push import FetchPushEnv
 
 # Hyperparameters
 L = 3      # Prediction window size
@@ -62,8 +63,10 @@ os.makedirs(video_folder, exist_ok=True)
 env = FetchPushEnv()
 env.unwrapped.reward_type = 'dense'     # Set environment to dense rewards
 # Do rollouts of CEM control
+all_episode_stats = defaultdict(list)
 success_record = np.zeros(num_episodes)
 for i in range(num_episodes):
+    ep_history = defaultdict(int)
     env.reset()
     vr = VideoRecorder(env, metadata=None, path=f'{video_folder}/test_{i}.mp4')
 
@@ -73,18 +76,23 @@ for i in range(num_episodes):
     while True:
         print("\tStep {}".format(s))
         action = cem_planner(env).numpy()       # Action convert to numpy array
-        obs, rew, done, meta = env.step(action)
+        obs, rew, done, info = env.step(action)
         ret += rew
         s += 1
         vr.capture_frame()
 
+        # store info history
+        for k, v in info.items():
+            ep_history[k] += float(v)
+
         # Calculate distance to goal at current step
         print("\tReward: {}".format(rew))
 
-        if meta['is_success'] > 0 or done or s > 10:
-            print("Episode %d --- total return: %.2f, is success: %f" % (i+1, ret, meta['is_success']))
-            if meta['is_success'] > 0:
-                success_record[i] = 1
+        if info['is_success'] > 0 or done or s > 10:
+            print("=" * 10 + f"Episode {i}" + "=" * 10)
+            for k, v in ep_history.items():
+                print(f"{k}: {v}")
+                all_episode_stats[k].append(v)
             break
     vr.close()
 
@@ -93,4 +101,6 @@ env.close()
 
 # Summary
 print("\n\n### Summary ###")
-print("\tSuccess rate: %.2f" % (success_record.sum() / len(success_record)))
+for k, v in all_episode_stats.items():
+    print(f"{k} avg: {np.mean(v)} \u00B1 {np.std(v)}")
+

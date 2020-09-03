@@ -64,10 +64,11 @@ class RobotEnv(gym.GoalEnv):
         obs = self._get_obs()
 
         done = False
-        info = {
-            'is_success': self._is_success(obs['achieved_goal'], self.goal),
-        }
+        info = {}
+        info['is_success'] = self._is_success(obs['achieved_goal'], self.goal, info)
+
         reward = self.compute_reward(obs['achieved_goal'], self.goal, info)
+        info['reward'] = reward
         return obs, reward, done, info
 
     def reset(self):
@@ -90,12 +91,10 @@ class RobotEnv(gym.GoalEnv):
             self.viewer = None
             self._viewers = {}
 
-    def render(self, mode='human', width=DEFAULT_SIZE, height=DEFAULT_SIZE):
+    def render(self, mode='human', width=DEFAULT_SIZE, height=DEFAULT_SIZE, camera_name=None, segmentation=False):
         self._render_callback()
         if mode == 'rgb_array':
-            self._get_viewer(mode).render(width, height)
-            # window size used for old mujoco-py:
-            data = self._get_viewer(mode).read_pixels(width, height, depth=False)
+            data = self.sim.render(width, height, camera_name=camera_name, segmentation=segmentation)
             # original image is upside-down, so flip it
             return data[::-1, :, :]
         elif mode == 'human':

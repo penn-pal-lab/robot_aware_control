@@ -2,9 +2,11 @@ import os
 
 import numpy as np
 from gym import utils
+from mujoco_py.generated import const
+import matplotlib.pyplot as plt
 
 from src.env.fetch.fetch_env import FetchEnv
-from src.env.fetch.utils import reset_mocap_welds, robot_get_obs
+from src.env.fetch.utils import reset_mocap_welds, robot_get_obs, reset_mocap2body_xpos
 from src.env.fetch.rotations import mat2euler
 
 # Ensure we get the path separator correct on windows
@@ -16,15 +18,23 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
     Pushes a block. We extend FetchEnv for:
     1) Pixel observations
     2) Image goal sampling where robot and block moves to goal location
+    3) reward_type: dense, weighted
     """
-    def __init__(self, reward_type='dense'):
+    def __init__(self):
         initial_qpos = {
             'robot0:slide0': 0.175,
             'robot0:slide1': 0.48,
             'robot0:slide2': 0.1,
             'object0:joint': [1.15, 0.75, 0.4, 1., 0., 0., 0.],
         }
-        self._pixels_ob = False
+        # TODO: make this configurable
+        self._robot_pixel_weight = 0.1
+        reward_type = 'weighted'
+        self._img_dim = 128
+        # TODO: add static camera that is similar to original one
+        # ('head_camera_rgb', 'gripper_camera_rgb', 'lidar', 'external_camera_0')
+        self._camera_name = 'external_camera_0'
+        self._pixels_ob = True
         self._distance_threshold = {"object": 0.05, "gripper": 0.025}
         FetchEnv.__init__(
             self, MODEL_XML_PATH, has_object=True, block_gripper=True, n_substeps=20,
@@ -88,7 +98,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
     def _sample_goal(self):
         noise = np.zeros(3)
         # pushing axis noise
-        noise[0] = self.np_random.uniform(0.15, 0.15 + self.target_range, size=1)
+        # noise[0] = self.np_random.uniform(0.15, 0.15 + self.target_range, size=1)
+        noise[0] = 0.25 # keep fixed for now
         # side axis noise
         noise[1] = self.np_random.uniform(-0.02, 0.02, size=1)
 
@@ -126,31 +137,28 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         else:
             goal = np.concatenate([obj_pos, robot_pos])
 
-        # record goal pose for checking success later
+        # record goal info for checking success later
         self.goal_pose = {
             "object": obj_pos,
             "gripper": robot_pos
         }
-        # import imageio
-        # imageio.imwrite(f'goal_{obj_pos[:3]}.png', goal)
+        if self.reward_type == "weighted":
+            self.goal_mask = self.get_robot_mask()
+            goal = self._robot_pixel_weight * self.goal_mask * goal + (1 - self.goal_mask) * goal
+
         # reset to previous state
         self.set_state(init_state)
+        reset_mocap2body_xpos(self.sim)
+        reset_mocap_welds(self.sim)
         return goal
 
-    def render(self, mode='human', width=128, height=128):
-        return super(FetchEnv, self).render(mode, width, height)
+    def render(self, mode='rgb_array', width=512, height=512, camera_name=None, segmentation=False):
+        return super(FetchEnv, self).render(mode, self._img_dim, self._img_dim, camera_name=self._camera_name, segmentation=segmentation)
 
     def _render_callback(self):
-        if self._pixels_ob:
-            return
-        sites_offset = (self.sim.data.site_xpos - self.sim.model.site_pos).copy()
-        site_id = self.sim.model.site_name2id('target0')
-        self.sim.model.site_pos[site_id] = self.goal[:3] - sites_offset[0]
-        self.sim.forward()
+        return
 
-    def _is_success(self, achieved_goal, desired_goal):
-        # if not self._pixels_ob:
-        #     return super()._is_success(achieved_goal, desired_goal)
+    def _is_success(self, achieved_goal, desired_goal, info):
         current_pose = {
             "object": self.sim.data.get_site_xpos("object0").copy(),
             "gripper": self.sim.data.get_site_xpos('robot0:grip').copy()
@@ -158,24 +166,105 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         success = True
         for k, v in current_pose.items():
             dist = np.linalg.norm(current_pose[k] - self.goal_pose[k])
-            success &= dist < self._distance_threshold[k]
+            info[f'{k}_dist'] = dist
+            succ = dist < self._distance_threshold[k]
+            info[f'{k}_success'] = succ
+            success &= succ
         return float(success)
 
+    def weighted_cost(self, achieved_goal, goal, info):
+        a = self._robot_pixel_weight
+        ag_mask = self.get_robot_mask()
+        info.update({
+            "robot_pixels": (robot_pixels := ag_mask * achieved_goal),
+            "scaled_robot_pixels": (scaled_robot_pixels := a * robot_pixels),
+            "non_robot_pixels": (non_robot_pixels := (1 - ag_mask) * achieved_goal),
+            "reweighted_ag": (reweighted_ag := scaled_robot_pixels + non_robot_pixels)
+        })
+        d = np.linalg.norm(reweighted_ag - goal)
+        return -d
+
     def compute_reward(self, achieved_goal, goal, info):
-        # TODO: log failure in info dict
         if self._pixels_ob:
+            if self.reward_type == 'weighted':
+                return self.weighted_cost(achieved_goal, goal, info)
             # Compute distance between goal and the achieved goal.
             d = np.linalg.norm(achieved_goal - goal)
             if self.reward_type == 'sparse':
                 return -(d > self.distance_threshold).astype(np.float32)
-            else:
+            elif self.reward_type == 'dense':
                 return -d
+
         return super().compute_reward(achieved_goal, goal, info)
 
+    def get_robot_mask(self):
+        seg = self.render(segmentation=True)
+        types = seg[:, :, 0]
+        ids = seg[:, :, 1]
+        geoms = types == const.OBJ_GEOM
+        geoms_ids = np.unique(ids[geoms])
+        mask = np.zeros((self._img_dim, self._img_dim, 3), dtype=np.uint8)
+        for i in geoms_ids:
+            name = self.sim.model.geom_id2name(i)
+            if name is not None and "robot0:" in name:
+                mask[ids == i] = np.ones(3, dtype=np.uint8)
+        return mask
+
+
 if __name__ == "__main__":
+    import imageio
+    """
+    If `segmentation` is True, this is a (height, width, 2) int32 numpy
+          array where the second channel contains the integer ID of the object at
+          each pixel, and the  first channel contains the corresponding object
+          type (a value in the `mjtObj` enum). Background pixels are labeled
+          (-1, -1).
+    """
     # visualize the initialization
     env = FetchPushEnv()
     while True:
         # env._sample_goal()
         env.reset()
-        env.render()
+        # env.render(mode="human", segmentation=True)
+        # continue
+        img = env.render(segmentation=False)
+        imageio.imwrite('scene.png', img.astype(np.uint8))
+        seg = env.render(segmentation=True)
+        # visualize all the bodies
+        types = seg[:, :, 0]
+        ids = seg[:, :, 1]
+        geoms = types == const.OBJ_GEOM
+        geoms_ids = np.unique(ids[geoms])
+        robot_geoms = {"robot0:base_link",
+                        "robot0:torso_lift_link",
+                        "robot0:head_pan_link",
+                        "robot0:head_tilt_link",
+                        "robot0:shoulder_pan_link",
+                        "robot0:shoulder_lift_link",
+                        "robot0:upperarm_roll_link",
+                        "robot0:elbow_flex_link",
+                        "robot0:forearm_roll_link",
+                        "robot0:wrist_flex_link",
+                        "robot0:wrist_roll_link",
+                        "robot0:gripper_link",
+                        "robot0:r_gripper_finger_link",
+                        "robot0:l_gripper_finger_link",
+                        "robot0:estop_link",
+                        "robot0:laser_link",
+                        "robot0:torso_fixed_link"}
+        img = np.zeros((512,512), dtype=np.uint8)
+        # robot_color = np.array((255, 0, 0), dtype=np.uint8)
+        robot_color = 255
+        for i in geoms_ids:
+            name = env.sim.model.geom_id2name(i)
+            if name is not None and name in robot_geoms:
+                img[ids == i] = robot_color
+            # elif "object0" == name:
+            #     img[ids == i] = np.array((0, 255, 0), dtype=np.uint8)
+        img = img.astype(np.uint8)
+        imageio.imwrite('seg.png', img)
+        # from PIL import Image, ImageFilter
+        # pil_img = Image.fromarray(img)
+        # img_nn_pil = pil_img.filter(ImageFilter.BoxBlur(1))
+        # imageio.imwrite('seg_nn.png', img_nn_pil)
+        break

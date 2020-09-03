@@ -2,9 +2,10 @@
 This document will log the progress of the project.
 
 ## TODOS:
+- make configurable
+- make static version of original camera
 - fix randomness seed
-- log more information of distance, success
-- get MuJoCo segmentation masks
+
 
 ### 8/29/20
 - Done with initial CEM implementation from AAP project. Tested on FetchReach and seems to work well.
@@ -25,3 +26,6 @@ Baseline CEM: 0.9
 Pixel CEM: 0 lol
 
 ### 9/2/20
+- got the initial version of mujoco segmentation.
+- got the weighted cost function with alpha weighting
+- running initial weighted pixel CEM vs pixel CEM
