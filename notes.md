@@ -29,3 +29,6 @@ Pixel CEM: 0 lol
 - got the initial version of mujoco segmentation.
 - got the weighted cost function with alpha weighting
 - running initial weighted pixel CEM vs pixel CEM
+
+### 9/4/20
+-

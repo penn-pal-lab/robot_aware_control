@@ -20,22 +20,20 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
     2) Image goal sampling where robot and block moves to goal location
     3) reward_type: dense, weighted
     """
-    def __init__(self):
+    def __init__(self, config):
         initial_qpos = {
             'robot0:slide0': 0.175,
             'robot0:slide1': 0.48,
             'robot0:slide2': 0.1,
             'object0:joint': [1.15, 0.75, 0.4, 1., 0., 0., 0.],
         }
-        # TODO: make this configurable
-        self._robot_pixel_weight = 0.1
-        reward_type = 'weighted'
-        self._img_dim = 128
+        self._robot_pixel_weight = config.robot_pixel_weight
+        reward_type = config.reward_type
+        self._img_dim = config.img_dim
         # TODO: add static camera that is similar to original one
-        # ('head_camera_rgb', 'gripper_camera_rgb', 'lidar', 'external_camera_0')
-        self._camera_name = 'external_camera_0'
-        self._pixels_ob = True
-        self._distance_threshold = {"object": 0.05, "gripper": 0.025}
+        self._camera_name = config.camera_name
+        self._pixels_ob = config.pixels_ob
+        self._distance_threshold = {"object": config.object_dist_threshold, "gripper": config.gripper_dist_threshold}
         FetchEnv.__init__(
             self, MODEL_XML_PATH, has_object=True, block_gripper=True, n_substeps=20,
             gripper_extra_height=0.0, target_in_the_air=False, target_offset=0.0,
@@ -175,12 +173,11 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
     def weighted_cost(self, achieved_goal, goal, info):
         a = self._robot_pixel_weight
         ag_mask = self.get_robot_mask()
-        info.update({
-            "robot_pixels": (robot_pixels := ag_mask * achieved_goal),
-            "scaled_robot_pixels": (scaled_robot_pixels := a * robot_pixels),
-            "non_robot_pixels": (non_robot_pixels := (1 - ag_mask) * achieved_goal),
-            "reweighted_ag": (reweighted_ag := scaled_robot_pixels + non_robot_pixels)
-        })
+        robot_pixels = ag_mask * achieved_goal
+        scaled_robot_pixels = a * robot_pixels
+        non_robot_pixels = (1 - ag_mask) * achieved_goal
+        reweighted_ag = scaled_robot_pixels + non_robot_pixels
+
         d = np.linalg.norm(reweighted_ag - goal)
         return -d
 
@@ -212,6 +209,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
 
 
 if __name__ == "__main__":
+    from src.config import argparser
     import imageio
     """
     If `segmentation` is True, this is a (height, width, 2) int32 numpy
@@ -220,8 +218,10 @@ if __name__ == "__main__":
           type (a value in the `mjtObj` enum). Background pixels are labeled
           (-1, -1).
     """
+    config, _ = argparser()
     # visualize the initialization
-    env = FetchPushEnv()
+    env = FetchPushEnv(config)
+    img_dim = config.img_dim
     while True:
         # env._sample_goal()
         env.reset()
@@ -252,7 +252,7 @@ if __name__ == "__main__":
                         "robot0:estop_link",
                         "robot0:laser_link",
                         "robot0:torso_fixed_link"}
-        img = np.zeros((512,512), dtype=np.uint8)
+        img = np.zeros((img_dim, img_dim), dtype=np.uint8)
         # robot_color = np.array((255, 0, 0), dtype=np.uint8)
         robot_color = 255
         for i in geoms_ids:
