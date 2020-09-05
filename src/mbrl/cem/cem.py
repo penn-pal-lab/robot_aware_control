@@ -64,7 +64,7 @@ def cem_planner(env, config):
 def run_cem_episodes(config):
     num_episodes = config.num_episodes
     video_folder = os.path.join(
-        os.path.dirname(__file__), f"../../../{config.prefix}_videos"
+        os.path.dirname(__file__), f"../../../{config.jobname}_videos"
     )
     os.makedirs(video_folder, exist_ok=True)
     env = FetchPushEnv(config)

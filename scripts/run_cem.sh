@@ -8,4 +8,4 @@
 #SBATCH -o ./cem_test_30ac.txt
 #SBATCH -e ./cem_test_30ac.txt
 
-python -um src.mbrl.cem.cem --prefix norobot_cem_30ac --img_dim 128 --reward_type weighted --action_candidates 30
+python -um src.mbrl.cem.cem --jobname norobot_cem_30ac --img_dim 128 --reward_type weighted --action_candidates 30
