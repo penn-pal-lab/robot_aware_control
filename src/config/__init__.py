@@ -28,7 +28,7 @@ def create_parser():
         "Robot Aware Cost",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-
+    parser.add_argument("--prefix", type=str, default="cem")
     add_method_arguments(parser)
 
     return parser
