@@ -36,7 +36,12 @@ def create_parser():
 
 def add_method_arguments(parser):
     # method arguments
-    parser.add_argument("--reward_type", type=str, default="weighted", choices=["weighted", "dense", "sparse"])
+    parser.add_argument(
+        "--reward_type",
+        type=str,
+        default="weighted",
+        choices=["weighted", "dense", "sparse"],
+    )
     parser.add_argument("--robot_pixel_weight", type=str, default=0)
 
     # control algorithm
@@ -65,13 +70,20 @@ def add_method_arguments(parser):
 
     return parser
 
+
 # Env Hyperparameters
 def add_fetch_push_arguments(parser):
     parser.add_argument("--img_dim", type=int, default=128)
-    parser.add_argument("--camera_name", type=str, default="external_camera_0", choices=['head_camera_rgb', 'gripper_camera_rgb', 'lidar', 'external_camera_0'])
+    parser.add_argument(
+        "--camera_name",
+        type=str,
+        default="external_camera_0",
+        choices=["head_camera_rgb", "gripper_camera_rgb", "lidar", "external_camera_0"],
+    )
     parser.add_argument("--pixels_ob", type=str2bool, default=True)
     parser.add_argument("--object_dist_threshold", type=float, default=0.05)
     parser.add_argument("--gripper_dist_threshold", type=float, default=0.025)
+
 
 # Algo Hyperparameters
 def add_cem_arguments(parser):

@@ -9,18 +9,23 @@ from gym.utils import seeding
 try:
     import mujoco_py
 except ImportError as e:
-    raise error.DependencyNotInstalled("{}. (HINT: you need to install mujoco_py, and also perform the setup instructions here: https://github.com/openai/mujoco-py/.)".format(e))
+    raise error.DependencyNotInstalled(
+        "{}. (HINT: you need to install mujoco_py, and also perform the setup instructions here: https://github.com/openai/mujoco-py/.)".format(
+            e
+        )
+    )
 
 DEFAULT_SIZE = 500
 
+
 class RobotEnv(gym.GoalEnv):
     def __init__(self, model_path, initial_qpos, n_actions, n_substeps):
-        if model_path.startswith('/'):
+        if model_path.startswith("/"):
             fullpath = model_path
         else:
-            fullpath = os.path.join(os.path.dirname(__file__), 'assets', model_path)
+            fullpath = os.path.join(os.path.dirname(__file__), "assets", model_path)
         if not os.path.exists(fullpath):
-            raise IOError('File {} does not exist'.format(fullpath))
+            raise IOError("File {} does not exist".format(fullpath))
 
         model = mujoco_py.load_model_from_path(fullpath)
         self.sim = mujoco_py.MjSim(model, nsubsteps=n_substeps)
@@ -28,8 +33,8 @@ class RobotEnv(gym.GoalEnv):
         self._viewers = {}
 
         self.metadata = {
-            'render.modes': ['human', 'rgb_array'],
-            'video.frames_per_second': int(np.round(1.0 / self.dt))
+            "render.modes": ["human", "rgb_array"],
+            "video.frames_per_second": int(np.round(1.0 / self.dt)),
         }
 
         self.seed()
@@ -38,12 +43,20 @@ class RobotEnv(gym.GoalEnv):
 
         self.goal = self._sample_goal()
         obs = self._get_obs()
-        self.action_space = spaces.Box(-1., 1., shape=(n_actions,), dtype='float32')
-        self.observation_space = spaces.Dict(dict(
-            desired_goal=spaces.Box(-np.inf, np.inf, shape=obs['achieved_goal'].shape, dtype='float32'),
-            achieved_goal=spaces.Box(-np.inf, np.inf, shape=obs['achieved_goal'].shape, dtype='float32'),
-            observation=spaces.Box(-np.inf, np.inf, shape=obs['observation'].shape, dtype='float32'),
-        ))
+        self.action_space = spaces.Box(-1.0, 1.0, shape=(n_actions,), dtype="float32")
+        self.observation_space = spaces.Dict(
+            dict(
+                desired_goal=spaces.Box(
+                    -np.inf, np.inf, shape=obs["achieved_goal"].shape, dtype="float32"
+                ),
+                achieved_goal=spaces.Box(
+                    -np.inf, np.inf, shape=obs["achieved_goal"].shape, dtype="float32"
+                ),
+                observation=spaces.Box(
+                    -np.inf, np.inf, shape=obs["observation"].shape, dtype="float32"
+                ),
+            )
+        )
 
     @property
     def dt(self):
@@ -65,10 +78,10 @@ class RobotEnv(gym.GoalEnv):
 
         done = False
         info = {}
-        info['is_success'] = self._is_success(obs['achieved_goal'], self.goal, info)
+        info["is_success"] = self._is_success(obs["achieved_goal"], self.goal, info)
 
-        reward = self.compute_reward(obs['achieved_goal'], self.goal, info)
-        info['reward'] = reward
+        reward = self.compute_reward(obs["achieved_goal"], self.goal, info)
+        info["reward"] = reward
         return obs, reward, done, info
 
     def reset(self):
@@ -91,21 +104,30 @@ class RobotEnv(gym.GoalEnv):
             self.viewer = None
             self._viewers = {}
 
-    def render(self, mode='human', width=DEFAULT_SIZE, height=DEFAULT_SIZE, camera_name=None, segmentation=False):
+    def render(
+        self,
+        mode="human",
+        width=DEFAULT_SIZE,
+        height=DEFAULT_SIZE,
+        camera_name=None,
+        segmentation=False,
+    ):
         self._render_callback()
-        if mode == 'rgb_array':
-            data = self.sim.render(width, height, camera_name=camera_name, segmentation=segmentation)
+        if mode == "rgb_array":
+            data = self.sim.render(
+                width, height, camera_name=camera_name, segmentation=segmentation
+            )
             # original image is upside-down, so flip it
             return data[::-1, :, :]
-        elif mode == 'human':
+        elif mode == "human":
             self._get_viewer(mode).render()
 
     def _get_viewer(self, mode):
         self.viewer = self._viewers.get(mode)
         if self.viewer is None:
-            if mode == 'human':
+            if mode == "human":
                 self.viewer = mujoco_py.MjViewer(self.sim)
-            elif mode == 'rgb_array':
+            elif mode == "rgb_array":
                 self.viewer = mujoco_py.MjRenderContextOffscreen(self.sim, device_id=-1)
             self._viewer_setup()
             self._viewers[mode] = self.viewer
@@ -125,23 +147,19 @@ class RobotEnv(gym.GoalEnv):
         return True
 
     def _get_obs(self):
-        """Returns the observation.
-        """
+        """Returns the observation."""
         raise NotImplementedError()
 
     def _set_action(self, action):
-        """Applies the given action to the simulation.
-        """
+        """Applies the given action to the simulation."""
         raise NotImplementedError()
 
     def _is_success(self, achieved_goal, desired_goal):
-        """Indicates whether or not the achieved goal successfully achieved the desired goal.
-        """
+        """Indicates whether or not the achieved goal successfully achieved the desired goal."""
         raise NotImplementedError()
 
     def _sample_goal(self):
-        """Samples a new goal and returns it.
-        """
+        """Samples a new goal and returns it."""
         raise NotImplementedError()
 
     def _env_setup(self, initial_qpos):
@@ -172,6 +190,8 @@ class RobotEnv(gym.GoalEnv):
         return self.sim.get_state()
 
     def set_state(self, env_state):
-        assert env_state.qpos.shape == (self.sim.model.nq,) and env_state.qvel.shape == (self.sim.model.nv,)
+        assert env_state.qpos.shape == (
+            self.sim.model.nq,
+        ) and env_state.qvel.shape == (self.sim.model.nv,)
         self.sim.set_state(env_state)
         self.sim.forward()
