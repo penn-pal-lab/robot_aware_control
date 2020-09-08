@@ -193,6 +193,7 @@ def make_log_folder(config):
     # wandb stuff
     if not config.wandb:
         os.environ["WANDB_MODE"] = "dryrun"
+    os.environ['WANDB_API_KEY'] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
     exclude = ["device"]
     wandb.init(
         resume=config.jobname,
