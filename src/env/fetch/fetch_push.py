@@ -31,7 +31,6 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self._robot_pixel_weight = config.robot_pixel_weight
         reward_type = config.reward_type
         self._img_dim = config.img_dim
-        # TODO: add static camera that is similar to original one
         self._camera_name = config.camera_name
         self._pixels_ob = config.pixels_ob
         self._distance_threshold = {
@@ -39,6 +38,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             "gripper": config.gripper_dist_threshold,
         }
         self._robot_goal_distribution = config.robot_goal_distribution
+        self._push_dist = config.push_dist
         FetchEnv.__init__(
             self,
             MODEL_XML_PATH,
@@ -123,7 +123,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         noise = np.zeros(3)
         # pushing axis noise
         # noise[0] = self.np_random.uniform(0.15, 0.15 + self.target_range, size=1)
-        noise[0] = 0.25  # keep fixed for now
+        noise[0] = self._push_dist
         # side axis noise
         noise[1] = self.np_random.uniform(-0.02, 0.02, size=1)
 
@@ -218,10 +218,10 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         a = self._robot_pixel_weight
         ag_mask = self.get_robot_mask()
         # get costs per pixel
-        pixel_costs = np.linalg.norm(achieved_goal - goal, axis=-1)
+        pixel_costs = achieved_goal - goal
         pixel_costs *= self.goal_mask  # zero out the robot pixels
         pixel_costs *= ag_mask
-        d = pixel_costs.sum()
+        d = np.linalg.norm(pixel_costs)
         return -d
 
     def compute_reward(self, achieved_goal, goal, info):
@@ -244,7 +244,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         ids = seg[:, :, 1]
         geoms = types == const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
-        mask = np.ones((self._img_dim, self._img_dim), dtype=np.uint8)
+        mask = np.ones((self._img_dim, self._img_dim, 1), dtype=np.uint8)
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
             if name is not None and "robot0:" in name:
@@ -281,11 +281,12 @@ if __name__ == "__main__":
     #     total_fps += fps
     #     avg_fps = total_fps / num_frames
     #     print("avg fps:", avg_fps)
-
+    env.reset()
     while True:
+        env.render(mode="human")
+        # env.step(env.action_space.sample())
         env._sample_goal()
         # env.reset()
-        env.render(mode="human")
     #     # continue
     #     img = env.render(segmentation=False)
     #     imageio.imwrite("scene.png", img.astype(np.uint8))
