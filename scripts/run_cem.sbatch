@@ -7,4 +7,4 @@
 #SBATCH -o ./weighted128_randrobot.out
 #SBATCH -e ./weighted128_randrobot.out
 
-python -m src.mbrl.cem.cem --wandb True --jobname weighted128_randrobot --img_dim 128 --reward_type weighted --record_trajectory True
+python -m src.mbrl.cem.cem --wandb True --jobname weighted128_randrobot --img_dim 128 --reward_type weighted --record_trajectory True --action_candidates 30
