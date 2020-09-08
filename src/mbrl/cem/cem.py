@@ -104,7 +104,8 @@ def run_cem_episodes(config):
             s += 1
             vr.capture_frame()
             logger.info("\tReward: {}".format(rew))
-            if (succ := info["is_success"]) > 0 or done or s > 10:
+            succ = info["is_success"]
+            if succ > 0 or done or s > 10:
                 logger.info("=" * 10 + f"Episode {i}" + "=" * 10)
                 if config.record_trajectory:
                     path = os.path.join(config.trajectory_dir, f"ep_s{succ}_{i}.pkl")
