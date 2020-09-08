@@ -38,6 +38,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             "object": config.object_dist_threshold,
             "gripper": config.gripper_dist_threshold,
         }
+        self._robot_goal_distribution = config.robot_goal_distribution
         FetchEnv.__init__(
             self,
             MODEL_XML_PATH,
@@ -130,7 +131,6 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         goal += self.target_offset
         goal[2] = self.height_offset
 
-        # if self._pixels_ob:
         init_state = self.get_state()
         # move block to target position
         obj_pose = [0, 0, 0, 1, 0, 0, 0]
@@ -138,9 +138,15 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self.sim.data.set_joint_qpos("object0:joint", obj_pose)
         reset_mocap_welds(self.sim)
         self.sim.forward()
-        # move robot behind block position
+        # move robot behind block position or make it random
         obj_pos = self.sim.data.get_site_xpos("object0").copy()
-        gripper_target = obj_pos + [-0.05, 0, 0]
+        if self._robot_goal_distribution == "random":
+            robot_noise = np.array([-0.05, 0, 0])  # 5cm behind block so no collide
+            robot_noise[1] = self.np_random.uniform(-0.1, 0.1, size=1)  # side axis
+            robot_noise[2] = self.np_random.uniform(0, 0.3, size=1)  # z axis
+            gripper_target = obj_pos + robot_noise
+        elif self._robot_goal_distribution == "behind_block":
+            gripper_target = obj_pos + [-0.05, 0, 0]
         gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
         self.sim.data.set_mocap_pos("robot0:mocap", gripper_target)
         self.sim.data.set_mocap_quat("robot0:mocap", gripper_rotation)
@@ -166,10 +172,6 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self.goal_pose = {"object": obj_pos, "gripper": robot_pos}
         if self.reward_type == "weighted":
             self.goal_mask = self.get_robot_mask()
-            goal = (
-                self._robot_pixel_weight * self.goal_mask * goal
-                + (1 - self.goal_mask) * goal
-            )
 
         # reset to previous state
         self.set_state(init_state)
@@ -207,18 +209,19 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             info[f"{k}_dist"] = dist
             succ = dist < self._distance_threshold[k]
             info[f"{k}_success"] = float(succ)
-            success &= succ
-        return float(success)
+        if self._robot_goal_distribution == "random":
+            return info["object_success"]
+        elif self._robot_goal_distribution == "behind_block":
+            return float(info["object_success"] and info["gripper_success"])
 
     def weighted_cost(self, achieved_goal, goal, info):
         a = self._robot_pixel_weight
         ag_mask = self.get_robot_mask()
-        robot_pixels = ag_mask * achieved_goal
-        scaled_robot_pixels = a * robot_pixels
-        non_robot_pixels = (1 - ag_mask) * achieved_goal
-        reweighted_ag = scaled_robot_pixels + non_robot_pixels
-
-        d = np.linalg.norm(reweighted_ag - goal)
+        # get costs per pixel
+        pixel_costs = np.linalg.norm(achieved_goal - goal, axis=-1)
+        pixel_costs *= self.goal_mask  # zero out the robot pixels
+        pixel_costs *= ag_mask
+        d = pixel_costs.sum()
         return -d
 
     def compute_reward(self, achieved_goal, goal, info):
@@ -235,16 +238,17 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         return super().compute_reward(achieved_goal, goal, info)
 
     def get_robot_mask(self):
+        # returns a mask where 0s are robot and 1s are non robot pixels
         seg = self.render(segmentation=True)
         types = seg[:, :, 0]
         ids = seg[:, :, 1]
         geoms = types == const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
-        mask = np.zeros((self._img_dim, self._img_dim, 3), dtype=np.uint8)
+        mask = np.ones((self._img_dim, self._img_dim), dtype=np.uint8)
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
             if name is not None and "robot0:" in name:
-                mask[ids == i] = np.ones(3, dtype=np.uint8)
+                mask[ids == i] = np.zeros(1, dtype=np.uint8)
         return mask
 
 
@@ -259,55 +263,70 @@ if __name__ == "__main__":
           type (a value in the `mjtObj` enum). Background pixels are labeled
           (-1, -1).
     """
+    from time import time
+
     config, _ = argparser()
     # visualize the initialization
     env = FetchPushEnv(config)
     img_dim = config.img_dim
+    total_fps = num_frames = 0
+    # while True:
+    #     ac = env.action_space.sample()
+    #     start = time()
+    #     env.step(ac)
+    #     # avg time per step
+    #     steptime = time() - start
+    #     num_frames += 1
+    #     fps = 1 / steptime
+    #     total_fps += fps
+    #     avg_fps = total_fps / num_frames
+    #     print("avg fps:", avg_fps)
+
     while True:
-        # env._sample_goal()
-        env.reset()
-        # env.render(mode="human", segmentation=True)
-        # continue
-        img = env.render(segmentation=False)
-        imageio.imwrite("scene.png", img.astype(np.uint8))
-        seg = env.render(segmentation=True)
-        # visualize all the bodies
-        types = seg[:, :, 0]
-        ids = seg[:, :, 1]
-        geoms = types == const.OBJ_GEOM
-        geoms_ids = np.unique(ids[geoms])
-        robot_geoms = {
-            "robot0:base_link",
-            "robot0:torso_lift_link",
-            "robot0:head_pan_link",
-            "robot0:head_tilt_link",
-            "robot0:shoulder_pan_link",
-            "robot0:shoulder_lift_link",
-            "robot0:upperarm_roll_link",
-            "robot0:elbow_flex_link",
-            "robot0:forearm_roll_link",
-            "robot0:wrist_flex_link",
-            "robot0:wrist_roll_link",
-            "robot0:gripper_link",
-            "robot0:r_gripper_finger_link",
-            "robot0:l_gripper_finger_link",
-            "robot0:estop_link",
-            "robot0:laser_link",
-            "robot0:torso_fixed_link",
-        }
-        img = np.zeros((img_dim, img_dim), dtype=np.uint8)
-        # robot_color = np.array((255, 0, 0), dtype=np.uint8)
-        robot_color = 255
-        for i in geoms_ids:
-            name = env.sim.model.geom_id2name(i)
-            if name is not None and name in robot_geoms:
-                img[ids == i] = robot_color
-            # elif "object0" == name:
-            #     img[ids == i] = np.array((0, 255, 0), dtype=np.uint8)
-        img = img.astype(np.uint8)
-        imageio.imwrite("seg.png", img)
-        # from PIL import Image, ImageFilter
-        # pil_img = Image.fromarray(img)
-        # img_nn_pil = pil_img.filter(ImageFilter.BoxBlur(1))
-        # imageio.imwrite('seg_nn.png', img_nn_pil)
-        break
+        env._sample_goal()
+        # env.reset()
+        env.render(mode="human")
+    #     # continue
+    #     img = env.render(segmentation=False)
+    #     imageio.imwrite("scene.png", img.astype(np.uint8))
+    #     seg = env.render(segmentation=True)
+    #     # visualize all the bodies
+    #     types = seg[:, :, 0]
+    #     ids = seg[:, :, 1]
+    #     geoms = types == const.OBJ_GEOM
+    #     geoms_ids = np.unique(ids[geoms])
+    #     robot_geoms = {
+    #         "robot0:base_link",
+    #         "robot0:torso_lift_link",
+    #         "robot0:head_pan_link",
+    #         "robot0:head_tilt_link",
+    #         "robot0:shoulder_pan_link",
+    #         "robot0:shoulder_lift_link",
+    #         "robot0:upperarm_roll_link",
+    #         "robot0:elbow_flex_link",
+    #         "robot0:forearm_roll_link",
+    #         "robot0:wrist_flex_link",
+    #         "robot0:wrist_roll_link",
+    #         "robot0:gripper_link",
+    #         "robot0:r_gripper_finger_link",
+    #         "robot0:l_gripper_finger_link",
+    #         "robot0:estop_link",
+    #         "robot0:laser_link",
+    #         "robot0:torso_fixed_link",
+    #     }
+    #     img = np.zeros((img_dim, img_dim), dtype=np.uint8)
+    #     # robot_color = np.array((255, 0, 0), dtype=np.uint8)
+    #     robot_color = 255
+    #     for i in geoms_ids:
+    #         name = env.sim.model.geom_id2name(i)
+    #         if name is not None and name in robot_geoms:
+    #             img[ids == i] = robot_color
+    #         # elif "object0" == name:
+    #         #     img[ids == i] = np.array((0, 255, 0), dtype=np.uint8)
+    #     img = img.astype(np.uint8)
+    #     imageio.imwrite("seg.png", img)
+    #     # from PIL import Image, ImageFilter
+    #     # pil_img = Image.fromarray(img)
+    #     # img_nn_pil = pil_img.filter(ImageFilter.BoxBlur(1))
+    #     # imageio.imwrite('seg_nn.png', img_nn_pil)
+    #     break

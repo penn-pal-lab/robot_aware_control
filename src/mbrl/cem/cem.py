@@ -1,10 +1,18 @@
+import logging
+import colorlog
 import os
 from collections import defaultdict
+import time
 
+import matplotlib
+matplotlib.use("agg")
+import matplotlib.pyplot as plt
+import wandb
 import numpy as np
 import torch
 from gym.wrappers.monitoring.video_recorder import VideoRecorder
 from torch.distributions.normal import Normal
+import pickle
 
 from src.env.fetch.fetch_push import FetchPushEnv
 
@@ -62,41 +70,49 @@ def cem_planner(env, config):
 
 
 def run_cem_episodes(config):
+    logger = colorlog.getLogger("file/console")
     num_episodes = config.num_episodes
-    video_folder = os.path.join(
-        os.path.dirname(__file__), f"../../../{config.jobname}_videos"
-    )
-    os.makedirs(video_folder, exist_ok=True)
     env = FetchPushEnv(config)
     # Do rollouts of CEM control
     all_episode_stats = defaultdict(list)
     success_record = np.zeros(num_episodes)
     for i in range(num_episodes):  # this can be parallelized
-        ep_history = defaultdict(int)
-        env.reset()
-        vr = VideoRecorder(env, metadata=None, path=f"{video_folder}/test_{i}.mp4")
+        ep_history = defaultdict(list)
+        trajectory = defaultdict(list)
+        obs = env.reset()
+        if config.record_trajectory:
+            trajectory["obs"].append(obs)
+            trajectory["state"] = env.get_state()
+        vr = VideoRecorder(
+            env,
+            metadata=ep_history,
+            path=os.path.join(config.video_dir, f"test_{i}.mp4"),
+        )
 
         ret = 0  # Episode return
         s = 0  # Step count
-        print("\n=== Episode %d ===\n" % (i + 1))
+        logger.info("\n=== Episode %d ===\n" % (i))
         while True:
-            print("\tStep {}".format(s))
+            logger.info("\tStep {}".format(s))
             action = cem_planner(env, config).numpy()  # Action convert to numpy array
             obs, rew, done, info = env.step(action)
+            if config.record_trajectory:
+                trajectory["obs"].append(obs)
+                trajectory["ac"].append(action)
+                trajectory["state"] = env.get_state()
             ret += rew
             s += 1
             vr.capture_frame()
-            # store info history
-            for k, v in info.items():
-                ep_history[k] += float(v)
-
-            # Calculate distance to goal at current step
-            print("\tReward: {}".format(rew))
-
-            if info["is_success"] > 0 or done or s > 10:
-                print("=" * 10 + f"Episode {i}" + "=" * 10)
-                for k, v in ep_history.items():
-                    print(f"{k}: {v}")
+            logger.info("\tReward: {}".format(rew))
+            if (succ := info["is_success"]) > 0 or done or s > 10:
+                logger.info("=" * 10 + f"Episode {i}" + "=" * 10)
+                if config.record_trajectory:
+                    path = os.path.join(config.trajectory_dir, f"ep_s{succ}_{i}.pkl")
+                    with open(path, 'wb') as f:
+                        pickle.dump(trajectory, f)
+                # log the last step's information
+                for k, v in info.items():
+                    logger.info(f"{k}: {v}")
                     all_episode_stats[k].append(v)
                 break
         vr.close()
@@ -105,15 +121,92 @@ def run_cem_episodes(config):
     env.close()
 
     # Summary
-    print("\n\n### Summary ###")
+    logger.info("\n\n### Summary ###")
+    histograms = {"reward", "object_dist", "gripper_dist"}
     for k, v in all_episode_stats.items():
-        print(f"{k} avg: {np.mean(v)} \u00B1 {np.std(v)}")
+        mean = np.mean(v)
+        sigma = np.std(v)
+        logger.info(f"{k} avg: {mean} \u00B1 {sigma}")
+        log = {f"mean/{k}": mean, f"std/{k}": sigma}
+        wandb.log(log, step=0)
+        if k in histograms:  # save histogram to wandb and image
+            plt.hist(v)
+            plt.xlabel(k)
+            plt.ylabel("Count")
+            wandb.log({f"hist/{k}": wandb.Image(plt)}, step=0)
+            fpath = os.path.join(config.plot_dir, f"{k}_hist.png")
+            plt.savefig(fpath)
+            plt.close("all")
+
+
+def make_log_folder(config):
+    # make folder for exp logs
+    formatter = colorlog.ColoredFormatter(
+        "%(log_color)s[%(asctime)s] %(message)s",
+        datefmt=None,
+        reset=True,
+        log_colors={
+            "DEBUG": "cyan",
+            "INFO": "white",
+            "WARNING": "yellow",
+            "ERROR": "red,bold",
+            "CRITICAL": "red,bg_white",
+        },
+        secondary_log_colors={},
+        style="%",
+    )
+    # only logs to console
+    logger = colorlog.getLogger("console")
+    logger.setLevel(logging.DEBUG)
+
+    ch = colorlog.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
+    config.log_dir = os.path.join(config.log_dir, config.jobname)
+    logger.info(f"Create log directory: {config.log_dir}")
+    os.makedirs(config.log_dir, exist_ok=True)
+
+    config.plot_dir = os.path.join(config.log_dir, "plot")
+    os.makedirs(config.plot_dir, exist_ok=True)
+
+    config.video_dir = os.path.join(config.log_dir, "video")
+    os.makedirs(config.video_dir, exist_ok=True)
+
+    config.trajectory_dir = os.path.join(config.log_dir, "trajectory")
+    os.makedirs(config.trajectory_dir, exist_ok=True)
+
+    # create the file / console logger
+    filelogger = colorlog.getLogger("file/console")
+    filelogger.setLevel(logging.DEBUG)
+    logfile_path = os.path.join(config.log_dir, "log.txt")
+    fh = logging.FileHandler(logfile_path)
+    fh.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s @l%(lineno)d: %(message)s', "%m-%d %H:%M:%S")
+    fh.setFormatter(formatter)
+
+    filelogger.addHandler(fh)
+    filelogger.addHandler(ch)
+
+    # wandb stuff
+    if not config.wandb:
+        os.environ["WANDB_MODE"] = "dryrun"
+    exclude = ["device"]
+    wandb.init(
+        resume=config.jobname,
+        project=config.wandb_project,
+        config={k: v for k, v in config.__dict__.items() if k not in exclude},
+        dir=config.log_dir,
+        entity=config.wandb_entity,
+    )
 
 
 if __name__ == "__main__":
     from src.config import argparser
 
     config, _ = argparser()
+    make_log_folder(config)
     run_cem_episodes(config)
 
 # class DynamicsModel(object):

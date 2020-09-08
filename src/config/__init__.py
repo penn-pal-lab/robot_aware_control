@@ -28,7 +28,11 @@ def create_parser():
         "Robot Aware Cost",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--jobname", type=str, default="cem")
+    parser.add_argument("--jobname", type=str, required=True)
+    parser.add_argument("--log_dir", type=str, default="logs")
+    parser.add_argument("--wandb", type=str2bool, default=False)
+    parser.add_argument("--wandb_entity", type=str, default="pal")
+    parser.add_argument("--wandb_project", type=str, default="roboaware")
     add_method_arguments(parser)
 
     return parser
@@ -56,6 +60,7 @@ def add_method_arguments(parser):
     parser.add_argument("--gpu", type=int, default=None)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--num_episodes", type=int, default=100)
+    parser.add_argument("--record_trajectory", type=str2bool, default=False)
 
     # environment
     parser.add_argument("--env", type=str, default="FetchPush")
@@ -83,6 +88,12 @@ def add_fetch_push_arguments(parser):
     parser.add_argument("--pixels_ob", type=str2bool, default=True)
     parser.add_argument("--object_dist_threshold", type=float, default=0.05)
     parser.add_argument("--gripper_dist_threshold", type=float, default=0.025)
+    parser.add_argument(
+        "--robot_goal_distribution",
+        type=str,
+        default="random",
+        choices=["random", "behind_block"],
+    )
 
 
 # Algo Hyperparameters
