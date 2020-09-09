@@ -125,12 +125,16 @@ def run_cem_episodes(config):
     # Summary
     logger.info("\n\n### Summary ###")
     histograms = {"reward", "object_dist", "gripper_dist"}
+    # upload table to wandb
+    table = wandb.Table(columns=list(all_episode_stats.keys()))
+    table_rows = []
     for k, v in all_episode_stats.items():
         mean = np.mean(v)
         sigma = np.std(v)
         logger.info(f"{k} avg: {mean} \u00B1 {sigma}")
-        log = {f"mean/{k}": mean, f"std/{k}": sigma}
-        wandb.log(log, step=0)
+        table_rows.append(f"{mean} \u00B1 {sigma}")
+        # log = {f"mean/{k}": mean, f"std/{k}": sigma}
+        # wandb.log(log, step=0)
         if k in histograms:  # save histogram to wandb and image
             plt.hist(v)
             plt.xlabel(k)
@@ -139,6 +143,11 @@ def run_cem_episodes(config):
             fpath = os.path.join(config.plot_dir, f"{k}_hist.png")
             plt.savefig(fpath)
             plt.close("all")
+
+    table.add_data(*table_rows)
+    wandb.log({"Results": table}, step=0)
+
+
 
 
 def make_log_folder(config):
