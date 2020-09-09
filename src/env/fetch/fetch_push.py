@@ -39,6 +39,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         }
         self._robot_goal_distribution = config.robot_goal_distribution
         self._push_dist = config.push_dist
+        self._inpaint = config.inpaint
+        self._background_img = None
         FetchEnv.__init__(
             self,
             MODEL_XML_PATH,
@@ -173,6 +175,10 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         if self.reward_type == "weighted":
             self.goal_mask = self.get_robot_mask()
 
+        if self._inpaint:
+            # inpaint the goal image with robot pixels
+            goal[self.goal_mask] = self._background_img[self.goal_mask]
+
         # reset to previous state
         self.set_state(init_state)
         reset_mocap2body_xpos(self.sim)
@@ -217,10 +223,16 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
     def weighted_cost(self, achieved_goal, goal, info):
         a = self._robot_pixel_weight
         ag_mask = self.get_robot_mask()
-        # get costs per pixel
-        pixel_costs = achieved_goal - goal
-        pixel_costs *= self.goal_mask  # zero out the robot pixels
-        pixel_costs *= ag_mask
+        if self._inpaint:
+            # set robot pixels to background image
+            achieved_goal[ag_mask] = self._background_img[ag_mask]
+            pixel_costs = achieved_goal - goal
+        else:
+            # get costs per pixel
+            pixel_costs = achieved_goal - goal
+            pixel_costs[self.goal_mask] = 0  # zero out the robot pixels
+            pixel_costs[ag_mask] = 0
+
         d = np.linalg.norm(pixel_costs)
         return -d
 
@@ -238,19 +250,53 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         return super().compute_reward(achieved_goal, goal, info)
 
     def get_robot_mask(self):
-        # returns a mask where 0s are robot and 1s are non robot pixels
+        # returns a binary mask where robot pixels are True
         seg = self.render(segmentation=True)
         types = seg[:, :, 0]
         ids = seg[:, :, 1]
         geoms = types == const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
-        mask = np.ones((self._img_dim, self._img_dim, 1), dtype=np.uint8)
+        mask = np.zeros((self._img_dim, self._img_dim), dtype=np.uint8)
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
             if name is not None and "robot0:" in name:
-                mask[ids == i] = np.zeros(1, dtype=np.uint8)
-        return mask
+                mask[ids == i] = np.ones(1, dtype=np.uint8)
+        return mask.astype(bool)
 
+    def _get_background_img(self):
+        """
+        Renders the background scene for the environment for inpainting
+        Returns an image (H, W, C)
+        """
+        init_state = self.get_state()
+        # move block to out of scene
+        obj_pose = [100, 0, 0, 1, 0, 0, 0]
+        self.sim.data.set_joint_qpos("object0:joint", obj_pose)
+        reset_mocap_welds(self.sim)
+        self.sim.forward()
+        # move robot gripper up
+        robot_pos = self.sim.data.get_site_xpos("robot0:grip").copy()
+        robot_noise = np.array([0, 0, 0.5])
+        gripper_target = robot_pos + robot_noise
+
+        gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
+        self.sim.data.set_mocap_pos("robot0:mocap", gripper_target)
+        self.sim.data.set_mocap_quat("robot0:mocap", gripper_rotation)
+        for _ in range(10):
+            self.sim.step()
+        self.sim.forward()
+        img = self.render(mode="rgb_array")
+
+        # reset to previous state
+        self.set_state(init_state)
+        reset_mocap2body_xpos(self.sim)
+        reset_mocap_welds(self.sim)
+        return img
+
+    def _env_setup(self, initial_qpos):
+        super()._env_setup(initial_qpos)
+        if self._inpaint and self._background_img is None:
+            self._background_img = self._get_background_img()
 
 if __name__ == "__main__":
     from src.config import argparser
@@ -283,9 +329,10 @@ if __name__ == "__main__":
     #     print("avg fps:", avg_fps)
     env.reset()
     while True:
-        env.render(mode="human")
-        # env.step(env.action_space.sample())
-        env._sample_goal()
+        # env.render(mode="human")
+        env.step(env.action_space.sample())
+        # env._get_background_img()
+        break
         # env.reset()
     #     # continue
     #     img = env.render(segmentation=False)
