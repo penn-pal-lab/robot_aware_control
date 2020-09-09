@@ -11,7 +11,7 @@ from src.env.fetch.rotations import mat2euler
 
 # Ensure we get the path separator correct on windows
 MODEL_XML_PATH = os.path.join("fetch", "push.xml")
-
+LARGE_MODEL_XML_PATH = os.path.join("fetch", "large_push.xml")
 
 class FetchPushEnv(FetchEnv, utils.EzPickle):
     """
@@ -41,9 +41,13 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self._push_dist = config.push_dist
         self._inpaint = config.inpaint
         self._background_img = None
+        self._large_block = config.large_block
+        xml_path = MODEL_XML_PATH
+        if self._large_block:
+            xml_path = LARGE_MODEL_XML_PATH
         FetchEnv.__init__(
             self,
-            MODEL_XML_PATH,
+            xml_path,
             has_object=True,
             block_gripper=True,
             n_substeps=20,
@@ -294,7 +298,32 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         return img
 
     def _env_setup(self, initial_qpos):
-        super()._env_setup(initial_qpos)
+        for name, value in initial_qpos.items():
+            self.sim.data.set_joint_qpos(name, value)
+        reset_mocap_welds(self.sim)
+        self.sim.forward()
+
+        # Move end effector into position.
+        if self._large_block:
+            gripper_target = np.array(
+                [-0.52, 0.005, -0.431 + self.gripper_extra_height]
+            ) + self.sim.data.get_site_xpos("robot0:grip")
+        else:
+            gripper_target = np.array(
+                [-0.498, 0.005, -0.431 + self.gripper_extra_height]
+            ) + self.sim.data.get_site_xpos("robot0:grip")
+        gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
+        self.sim.data.set_mocap_pos("robot0:mocap", gripper_target)
+        self.sim.data.set_mocap_quat("robot0:mocap", gripper_rotation)
+        for _ in range(10):
+            self.sim.step()
+
+        # Extract information for sampling goals.
+        self.initial_gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
+        self.initial_object_xpos = self.sim.data.get_site_xpos("object0").copy()
+        if self.has_object:
+            self.height_offset = self.sim.data.get_site_xpos("object0")[2]
+
         if self._inpaint and self._background_img is None:
             self._background_img = self._get_background_img()
 
@@ -329,10 +358,9 @@ if __name__ == "__main__":
     #     print("avg fps:", avg_fps)
     env.reset()
     while True:
-        # env.render(mode="human")
-        env.step(env.action_space.sample())
+        env.render(mode="human")
+        # env.step(env.action_space.sample())
         # env._get_background_img()
-        break
         # env.reset()
     #     # continue
     #     img = env.render(segmentation=False)

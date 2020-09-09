@@ -97,6 +97,7 @@ def add_fetch_push_arguments(parser):
         choices=["random", "behind_block"],
     )
     parser.add_argument("--inpaint", type=str2bool, default=False)
+    parser.add_argument("--large_block", type=str2bool, default=False)
 
 
 # Algo Hyperparameters
