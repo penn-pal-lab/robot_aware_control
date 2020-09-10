@@ -82,10 +82,9 @@ def run_cem_episodes(config):
         obs = env.reset()
         if config.record_trajectory:
             trajectory["obs"].append(obs)
-            trajectory["state"] = env.get_state()
+            trajectory["state"].append(env.get_state())
         vr = VideoRecorder(
             env,
-            metadata=ep_history,
             path=os.path.join(config.video_dir, f"test_{i}.mp4"),
         )
 
@@ -99,7 +98,7 @@ def run_cem_episodes(config):
             if config.record_trajectory:
                 trajectory["obs"].append(obs)
                 trajectory["ac"].append(action)
-                trajectory["state"] = env.get_state()
+                trajectory["state"].append(env.get_state())
             ret += rew
             s += 1
             vr.capture_frame()
