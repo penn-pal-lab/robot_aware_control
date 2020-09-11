@@ -19,7 +19,7 @@ DEFAULT_SIZE = 500
 
 
 class RobotEnv(gym.GoalEnv):
-    def __init__(self, model_path, initial_qpos, n_actions, n_substeps):
+    def __init__(self, model_path, initial_qpos, n_actions, n_substeps, seed=None):
         if model_path.startswith("/"):
             fullpath = model_path
         else:
@@ -37,7 +37,7 @@ class RobotEnv(gym.GoalEnv):
             "video.frames_per_second": int(np.round(1.0 / self.dt)),
         }
 
-        self.seed()
+        self._seed = self.seed(seed)
         self._env_setup(initial_qpos=initial_qpos)
         self.initial_state = copy.deepcopy(self.sim.get_state())
 
@@ -66,8 +66,8 @@ class RobotEnv(gym.GoalEnv):
     # ----------------------------
 
     def seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
+        self.np_random = np.random.RandomState(seed)
+        return seed
 
     def step(self, action):
         action = np.clip(action, self.action_space.low, self.action_space.high)

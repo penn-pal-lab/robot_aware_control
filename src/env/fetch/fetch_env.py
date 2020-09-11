@@ -27,6 +27,7 @@ class FetchEnv(RobotEnv):
         distance_threshold,
         initial_qpos,
         reward_type,
+        seed=None
     ):
         """Initializes a new Fetch environment.
 
@@ -59,6 +60,7 @@ class FetchEnv(RobotEnv):
             n_substeps=n_substeps,
             n_actions=4,
             initial_qpos=initial_qpos,
+            seed=seed
         )
 
     # GoalEnv methods

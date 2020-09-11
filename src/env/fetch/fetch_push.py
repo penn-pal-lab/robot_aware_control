@@ -1,9 +1,10 @@
 import os
 
 import numpy as np
-from gym import utils
+from gym import utils, spaces
 from mujoco_py.generated import const
 import matplotlib.pyplot as plt
+from PIL import ImageFilter
 
 from src.env.fetch.fetch_env import FetchEnv
 from src.env.fetch.utils import reset_mocap_welds, robot_get_obs, reset_mocap2body_xpos
@@ -26,7 +27,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             "robot0:slide0": 0.175,
             "robot0:slide1": 0.48,
             "robot0:slide2": 0.1,
-            "object0:joint": [1.15, 0.75, 0.4, 1.0, 0.0, 0.0, 0.0],
+            "object0:joint": [1.15 - 0.15, 0.75, 0.4, 1.0, 0.0, 0.0, 0.0],
         }
         self._robot_pixel_weight = config.robot_pixel_weight
         reward_type = config.reward_type
@@ -39,7 +40,6 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         }
         self._robot_goal_distribution = config.robot_goal_distribution
         self._push_dist = config.push_dist
-        self._inpaint = config.inpaint
         self._background_img = None
         self._large_block = config.large_block
         xml_path = MODEL_XML_PATH
@@ -59,8 +59,10 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             distance_threshold=0.05,
             initial_qpos=initial_qpos,
             reward_type=reward_type,
+            seed=config.seed
         )
         utils.EzPickle.__init__(self)
+        self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype="float32")
 
     def _get_obs(self):
         if self._pixels_ob:
@@ -176,12 +178,14 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
 
         # record goal info for checking success later
         self.goal_pose = {"object": obj_pos, "gripper": robot_pos}
-        if self.reward_type == "weighted":
+        if self.reward_type in ["inpaint", "weighted", "blackrobot"]:
             self.goal_mask = self.get_robot_mask()
-
-        if self._inpaint:
-            # inpaint the goal image with robot pixels
-            goal[self.goal_mask] = self._background_img[self.goal_mask]
+            if self.reward_type == "inpaint":
+                # inpaint the goal image with robot pixels
+                goal[self.goal_mask] = self._background_img[self.goal_mask]
+            elif self.reward_type == "blackrobot":
+                # set the robot pixels to 0
+                goal[self.goal_mask] = np.zeros(3)
 
         # reset to previous state
         self.set_state(init_state)
@@ -227,22 +231,25 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
     def weighted_cost(self, achieved_goal, goal, info):
         a = self._robot_pixel_weight
         ag_mask = self.get_robot_mask()
-        if self._inpaint:
+        if self.reward_type == "inpaint":
             # set robot pixels to background image
             achieved_goal[ag_mask] = self._background_img[ag_mask]
             pixel_costs = achieved_goal - goal
-        else:
+        elif self.reward_type == "weighted":
             # get costs per pixel
+            pixel_costs = (achieved_goal - goal).astype(np.float64)
+            pixel_costs[self.goal_mask] *= a
+            pixel_costs[ag_mask] *= a
+        elif self.reward_type == "blackrobot":
+            # make robot black
+            achieved_goal[ag_mask] = np.zeros(3)
             pixel_costs = achieved_goal - goal
-            pixel_costs[self.goal_mask] = 0  # zero out the robot pixels
-            pixel_costs[ag_mask] = 0
-
         d = np.linalg.norm(pixel_costs)
         return -d
 
     def compute_reward(self, achieved_goal, goal, info):
         if self._pixels_ob:
-            if self.reward_type == "weighted":
+            if self.reward_type in ["weighted", "inpaint", "blackrobot"]:
                 return self.weighted_cost(achieved_goal, goal, info)
             # Compute distance between goal and the achieved goal.
             d = np.linalg.norm(achieved_goal - goal)
@@ -306,11 +313,11 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         # Move end effector into position.
         if self._large_block:
             gripper_target = np.array(
-                [-0.52, 0.005, -0.431 + self.gripper_extra_height]
+                [-0.52 - 0.15, 0.005, -0.431 + self.gripper_extra_height]
             ) + self.sim.data.get_site_xpos("robot0:grip")
         else:
             gripper_target = np.array(
-                [-0.498, 0.005, -0.431 + self.gripper_extra_height]
+                [-0.498 - 0.15, 0.005, -0.431 + self.gripper_extra_height]
             ) + self.sim.data.get_site_xpos("robot0:grip")
         gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
         self.sim.data.set_mocap_pos("robot0:mocap", gripper_target)
@@ -324,12 +331,167 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         if self.has_object:
             self.height_offset = self.sim.data.get_site_xpos("object0")[2]
 
-        if self._inpaint and self._background_img is None:
+        if self.reward_type == "inpaint" and self._background_img is None:
             self._background_img = self._get_background_img()
+
+    def _set_action(self, action):
+        assert action.shape == (3,)
+        action = np.concatenate([action, [0]])
+        super()._set_action(action)
+
+    def generate_demo(self, behavior, record, save_goal):
+        """
+        Behaviors: occlude, occlude_everything, push
+        """
+        from src.utils.video_recorder import VideoRecorder
+        from collections import defaultdict
+
+        title_dict = {"weighted": f"Don't Care a={self._robot_pixel_weight}", "dense": "L2", "inpaint": "inpaint", "blackrobot": "blackrobot"}
+        size = "large" if self._large_block else "small"
+        vr = VideoRecorder(self, path=f"{size}_{behavior}.mp4", enabled=record)
+        obs = self.reset()
+        # self.render("human")
+        history = defaultdict(list)
+        vr.capture_frame()
+        if record:
+            history["frame"].append(vr.last_frame)
+        history["goal"] = self.goal.copy()
+        if save_goal:
+            imageio.imwrite(f"{size}_{title_dict[self.reward_type]}_goal.png", history["goal"])
+        def move(target, history, target_type="gripper", max_time=100, threshold=0.01, speed=10):
+            if target_type == "gripper":
+                gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
+                d = target - gripper_xpos
+            elif target_type == "object":
+                object_xpos = self.sim.data.get_site_xpos("object0").copy()
+                d = target - object_xpos
+            step = 0
+            while np.linalg.norm(d) > threshold and step < max_time:
+                # add some random noise to ac
+                # ac = d + np.random.uniform(-0.03, 0.03, size=3)
+                ac = d * speed
+                obs, rew, done, info = self.step(ac)
+                # self.render("human")
+                for k, v in info.items():
+                    history[k].append(v)
+                vr.capture_frame()
+                if record:
+                    history["frame"].append(vr.last_frame)
+                if target_type == "gripper":
+                    gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
+                    d = target - gripper_xpos
+                elif target_type == "object":
+                    object_xpos = self.sim.data.get_site_xpos("object0").copy()
+                    d = target - object_xpos
+                # print(np.linalg.norm(d))
+                step += 1
+            if np.linalg.norm(d) > threshold:
+                print("move failed")
+
+        def occlude():
+            # move gripper above cube
+            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+            gripper_target = gripper_xpos + [0, 0, 0.048]
+            gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
+            move(gripper_target, history)
+            # move gripper to occlude the cube
+            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+            gripper_target = gripper_xpos + [0.15, 0, 0]
+            move(gripper_target, history)
+            # move gripper downwards
+            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+            gripper_target = gripper_xpos + [0, 0, -0.061]
+            move(gripper_target, history)
+            vr.close()
+
+        def occlude_everything():
+            # move gripper above cube
+            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+            gripper_target = gripper_xpos + [0, 0, 0.05]
+            gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
+            move(gripper_target, history)
+            # move gripper to occlude the cube
+            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+            gripper_target = gripper_xpos + [0.25, 0, 0]
+            move(gripper_target, history, speed=10, threshold=0.025)
+            # move gripper downwards
+            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+            gripper_target = gripper_xpos + [0, 0, -0.061]
+            move(gripper_target, history, threshold=0.02)
+            vr.close()
+
+        def push():
+            # move gripper to center of cube
+            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
+            block_xpos = self.sim.data.get_site_xpos("object0").copy()
+            gripper_target = gripper_xpos
+            gripper_target[0] = block_xpos[0]
+            gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
+            move(gripper_target, history)
+            # push the block
+            obj_target = self.goal_pose["object"]
+            if self._large_block:
+                move(obj_target, history, target_type="object", speed=20, threshold=0.015)
+            else:
+                move(obj_target, history, target_type="object", speed=30, threshold=0.015)
+            vr.close()
+
+        def rollout(history, path):
+            frames = history["frame"]
+            rewards = history["reward"]
+            obj_dist = history["object_dist"]
+            fig = plt.figure()
+            rewards = -1 * np.array([0] + rewards)
+            obj_dist = np.array([0] + obj_dist)
+            cols = len(frames)
+            for n, (image, reward, objd) in enumerate(zip(frames, rewards, obj_dist)):
+                a = fig.add_subplot(2, cols, n + 1)
+                imagegoal = np.concatenate([image, history["goal"]], axis=1)
+                a.imshow(imagegoal)
+                a.set_aspect("equal")
+                # round reward to 2 decimals
+                rew =  f"{reward:0.2f}" if n > 0 else "Cost:"
+                a.set_title(rew, fontsize=50)
+                a.set_xticklabels([])
+                a.set_xticks([])
+                a.set_yticklabels([])
+                a.set_yticks([])
+                a.set_xlabel(f"step {n}", fontsize=40)
+                # add goal img under every one
+                # b = fig.add_subplot(2, cols, n + len(frames) + 1)
+                # b.imshow(history["goal"])
+                # b.set_aspect("equal")
+                # obj =  f"{objd:0.3f}" if n > 0 else "Object Dist:"
+                # b.set_title(obj, fontsize=50)
+                # b.set_xticklabels([])
+                # b.set_xticks([])
+                # b.set_yticklabels([])
+                # b.set_yticks([])
+                # b.set_xlabel(f"goal", fontsize=40)
+
+            fig.set_figheight(10)
+            fig.set_figwidth(100)
+
+            title = f"{title_dict[self.reward_type]} with {behavior} behavior"
+            fig.suptitle(title, fontsize=50, fontweight='bold')
+            fig.savefig(path)
+            fig.clf()
+
+        if behavior == "occlude":
+            occlude()
+        elif behavior == "push":
+            push()
+        elif behavior == "occlude_everything":
+            occlude_everything()
+        # rollout(history, f"{title_dict[self.reward_type]}_{behavior}.png")
+        return history
+
 
 if __name__ == "__main__":
     from src.config import argparser
     import imageio
+    from time import time
+    from copy import deepcopy
 
     """
     If `segmentation` is True, this is a (height, width, 2) int32 numpy
@@ -338,71 +500,57 @@ if __name__ == "__main__":
           type (a value in the `mjtObj` enum). Background pixels are labeled
           (-1, -1).
     """
-    from time import time
-
     config, _ = argparser()
     # visualize the initialization
-    env = FetchPushEnv(config)
-    img_dim = config.img_dim
-    total_fps = num_frames = 0
+    rewards = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
+    normalize = False
+    data = {}
+    behaviors = ["push", "occlude", "occlude_everything"]
+    save_goal = False # save a goal for each cost
+    for behavior in behaviors:
+        # only record once for each behavior
+        record = False
+        for r in rewards:
+            cfg = deepcopy(config)
+            if r == "dontcare":
+                cfg.reward_type = "weighted"
+                cfg.robot_pixel_weight = 0
+            elif r == "l2":
+                cfg.reward_type = "dense"
+            elif r == "inpaint":
+                cfg.reward_type = "inpaint"
+            elif r == "blackrobot":
+                cfg.reward_type = "blackrobot"
+                cfg.robot_pixel_weight = 0
+            elif r == "alpha":
+                # same as weighted but with alpha = 0.1
+                cfg.reward_type = "weighted"
+                cfg.robot_pixel_weight = 0.1
+
+            env = FetchPushEnv(cfg)
+            history = env.generate_demo(behavior, record=record, save_goal=save_goal)
+            record = False
+            data[r] = history
+
+        save_goal = False # dont' need it for other behaviors
+        # graph the data
+        size = 'large' if cfg.large_block else 'small'
+        plt.title(f"Different costs with {behavior} & {size} block")
+        for k, v in data.items():
+            print(f"plotting {k} cost")
+            costs = -1 * np.array(v["reward"])
+            if normalize:
+                costs = (costs - np.min(costs)) / (np.max(costs) - np.min(costs))
+            timesteps = np.arange(len(costs)) + 1
+            costs = np.array(costs)
+            plt.plot(timesteps, costs, label=k)
+        plt.legend(loc="upper right")
+        plt.savefig(f"{size}_{behavior}_costs.png")
+        plt.close("all")
+
     # while True:
-    #     ac = env.action_space.sample()
-    #     start = time()
-    #     env.step(ac)
-    #     # avg time per step
-    #     steptime = time() - start
-    #     num_frames += 1
-    #     fps = 1 / steptime
-    #     total_fps += fps
-    #     avg_fps = total_fps / num_frames
-    #     print("avg fps:", avg_fps)
-    env.reset()
-    while True:
-        env.render(mode="human")
-        # env.step(env.action_space.sample())
-        # env._get_background_img()
-        # env.reset()
-    #     # continue
-    #     img = env.render(segmentation=False)
-    #     imageio.imwrite("scene.png", img.astype(np.uint8))
-    #     seg = env.render(segmentation=True)
-    #     # visualize all the bodies
-    #     types = seg[:, :, 0]
-    #     ids = seg[:, :, 1]
-    #     geoms = types == const.OBJ_GEOM
-    #     geoms_ids = np.unique(ids[geoms])
-    #     robot_geoms = {
-    #         "robot0:base_link",
-    #         "robot0:torso_lift_link",
-    #         "robot0:head_pan_link",
-    #         "robot0:head_tilt_link",
-    #         "robot0:shoulder_pan_link",
-    #         "robot0:shoulder_lift_link",
-    #         "robot0:upperarm_roll_link",
-    #         "robot0:elbow_flex_link",
-    #         "robot0:forearm_roll_link",
-    #         "robot0:wrist_flex_link",
-    #         "robot0:wrist_roll_link",
-    #         "robot0:gripper_link",
-    #         "robot0:r_gripper_finger_link",
-    #         "robot0:l_gripper_finger_link",
-    #         "robot0:estop_link",
-    #         "robot0:laser_link",
-    #         "robot0:torso_fixed_link",
-    #     }
-    #     img = np.zeros((img_dim, img_dim), dtype=np.uint8)
-    #     # robot_color = np.array((255, 0, 0), dtype=np.uint8)
-    #     robot_color = 255
-    #     for i in geoms_ids:
-    #         name = env.sim.model.geom_id2name(i)
-    #         if name is not None and name in robot_geoms:
-    #             img[ids == i] = robot_color
-    #         # elif "object0" == name:
-    #         #     img[ids == i] = np.array((0, 255, 0), dtype=np.uint8)
-    #     img = img.astype(np.uint8)
-    #     imageio.imwrite("seg.png", img)
-    #     # from PIL import Image, ImageFilter
-    #     # pil_img = Image.fromarray(img)
-    #     # img_nn_pil = pil_img.filter(ImageFilter.BoxBlur(1))
-    #     # imageio.imwrite('seg_nn.png', img_nn_pil)
-    #     break
+    #     env.reset()
+    #     env.render("human")
+    # for i in range(5):
+    #     img = env._sample_goal()
+    #     imageio.imwrite(f"{env.reward_type}_{env._seed}_{i}.png", img)
