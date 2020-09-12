@@ -4,7 +4,7 @@ import numpy as np
 from gym import utils, spaces
 from mujoco_py.generated import const
 import matplotlib.pyplot as plt
-from PIL import ImageFilter
+from PIL import ImageFilter, Image
 
 from src.env.fetch.fetch_env import FetchEnv
 from src.env.fetch.utils import reset_mocap_welds, robot_get_obs, reset_mocap2body_xpos
@@ -177,6 +177,11 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             goal = np.concatenate([obj_pos, robot_pos])
 
         # record goal info for checking success later
+        norm_goal = goal / 255
+        import ipdb; ipdb.set_trace()
+        blur = ImageFilter.GaussianBlur(radius=self._img_dim * 2)
+        im = Image.fromarray(np.uint8(norm_goal * 255))
+
         self.goal_pose = {"object": obj_pos, "gripper": robot_pos}
         if self.reward_type in ["inpaint", "weighted", "blackrobot"]:
             self.goal_mask = self.get_robot_mask()

@@ -28,7 +28,7 @@ def create_parser():
         "Robot Aware Cost",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--jobname", type=str, required=True)
+    parser.add_argument("--jobname", type=str, default=None)
     parser.add_argument("--log_dir", type=str, default="logs")
     parser.add_argument("--wandb", type=str2bool, default=False)
     parser.add_argument("--wandb_entity", type=str, default="pal")
@@ -44,7 +44,7 @@ def add_method_arguments(parser):
         "--reward_type",
         type=str,
         default="weighted",
-        choices=["weighted", "dense", "sparse"],
+        choices=["weighted", "dense", "inpaint", "sparse" "blackrobot"],
     )
     parser.add_argument("--robot_pixel_weight", type=str, default=0)
 
@@ -58,7 +58,7 @@ def add_method_arguments(parser):
 
     # training
     parser.add_argument("--gpu", type=int, default=None)
-    parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--num_episodes", type=int, default=100)
     parser.add_argument("--record_trajectory", type=str2bool, default=False)
 
@@ -96,7 +96,6 @@ def add_fetch_push_arguments(parser):
         default="random",
         choices=["random", "behind_block"],
     )
-    parser.add_argument("--inpaint", type=str2bool, default=False)
     parser.add_argument("--large_block", type=str2bool, default=False)
 
 
