@@ -14,6 +14,7 @@ from src.env.fetch.rotations import mat2euler
 MODEL_XML_PATH = os.path.join("fetch", "push.xml")
 LARGE_MODEL_XML_PATH = os.path.join("fetch", "large_push.xml")
 
+
 class FetchPushEnv(FetchEnv, utils.EzPickle):
     """
     Pushes a block. We extend FetchEnv for:
@@ -59,7 +60,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             distance_threshold=0.05,
             initial_qpos=initial_qpos,
             reward_type=reward_type,
-            seed=config.seed
+            seed=config.seed,
         )
         utils.EzPickle.__init__(self)
         self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype="float32")
@@ -178,9 +179,13 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
 
         # record goal info for checking success later
         norm_goal = goal / 255
-        import ipdb; ipdb.set_trace()
+        import ipdb
+
+        ipdb.set_trace()
         blur = ImageFilter.GaussianBlur(radius=self._img_dim * 2)
         im = Image.fromarray(np.uint8(norm_goal * 255))
+        blurred_im = im.filter(blur)
+        blurred_im.save("blur.png")
 
         self.goal_pose = {"object": obj_pos, "gripper": robot_pos}
         if self.reward_type in ["inpaint", "weighted", "blackrobot"]:
@@ -206,7 +211,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         camera_name=None,
         segmentation=False,
     ):
-        return super(FetchEnv, self).render(
+        return super().render(
             mode,
             self._img_dim,
             self._img_dim,
@@ -222,9 +227,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             "object": self.sim.data.get_site_xpos("object0").copy(),
             "gripper": self.sim.data.get_site_xpos("robot0:grip").copy(),
         }
-        success = True
         for k, v in current_pose.items():
-            dist = np.linalg.norm(current_pose[k] - self.goal_pose[k])
+            dist = np.linalg.norm(v - self.goal_pose[k])
             info[f"{k}_dist"] = dist
             succ = dist < self._distance_threshold[k]
             info[f"{k}_success"] = float(succ)
@@ -351,10 +355,15 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         from src.utils.video_recorder import VideoRecorder
         from collections import defaultdict
 
-        title_dict = {"weighted": f"Don't Care a={self._robot_pixel_weight}", "dense": "L2", "inpaint": "inpaint", "blackrobot": "blackrobot"}
+        title_dict = {
+            "weighted": f"Don't Care a={self._robot_pixel_weight}",
+            "dense": "L2",
+            "inpaint": "inpaint",
+            "blackrobot": "blackrobot",
+        }
         size = "large" if self._large_block else "small"
         vr = VideoRecorder(self, path=f"{size}_{behavior}.mp4", enabled=record)
-        obs = self.reset()
+        self.reset()
         # self.render("human")
         history = defaultdict(list)
         vr.capture_frame()
@@ -362,8 +371,18 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             history["frame"].append(vr.last_frame)
         history["goal"] = self.goal.copy()
         if save_goal:
-            imageio.imwrite(f"{size}_{title_dict[self.reward_type]}_goal.png", history["goal"])
-        def move(target, history, target_type="gripper", max_time=100, threshold=0.01, speed=10):
+            imageio.imwrite(
+                f"{size}_{title_dict[self.reward_type]}_goal.png", history["goal"]
+            )
+
+        def move(
+            target,
+            history,
+            target_type="gripper",
+            max_time=100,
+            threshold=0.01,
+            speed=10,
+        ):
             if target_type == "gripper":
                 gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
                 d = target - gripper_xpos
@@ -375,7 +394,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
                 # add some random noise to ac
                 # ac = d + np.random.uniform(-0.03, 0.03, size=3)
                 ac = d * speed
-                obs, rew, done, info = self.step(ac)
+                _, _, _, info = self.step(ac)
                 # self.render("human")
                 for k, v in info.items():
                     history[k].append(v)
@@ -397,7 +416,6 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             # move gripper above cube
             gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
             gripper_target = gripper_xpos + [0, 0, 0.048]
-            gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
             move(gripper_target, history)
             # move gripper to occlude the cube
             gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
@@ -413,7 +431,6 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             # move gripper above cube
             gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
             gripper_target = gripper_xpos + [0, 0, 0.05]
-            gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
             move(gripper_target, history)
             # move gripper to occlude the cube
             gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
@@ -431,31 +448,32 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             block_xpos = self.sim.data.get_site_xpos("object0").copy()
             gripper_target = gripper_xpos
             gripper_target[0] = block_xpos[0]
-            gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
             move(gripper_target, history)
             # push the block
             obj_target = self.goal_pose["object"]
             if self._large_block:
-                move(obj_target, history, target_type="object", speed=20, threshold=0.015)
+                move(
+                    obj_target, history, target_type="object", speed=20, threshold=0.015
+                )
             else:
-                move(obj_target, history, target_type="object", speed=30, threshold=0.015)
+                move(
+                    obj_target, history, target_type="object", speed=30, threshold=0.015
+                )
             vr.close()
 
         def rollout(history, path):
             frames = history["frame"]
             rewards = history["reward"]
-            obj_dist = history["object_dist"]
             fig = plt.figure()
             rewards = -1 * np.array([0] + rewards)
-            obj_dist = np.array([0] + obj_dist)
             cols = len(frames)
-            for n, (image, reward, objd) in enumerate(zip(frames, rewards, obj_dist)):
+            for n, (image, reward) in enumerate(zip(frames, rewards)):
                 a = fig.add_subplot(2, cols, n + 1)
                 imagegoal = np.concatenate([image, history["goal"]], axis=1)
                 a.imshow(imagegoal)
                 a.set_aspect("equal")
                 # round reward to 2 decimals
-                rew =  f"{reward:0.2f}" if n > 0 else "Cost:"
+                rew = f"{reward:0.2f}" if n > 0 else "Cost:"
                 a.set_title(rew, fontsize=50)
                 a.set_xticklabels([])
                 a.set_xticks([])
@@ -478,7 +496,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             fig.set_figwidth(100)
 
             title = f"{title_dict[self.reward_type]} with {behavior} behavior"
-            fig.suptitle(title, fontsize=50, fontweight='bold')
+            fig.suptitle(title, fontsize=50, fontweight="bold")
             fig.savefig(path)
             fig.clf()
 
@@ -492,26 +510,15 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         return history
 
 
-if __name__ == "__main__":
-    from src.config import argparser
-    import imageio
-    from time import time
-    from copy import deepcopy
-
-    """
-    If `segmentation` is True, this is a (height, width, 2) int32 numpy
-          array where the second channel contains the integer ID of the object at
-          each pixel, and the  first channel contains the corresponding object
-          type (a value in the `mjtObj` enum). Background pixels are labeled
-          (-1, -1).
-    """
+def plot_costs():
+    """ Plots the cost function for different behaviors"""
     config, _ = argparser()
     # visualize the initialization
     rewards = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
     normalize = False
     data = {}
     behaviors = ["push", "occlude", "occlude_everything"]
-    save_goal = False # save a goal for each cost
+    save_goal = False  # save a goal for each cost
     for behavior in behaviors:
         # only record once for each behavior
         record = False
@@ -537,9 +544,9 @@ if __name__ == "__main__":
             record = False
             data[r] = history
 
-        save_goal = False # dont' need it for other behaviors
+        save_goal = False  # dont' need it for other behaviors
         # graph the data
-        size = 'large' if cfg.large_block else 'small'
+        size = "large" if cfg.large_block else "small"
         plt.title(f"Different costs with {behavior} & {size} block")
         for k, v in data.items():
             print(f"plotting {k} cost")
@@ -553,9 +560,19 @@ if __name__ == "__main__":
         plt.savefig(f"{size}_{behavior}_costs.png")
         plt.close("all")
 
-    # while True:
-    #     env.reset()
-    #     env.render("human")
-    # for i in range(5):
-    #     img = env._sample_goal()
-    #     imageio.imwrite(f"{env.reward_type}_{env._seed}_{i}.png", img)
+
+if __name__ == "__main__":
+    from src.config import argparser
+    import imageio
+    from time import time
+    from copy import deepcopy
+
+    # plot_costs()
+    config, _ = argparser()
+    env = FetchPushEnv(config)
+    while True:
+        env.reset()
+        env.render("human")
+    for i in range(5):
+        img = env._sample_goal()
+        imageio.imwrite(f"{env.reward_type}_{env._seed}_{i}.png", img)

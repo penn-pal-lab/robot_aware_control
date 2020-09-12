@@ -27,7 +27,7 @@ class FetchEnv(RobotEnv):
         distance_threshold,
         initial_qpos,
         reward_type,
-        seed=None
+        seed=None,
     ):
         """Initializes a new Fetch environment.
 
@@ -60,7 +60,7 @@ class FetchEnv(RobotEnv):
             n_substeps=n_substeps,
             n_actions=4,
             initial_qpos=initial_qpos,
-            seed=seed
+            seed=seed,
         )
 
     # GoalEnv methods
@@ -229,6 +229,3 @@ class FetchEnv(RobotEnv):
         self.initial_object_xpos = self.sim.data.get_site_xpos("object0").copy()
         if self.has_object:
             self.height_offset = self.sim.data.get_site_xpos("object0")[2]
-
-    def render(self, mode="human", width=500, height=500):
-        return super(FetchEnv, self).render(mode, width, height)

@@ -5,6 +5,7 @@ from collections import defaultdict
 import time
 
 import matplotlib
+
 matplotlib.use("agg")
 import matplotlib.pyplot as plt
 import wandb
@@ -109,7 +110,7 @@ def run_cem_episodes(config):
                 logger.info("=" * 10 + f"Episode {i}" + "=" * 10)
                 if config.record_trajectory:
                     path = os.path.join(config.trajectory_dir, f"ep_s{succ}_{i}.pkl")
-                    with open(path, 'wb') as f:
+                    with open(path, "wb") as f:
                         pickle.dump(trajectory, f)
                 # log the last step's information
                 for k, v in info.items():
@@ -145,8 +146,6 @@ def run_cem_episodes(config):
 
     table.add_data(*table_rows)
     wandb.log({"Results": table}, step=0)
-
-
 
 
 def make_log_folder(config):
@@ -193,7 +192,9 @@ def make_log_folder(config):
     logfile_path = os.path.join(config.log_dir, "log.txt")
     fh = logging.FileHandler(logfile_path)
     fh.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('[%(asctime)s] %(levelname)s @l%(lineno)d: %(message)s', "%m-%d %H:%M:%S")
+    formatter = logging.Formatter(
+        "[%(asctime)s] %(levelname)s @l%(lineno)d: %(message)s", "%m-%d %H:%M:%S"
+    )
     fh.setFormatter(formatter)
 
     filelogger.addHandler(fh)
@@ -202,7 +203,7 @@ def make_log_folder(config):
     # wandb stuff
     if not config.wandb:
         os.environ["WANDB_MODE"] = "dryrun"
-    os.environ['WANDB_API_KEY'] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
+    os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
     exclude = ["device"]
     wandb.init(
         resume=config.jobname,
