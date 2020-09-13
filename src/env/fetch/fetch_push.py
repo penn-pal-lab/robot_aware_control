@@ -34,6 +34,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         reward_type = config.reward_type
         self._img_dim = config.img_dim
         self._camera_name = config.camera_name
+        self._multiview = config.multiview
+        self._camera_ids = config.camera_ids
         self._pixels_ob = config.pixels_ob
         self._distance_threshold = {
             "object": config.object_dist_threshold,
@@ -178,15 +180,6 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             goal = np.concatenate([obj_pos, robot_pos])
 
         # record goal info for checking success later
-        norm_goal = goal / 255
-        import ipdb
-
-        ipdb.set_trace()
-        blur = ImageFilter.GaussianBlur(radius=self._img_dim * 2)
-        im = Image.fromarray(np.uint8(norm_goal * 255))
-        blurred_im = im.filter(blur)
-        blurred_im.save("blur.png")
-
         self.goal_pose = {"object": obj_pos, "gripper": robot_pos}
         if self.reward_type in ["inpaint", "weighted", "blackrobot"]:
             self.goal_mask = self.get_robot_mask()
@@ -211,6 +204,22 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         camera_name=None,
         segmentation=False,
     ):
+        if self._multiview:
+            imgs = []
+            for cam_id in self._camera_ids:
+                camera_name = self.sim.model.camera_id2name(cam_id)
+                img = super().render(
+                    mode,
+                    self._img_dim,
+                    self._img_dim,
+                    camera_name=camera_name,
+                    segmentation=segmentation,
+                )
+                imgs.append(img)
+                # print(cam_id, camera_name)
+                # imageio.imwrite(camera_name + ".png",img)
+            # multiview_img = np.concatenate(imgs, axis=0)
+            # imageio.imwrite("multiview.png", multiview_img)
         return super().render(
             mode,
             self._img_dim,
@@ -567,12 +576,10 @@ if __name__ == "__main__":
     from time import time
     from copy import deepcopy
 
-    # plot_costs()
     config, _ = argparser()
     env = FetchPushEnv(config)
+    env.reset()
+    env.render("human")
     while True:
-        env.reset()
+        env.step(env.action_space.sample())
         env.render("human")
-    for i in range(5):
-        img = env._sample_goal()
-        imageio.imwrite(f"{env.reward_type}_{env._seed}_{i}.png", img)
