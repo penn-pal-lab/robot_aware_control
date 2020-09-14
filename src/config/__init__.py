@@ -86,7 +86,7 @@ def add_fetch_push_arguments(parser):
         choices=["head_camera_rgb", "gripper_camera_rgb", "lidar", "external_camera_0"],
     )
     parser.add_argument("--multiview", type=str2bool, default=False)
-    parser.add_argument("--camera_ids", type=str2intlist, default=[0])
+    parser.add_argument("--camera_ids", type=str2intlist, default=[0, 4])
     parser.add_argument("--pixels_ob", type=str2bool, default=True)
     parser.add_argument("--object_dist_threshold", type=float, default=0.01)
     parser.add_argument("--gripper_dist_threshold", type=float, default=0.025)

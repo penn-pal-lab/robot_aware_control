@@ -123,8 +123,5 @@
 		<body name="robot0:external_camera_body_0" pos="0.2 0 0">
 			<camera euler="0 0.6 1.57" fovy="43.3" name="external_camera_0" pos="0.9 0 1.2"></camera>
 		</body>
-		<body name="robot0:external_camera_body_1" pos="0 0.2 0">
-			<camera euler="0.6 0 1.57" fovy="43.3" name="external_camera_1" pos="0.9 0 1.2"></camera>
-		</body>
 	</body>
 </mujoco>

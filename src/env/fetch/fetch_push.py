@@ -1,14 +1,15 @@
 import os
 
-import numpy as np
-from gym import utils, spaces
-from mujoco_py.generated import const
 import matplotlib.pyplot as plt
-from PIL import ImageFilter, Image
+import numpy as np
+from gym import spaces, utils
+from mujoco_py.generated import const
+from PIL import Image, ImageFilter
 
 from src.env.fetch.fetch_env import FetchEnv
-from src.env.fetch.utils import reset_mocap_welds, robot_get_obs, reset_mocap2body_xpos
 from src.env.fetch.rotations import mat2euler
+from src.env.fetch.utils import (reset_mocap2body_xpos, reset_mocap_welds,
+                                 robot_get_obs)
 
 # Ensure we get the path separator correct on windows
 MODEL_XML_PATH = os.path.join("fetch", "push.xml")
@@ -28,7 +29,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             "robot0:slide0": 0.175,
             "robot0:slide1": 0.48,
             "robot0:slide2": 0.1,
-            "object0:joint": [1.15 - 0.15, 0.75, 0.4, 1.0, 0.0, 0.0, 0.0],
+            "object0:joint": [1, 0.75, 0.4, 1.0, 0.0, 0.0, 0.0],
         }
         self._robot_pixel_weight = config.robot_pixel_weight
         reward_type = config.reward_type
@@ -216,10 +217,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
                     segmentation=segmentation,
                 )
                 imgs.append(img)
-                # print(cam_id, camera_name)
-                # imageio.imwrite(camera_name + ".png",img)
-            # multiview_img = np.concatenate(imgs, axis=0)
-            # imageio.imwrite("multiview.png", multiview_img)
+            multiview_img = np.concatenate(imgs, axis=0)
+            return multiview_img
         return super().render(
             mode,
             self._img_dim,
@@ -285,7 +284,11 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         ids = seg[:, :, 1]
         geoms = types == const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
-        mask = np.zeros((self._img_dim, self._img_dim), dtype=np.uint8)
+        mask_dim = [self._img_dim, self._img_dim]
+        if self._multiview:
+            viewpoints = len(self._camera_ids)
+            mask_dim[0] *= viewpoints
+        mask = np.zeros(mask_dim, dtype=np.uint8)
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
             if name is not None and "robot0:" in name:
@@ -305,7 +308,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self.sim.forward()
         # move robot gripper up
         robot_pos = self.sim.data.get_site_xpos("robot0:grip").copy()
-        robot_noise = np.array([0, 0, 0.5])
+        robot_noise = np.array([-1, 0, 0.5])
         gripper_target = robot_pos + robot_noise
 
         gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
@@ -315,6 +318,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             self.sim.step()
         self.sim.forward()
         img = self.render(mode="rgb_array")
+        # import ipdb; ipdb.set_trace()
+        # imageio.imwrite("background_img.png", img)
 
         # reset to previous state
         self.set_state(init_state)
@@ -518,19 +523,92 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         # rollout(history, f"{title_dict[self.reward_type]}_{behavior}.png")
         return history
 
+def plot_behaviors_per_cost():
+    """ Plots a cost function's performance over behaviors"""
+    config, _ = argparser()
+    # visualize the initialization
+    # rewards = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
+    cost_funcs = ["dontcare"]
+    normalize = False
+    data = {}
+    behaviors = ["push", "occlude", "occlude_everything"]
+    save_goal = False # save a goal for each cost
+    for behavior in behaviors:
+        # only record once for each behavior
+        record = True
+        cost_traj = {}
+        for cost in cost_funcs:
+            cfg = deepcopy(config)
+            if cost == "dontcare":
+                cfg.reward_type = "weighted"
+                cfg.robot_pixel_weight = 0
+            elif cost == "l2":
+                cfg.reward_type = "dense"
+            elif cost == "inpaint":
+                cfg.reward_type = "inpaint"
+            elif cost == "blackrobot":
+                cfg.reward_type = "blackrobot"
+                cfg.robot_pixel_weight = 0
+            elif cost == "alpha":
+                # same as weighted but with alpha = 0.1
+                cfg.reward_type = "weighted"
+                cfg.robot_pixel_weight = 0.1
 
-def plot_costs():
+            env = FetchPushEnv(cfg)
+            history = env.generate_demo(behavior, record=record, save_goal=save_goal)
+            record = False
+            cost_traj[cost] = history
+            env.close()
+
+        save_goal = False  # dont' need it for other behaviors
+        data[behavior] = cost_traj
+
+    if normalize:
+        # get the min, max of costs across behaviors
+        cost_min_dict = defaultdict(list)
+        cost_max_dict = defaultdict(list)
+        for behavior, cost_traj in data.items():
+            for cost_fn, traj in cost_traj.items():
+                costs = -1 * np.array(traj["reward"])
+                cost_min_dict[cost_fn].extend(costs)
+                cost_max_dict[cost_fn].extend(costs)
+
+    for cost_fn in cost_funcs:
+        for behavior in behaviors:
+            cost_traj = data[behavior][cost_fn]
+            # graph the data
+            size = "large" if cfg.large_block else "small"
+            viewpoint = "multi" if cfg.multiview else "single"
+            plt.title(f"{cost_fn} with {size} block & {viewpoint}-view")
+            print(f"plotting {cost_fn} cost")
+            costs = -1 * np.array(cost_traj["reward"])
+            if normalize:
+                min = np.min(cost_min_dict[cost_fn])
+                max = np.max(cost_max_dict[cost_fn])
+                costs = (costs - min) / (max - min)
+
+            timesteps = np.arange(len(costs)) + 1
+            costs = np.array(costs)
+            plt.plot(timesteps, costs, label=behavior)
+
+        plt.legend(loc="upper right")
+        plt.savefig(f"{size}_{cost_fn}_behaviors.png")
+        plt.close("all")
+
+def plot_costs_per_behavior():
     """ Plots the cost function for different behaviors"""
     config, _ = argparser()
     # visualize the initialization
     rewards = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
-    normalize = False
+    # rewards = ["dontcare", "inpaint", "alpha"]
+    normalize = True
     data = {}
     behaviors = ["push", "occlude", "occlude_everything"]
-    save_goal = False  # save a goal for each cost
+    save_goal = True # save a goal for each cost
     for behavior in behaviors:
         # only record once for each behavior
-        record = False
+        record = True
+        cost_traj = {}
         for r in rewards:
             cfg = deepcopy(config)
             if r == "dontcare":
@@ -551,20 +629,38 @@ def plot_costs():
             env = FetchPushEnv(cfg)
             history = env.generate_demo(behavior, record=record, save_goal=save_goal)
             record = False
-            data[r] = history
+            cost_traj[r] = history
+            env.close()
 
         save_goal = False  # dont' need it for other behaviors
+        data[behavior] = cost_traj
+
+    if normalize:
+        # get the min, max of costs across behaviors
+        cost_min_dict = defaultdict(list)
+        cost_max_dict = defaultdict(list)
+        for behavior, cost_traj in data.items():
+            for cost_fn, traj in cost_traj.items():
+                costs = -1 * np.array(traj["reward"])
+                cost_min_dict[cost_fn].extend(costs)
+                cost_max_dict[cost_fn].extend(costs)
+
+    for behavior in behaviors:
+        cost_traj = data[behavior]
         # graph the data
         size = "large" if cfg.large_block else "small"
-        plt.title(f"Different costs with {behavior} & {size} block")
-        for k, v in data.items():
-            print(f"plotting {k} cost")
-            costs = -1 * np.array(v["reward"])
+        viewpoint = "multi" if cfg.multiview else "single"
+        plt.title(f"Costs with {behavior} & {size} block & {viewpoint}-view")
+        for cost_fn, traj in cost_traj.items():
+            print(f"plotting {cost_fn} cost")
+            costs = -1 * np.array(traj["reward"])
             if normalize:
-                costs = (costs - np.min(costs)) / (np.max(costs) - np.min(costs))
+                min = np.min(cost_min_dict[cost_fn])
+                max = np.max(cost_max_dict[cost_fn])
+                costs = (costs - min) / (max - min)
             timesteps = np.arange(len(costs)) + 1
             costs = np.array(costs)
-            plt.plot(timesteps, costs, label=k)
+            plt.plot(timesteps, costs, label=cost_fn)
         plt.legend(loc="upper right")
         plt.savefig(f"{size}_{behavior}_costs.png")
         plt.close("all")
@@ -575,11 +671,13 @@ if __name__ == "__main__":
     import imageio
     from time import time
     from copy import deepcopy
+    from collections import defaultdict
 
-    config, _ = argparser()
-    env = FetchPushEnv(config)
-    env.reset()
-    env.render("human")
-    while True:
-        env.step(env.action_space.sample())
-        env.render("human")
+    plot_behaviors_per_cost()
+    # config, _ = argparser()
+    # env = FetchPushEnv(config)
+    # env.reset()
+    # env.render("human")
+    # while True:
+    #     env.step(env.action_space.sample())
+    #     env.render("human")
