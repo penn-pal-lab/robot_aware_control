@@ -153,9 +153,9 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         # move robot behind block position or make it random
         obj_pos = self.sim.data.get_site_xpos("object0").copy()
         if self._robot_goal_distribution == "random":
-            robot_noise = np.array([-0.05, 0, 0])  # 5cm behind block so no collide
-            robot_noise[1] = self.np_random.uniform(-0.1, 0.1, size=1)  # side axis
-            robot_noise[2] = self.np_random.uniform(0, 0.3, size=1)  # z axis
+            robot_noise = np.array([-0.1, 0, 0])  # 10cm behind block so no collide
+            robot_noise[1] = self.np_random.uniform(-0.2, 0.2, size=1)  # side axis
+            robot_noise[2] = self.np_random.uniform(0.01, 0.3, size=1)  # z axis
             gripper_target = obj_pos + robot_noise
         elif self._robot_goal_distribution == "behind_block":
             gripper_target = obj_pos + [-0.05, 0, 0]
@@ -364,7 +364,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
 
     def generate_demo(self, behavior, record, save_goal):
         """
-        Behaviors: occlude, occlude_everything, push
+        Behaviors: occlude, occlude_all, push, only robot move to goal
         """
         from src.utils.video_recorder import VideoRecorder
         from collections import defaultdict
@@ -424,8 +424,12 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
                     d = target - object_xpos
                 # print(np.linalg.norm(d))
                 step += 1
+
             if np.linalg.norm(d) > threshold:
                 print("move failed")
+            elif behavior == "push" and target_type == "object":
+                goal_dist = np.linalg.norm(object_xpos - self.goal_pose["object"])
+                print("goal object dist after push", goal_dist)
 
         def occlude():
             # move gripper above cube
@@ -442,7 +446,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             move(gripper_target, history)
             vr.close()
 
-        def occlude_everything():
+        def occlude_all():
             # move gripper above cube
             gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
             gripper_target = gripper_xpos + [0, 0, 0.05]
@@ -472,8 +476,19 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
                 )
             else:
                 move(
-                    obj_target, history, target_type="object", speed=30, threshold=0.015
+                    obj_target, history, target_type="object", speed=10, threshold=0.003
                 )
+            vr.close()
+
+        def only_robot():
+            # move gripper above cube
+            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+            gripper_target = gripper_xpos + [0, 0, 0.07]
+            move(gripper_target, history)
+            # move gripper to target robot pos
+            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+            gripper_target = self.goal_pose["gripper"]
+            move(gripper_target, history, speed=10, threshold=0.025)
             vr.close()
 
         def rollout(history, path):
@@ -514,13 +529,16 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             fig.suptitle(title, fontsize=50, fontweight="bold")
             fig.savefig(path)
             fig.clf()
+            plt.close("all")
 
         if behavior == "occlude":
             occlude()
         elif behavior == "push":
             push()
-        elif behavior == "occlude_everything":
-            occlude_everything()
+        elif behavior == "occlude_all":
+            occlude_all()
+        elif behavior == "only_robot":
+            only_robot()
         # rollout(history, f"{title_dict[self.reward_type]}_{behavior}.png")
         return history
 
@@ -528,12 +546,13 @@ def plot_behaviors_per_cost():
     """ Plots a cost function's performance over behaviors"""
     config, _ = argparser()
     # visualize the initialization
-    # rewards = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
-    cost_funcs = ["dontcare"]
-    normalize = False
+    cost_funcs = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
+    # cost_funcs = ["dontcare"]
+    normalize = True
     data = {}
     viewpoints = ["single", "multiview"]
-    behaviors = ["push", "occlude", "occlude_everything"]
+    behaviors = ["only_robot", "push", "occlude", "occlude_all"]
+    # behaviors = ["only_robot"]
     save_goal = False # save a goal for each cost
     for behavior in behaviors:
         # only record once for each behavior
@@ -598,9 +617,9 @@ def plot_behaviors_per_cost():
                 costs = np.array(costs)
                 color = cmap(i)
                 linestyle = '-' if vp == "multiview" else '--'
-                plt.plot(timesteps, costs, label=f"{behavior}_{vp}", linestyle=linestyle, color=color)
+                plt.plot(timesteps, costs, label=f"{behavior}_{vp[0]}", linestyle=linestyle, color=color)
 
-        plt.legend(loc="lower left")
+        plt.legend(loc="lower left", fontsize=9)
         plt.savefig(f"{size}_{cost_fn}_behaviors.png")
         plt.close("all")
 
@@ -609,14 +628,13 @@ def plot_costs_per_behavior():
     config, _ = argparser()
     # visualize the initialization
     rewards = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
-    # rewards = ["dontcare", "inpaint", "alpha"]
     normalize = True
     data = {}
-    behaviors = ["push", "occlude", "occlude_everything"]
-    save_goal = True # save a goal for each cost
+    behaviors = ["push", "occlude", "occlude_all", "only_robot"]
+    save_goal = False # save a goal for each cost
     for behavior in behaviors:
         # only record once for each behavior
-        record = True
+        record = False
         cost_traj = {}
         for r in rewards:
             cfg = deepcopy(config)
@@ -683,10 +701,11 @@ if __name__ == "__main__":
     from collections import defaultdict
 
     plot_behaviors_per_cost()
+    # plot_costs_per_behavior()
     # config, _ = argparser()
     # env = FetchPushEnv(config)
     # env.reset()
     # env.render("human")
     # while True:
-    #     env.step(env.action_space.sample())
+    #     # env.step(env.action_space.sample())
     #     env.render("human")
