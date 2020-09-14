@@ -376,7 +376,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             "blackrobot": "blackrobot",
         }
         size = "large" if self._large_block else "small"
-        vr = VideoRecorder(self, path=f"{size}_{behavior}.mp4", enabled=record)
+        vp = "multi" if self._multiview else "single"
+        vr = VideoRecorder(self, path=f"{size}_{behavior}_{vp}_view.mp4", enabled=record)
         self.reset()
         # self.render("human")
         history = defaultdict(list)
@@ -531,11 +532,12 @@ def plot_behaviors_per_cost():
     cost_funcs = ["dontcare"]
     normalize = False
     data = {}
+    viewpoints = ["single", "multiview"]
     behaviors = ["push", "occlude", "occlude_everything"]
     save_goal = False # save a goal for each cost
     for behavior in behaviors:
         # only record once for each behavior
-        record = True
+        record = False
         cost_traj = {}
         for cost in cost_funcs:
             cfg = deepcopy(config)
@@ -554,44 +556,51 @@ def plot_behaviors_per_cost():
                 cfg.reward_type = "weighted"
                 cfg.robot_pixel_weight = 0.1
 
-            env = FetchPushEnv(cfg)
-            history = env.generate_demo(behavior, record=record, save_goal=save_goal)
+            cost_traj[cost] = {}
+            for vp in viewpoints:
+                cfg.multiview = vp == "multiview"
+                env = FetchPushEnv(cfg)
+                history = env.generate_demo(behavior, record=record, save_goal=save_goal)
+                cost_traj[cost][vp] = history
+                env.close()
             record = False
-            cost_traj[cost] = history
-            env.close()
 
         save_goal = False  # dont' need it for other behaviors
         data[behavior] = cost_traj
 
     if normalize:
         # get the min, max of costs across behaviors
-        cost_min_dict = defaultdict(list)
-        cost_max_dict = defaultdict(list)
+        cost_min_dict = {vp:defaultdict(list) for vp in viewpoints}
+        cost_max_dict = {vp:defaultdict(list) for vp in viewpoints}
         for behavior, cost_traj in data.items():
             for cost_fn, traj in cost_traj.items():
-                costs = -1 * np.array(traj["reward"])
-                cost_min_dict[cost_fn].extend(costs)
-                cost_max_dict[cost_fn].extend(costs)
+                for vp in viewpoints:
+                    costs = -1 * np.array(traj[vp]["reward"])
+                    cost_min_dict[vp][cost_fn].extend(costs)
+                    cost_max_dict[vp][cost_fn].extend(costs)
 
+    cmap = plt.get_cmap("Set1")
     for cost_fn in cost_funcs:
-        for behavior in behaviors:
+        for i, behavior in enumerate(behaviors):
             cost_traj = data[behavior][cost_fn]
-            # graph the data
-            size = "large" if cfg.large_block else "small"
-            viewpoint = "multi" if cfg.multiview else "single"
-            plt.title(f"{cost_fn} with {size} block & {viewpoint}-view")
-            print(f"plotting {cost_fn} cost")
-            costs = -1 * np.array(cost_traj["reward"])
-            if normalize:
-                min = np.min(cost_min_dict[cost_fn])
-                max = np.max(cost_max_dict[cost_fn])
-                costs = (costs - min) / (max - min)
+            for vp in viewpoints:
+                # graph the data
+                size = "large" if cfg.large_block else "small"
+                plt.title(f"{cost_fn} with {size} block")
+                print(f"plotting {cost_fn} cost")
+                costs = -1 * np.array(cost_traj[vp]["reward"])
+                if normalize:
+                    min = np.min(cost_min_dict[vp][cost_fn])
+                    max = np.max(cost_max_dict[vp][cost_fn])
+                    costs = (costs - min) / (max - min)
 
-            timesteps = np.arange(len(costs)) + 1
-            costs = np.array(costs)
-            plt.plot(timesteps, costs, label=behavior)
+                timesteps = np.arange(len(costs)) + 1
+                costs = np.array(costs)
+                color = cmap(i)
+                linestyle = '-' if vp == "multiview" else '--'
+                plt.plot(timesteps, costs, label=f"{behavior}_{vp}", linestyle=linestyle, color=color)
 
-        plt.legend(loc="upper right")
+        plt.legend(loc="lower left")
         plt.savefig(f"{size}_{cost_fn}_behaviors.png")
         plt.close("all")
 
