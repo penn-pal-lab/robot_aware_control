@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import wandb
 import numpy as np
 import torch
-from gym.wrappers.monitoring.video_recorder import VideoRecorder
+from src.utils.video_recorder import VideoRecorder
 from torch.distributions.normal import Normal
 import pickle
 
@@ -48,10 +48,13 @@ def cem_planner(env, config):
             # Copy environment with its state, goal, and set to dense reward
             # use set_state and get_state
             env_state = env.get_state()
+            env._use_unblur = False
             for l in range(L):
                 action = act_seq[j, l].numpy()
+                env._use_unblur = l >= L - config.unblur_timestep
                 _, rew, _, _ = env.step(action)  # Take one step
                 ret_preds[j] += rew  # accumulate rewards
+                env._use_unblur = False
             env.set_state(env_state)  # reset env to before rollout
 
         # Select top K action sequences based on cumulative rewards
@@ -87,6 +90,7 @@ def run_cem_episodes(config):
         vr = VideoRecorder(
             env,
             path=os.path.join(config.video_dir, f"test_{i}.mp4"),
+            enabled=i % config.record_video_interval == 0,
         )
 
         ret = 0  # Episode return
@@ -108,7 +112,9 @@ def run_cem_episodes(config):
             # don't care about success as early termination
             if done or s > config.max_episode_length:
                 logger.info("=" * 10 + f"Episode {i}" + "=" * 10)
-                if config.record_trajectory:
+                if config.record_trajectory and (
+                    i % config.record_trajectory_interval == 0
+                ):
                     path = os.path.join(config.trajectory_dir, f"ep_s{succ}_{i}.pkl")
                     with open(path, "wb") as f:
                         pickle.dump(trajectory, f)

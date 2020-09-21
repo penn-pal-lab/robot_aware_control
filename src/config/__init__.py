@@ -44,9 +44,15 @@ def add_method_arguments(parser):
         "--reward_type",
         type=str,
         default="weighted",
-        choices=["weighted", "dense", "inpaint", "sparse" "blackrobot"],
+        choices=["weighted", "dense", "inpaint", "sparse" "blackrobot", "inpaint-blur"],
     )
     parser.add_argument("--robot_pixel_weight", type=str, default=0)
+    # inpaint-blur
+    parser.add_argument("--blur_sigma", type=float, default=10)
+    parser.add_argument("--unblur_cost_scale", type=float, default=3)
+    # switch at step L - unblur_timestep
+    parser.add_argument("--unblur_timestep", type=float, default=1)
+
 
     # control algorithm
     parser.add_argument(
@@ -61,6 +67,8 @@ def add_method_arguments(parser):
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--num_episodes", type=int, default=100)
     parser.add_argument("--record_trajectory", type=str2bool, default=False)
+    parser.add_argument("--record_video_interval", type=int, default=5)
+    parser.add_argument("--record_trajectory_interval", type=int, default=5)
 
     # environment
     parser.add_argument("--env", type=str, default="FetchPush")

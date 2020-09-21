@@ -5,11 +5,11 @@ import numpy as np
 from gym import spaces, utils
 from mujoco_py.generated import const
 from PIL import Image, ImageFilter
+from skimage.filters import gaussian
 
 from src.env.fetch.fetch_env import FetchEnv
 from src.env.fetch.rotations import mat2euler
-from src.env.fetch.utils import (reset_mocap2body_xpos, reset_mocap_welds,
-                                 robot_get_obs)
+from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
 
 # Ensure we get the path separator correct on windows
 MODEL_XML_PATH = os.path.join("fetch", "push.xml")
@@ -49,6 +49,9 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         xml_path = MODEL_XML_PATH
         if self._large_block:
             xml_path = LARGE_MODEL_XML_PATH
+        self._blur_width = self._img_dim * 2
+        self._sigma = config.blur_sigma
+        self._unblur_cost_scale = config.unblur_cost_scale
         FetchEnv.__init__(
             self,
             xml_path,
@@ -131,6 +134,11 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self.sim.forward()
         return True
 
+    def reset(self):
+        obs = super().reset()
+        self._use_unblur = False
+        return obs
+
     def _sample_goal(self):
         noise = np.zeros(3)
         # pushing axis noise
@@ -182,14 +190,22 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
 
         # record goal info for checking success later
         self.goal_pose = {"object": obj_pos, "gripper": robot_pos}
-        if self.reward_type in ["inpaint", "weighted", "blackrobot"]:
+        if self.reward_type in ["inpaint-blur", "inpaint", "weighted", "blackrobot"]:
             self.goal_mask = self.get_robot_mask()
-            if self.reward_type == "inpaint":
+            if self.reward_type in ["inpaint-blur", "inpaint"]:
                 # inpaint the goal image with robot pixels
                 goal[self.goal_mask] = self._background_img[self.goal_mask]
             elif self.reward_type == "blackrobot":
                 # set the robot pixels to 0
                 goal[self.goal_mask] = np.zeros(3)
+
+        if self.reward_type == "inpaint-blur":
+            # https://stackoverflow.com/questions/25216382/gaussian-filter-in-scipy
+            s = self._sigma
+            w = self._blur_width
+            t = (((w - 1) / 2) - 0.5) / s
+            self._unblurred_goal = goal
+            goal = np.uint8(255 * gaussian(goal, sigma=s, truncate=t, mode="nearest", multichannel=True))
 
         # reset to previous state
         self.set_state(init_state)
@@ -246,12 +262,33 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             return float(info["object_success"] and info["gripper_success"])
 
     def weighted_cost(self, achieved_goal, goal, info):
+        """
+        inpaint-blur:
+            need use_unblur boolean to decide when to switch from blur to unblur
+            cost.
+        """
         a = self._robot_pixel_weight
         ag_mask = self.get_robot_mask()
-        if self.reward_type == "inpaint":
+        if self.reward_type in ["inpaint", "inpaint-blur"]:
             # set robot pixels to background image
             achieved_goal[ag_mask] = self._background_img[ag_mask]
-            pixel_costs = achieved_goal - goal
+            if self.reward_type == "inpaint-blur":
+                s = self._sigma
+                w = self._blur_width
+                t = (((w - 1) / 2) - 0.5) / s
+                unblurred_ag = achieved_goal
+                achieved_goal = np.uint8(
+                    255 * gaussian(achieved_goal, sigma=s, truncate=t, mode="nearest", multichannel=True)
+                )
+                blur_cost = np.linalg.norm(achieved_goal - goal)
+                d = blur_cost
+                if self._use_unblur:
+                    unblur_cost = np.linalg.norm(unblurred_ag - self._unblurred_goal)
+                    d = self._unblur_cost_scale * unblur_cost
+                return -d
+
+            else:
+                pixel_costs = achieved_goal - goal
         elif self.reward_type == "weighted":
             # get costs per pixel
             pixel_costs = (achieved_goal - goal).astype(np.float64)
@@ -266,7 +303,12 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
 
     def compute_reward(self, achieved_goal, goal, info):
         if self._pixels_ob:
-            if self.reward_type in ["weighted", "inpaint", "blackrobot"]:
+            if self.reward_type in [
+                "weighted",
+                "inpaint",
+                "inpaint-blur",
+                "blackrobot",
+            ]:
                 return self.weighted_cost(achieved_goal, goal, info)
             # Compute distance between goal and the achieved goal.
             d = np.linalg.norm(achieved_goal - goal)
@@ -318,9 +360,6 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             self.sim.step()
         self.sim.forward()
         img = self.render(mode="rgb_array")
-        # import ipdb; ipdb.set_trace()
-        # imageio.imwrite("background_img.png", img)
-
         # reset to previous state
         self.set_state(init_state)
         reset_mocap2body_xpos(self.sim)
@@ -354,7 +393,10 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         if self.has_object:
             self.height_offset = self.sim.data.get_site_xpos("object0")[2]
 
-        if self.reward_type == "inpaint" and self._background_img is None:
+        if (
+            self.reward_type in ["inpaint", "inpaint-blur"]
+            and self._background_img is None
+        ):
             self._background_img = self._get_background_img()
 
     def _set_action(self, action):
@@ -373,11 +415,14 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             "weighted": f"Don't Care a={self._robot_pixel_weight}",
             "dense": "L2",
             "inpaint": "inpaint",
+            "inpaint-blur": f"inpaint-blur_sig{self._sigma}",
             "blackrobot": "blackrobot",
         }
         size = "large" if self._large_block else "small"
         vp = "multi" if self._multiview else "single"
-        vr = VideoRecorder(self, path=f"{size}_{behavior}_{vp}_view.mp4", enabled=record)
+        vr = VideoRecorder(
+            self, path=f"{size}_{behavior}_{vp}_view.mp4", enabled=record
+        )
         self.reset()
         # self.render("human")
         history = defaultdict(list)
@@ -542,18 +587,19 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         # rollout(history, f"{title_dict[self.reward_type]}_{behavior}.png")
         return history
 
+
 def plot_behaviors_per_cost():
     """ Plots a cost function's performance over behaviors"""
     config, _ = argparser()
     # visualize the initialization
-    cost_funcs = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
-    # cost_funcs = ["dontcare"]
-    normalize = True
+    # cost_funcs = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
+    cost_funcs = ["inpaint-blur"]
+    normalize = False
     data = {}
     viewpoints = ["single", "multiview"]
     behaviors = ["only_robot", "push", "occlude", "occlude_all"]
-    # behaviors = ["only_robot"]
-    save_goal = False # save a goal for each cost
+    # behaviors = ["push"]
+    save_goal = False  # save a goal for each cost
     for behavior in behaviors:
         # only record once for each behavior
         record = False
@@ -567,6 +613,8 @@ def plot_behaviors_per_cost():
                 cfg.reward_type = "dense"
             elif cost == "inpaint":
                 cfg.reward_type = "inpaint"
+            elif cost == "inpaint-blur":
+                cfg.reward_type = "inpaint-blur"
             elif cost == "blackrobot":
                 cfg.reward_type = "blackrobot"
                 cfg.robot_pixel_weight = 0
@@ -579,7 +627,9 @@ def plot_behaviors_per_cost():
             for vp in viewpoints:
                 cfg.multiview = vp == "multiview"
                 env = FetchPushEnv(cfg)
-                history = env.generate_demo(behavior, record=record, save_goal=save_goal)
+                history = env.generate_demo(
+                    behavior, record=record, save_goal=save_goal
+                )
                 cost_traj[cost][vp] = history
                 env.close()
             record = False
@@ -589,8 +639,8 @@ def plot_behaviors_per_cost():
 
     if normalize:
         # get the min, max of costs across behaviors
-        cost_min_dict = {vp:defaultdict(list) for vp in viewpoints}
-        cost_max_dict = {vp:defaultdict(list) for vp in viewpoints}
+        cost_min_dict = {vp: defaultdict(list) for vp in viewpoints}
+        cost_max_dict = {vp: defaultdict(list) for vp in viewpoints}
         for behavior, cost_traj in data.items():
             for cost_fn, traj in cost_traj.items():
                 for vp in viewpoints:
@@ -605,7 +655,10 @@ def plot_behaviors_per_cost():
             for vp in viewpoints:
                 # graph the data
                 size = "large" if cfg.large_block else "small"
-                plt.title(f"{cost_fn} with {size} block")
+                title = cost_fn
+                if cost_fn == "inpaint-blur":
+                    title = f"{cost_fn}-{env._sigma}"
+                plt.title(f"{title} with {size} block")
                 print(f"plotting {cost_fn} cost")
                 costs = -1 * np.array(cost_traj[vp]["reward"])
                 if normalize:
@@ -616,12 +669,19 @@ def plot_behaviors_per_cost():
                 timesteps = np.arange(len(costs)) + 1
                 costs = np.array(costs)
                 color = cmap(i)
-                linestyle = '-' if vp == "multiview" else '--'
-                plt.plot(timesteps, costs, label=f"{behavior}_{vp[0]}", linestyle=linestyle, color=color)
+                linestyle = "-" if vp == "multiview" else "--"
+                plt.plot(
+                    timesteps,
+                    costs,
+                    label=f"{behavior}_{vp[0]}",
+                    linestyle=linestyle,
+                    color=color,
+                )
 
         plt.legend(loc="lower left", fontsize=9)
         plt.savefig(f"{size}_{cost_fn}_behaviors.png")
         plt.close("all")
+
 
 def plot_costs_per_behavior():
     """ Plots the cost function for different behaviors"""
@@ -631,7 +691,7 @@ def plot_costs_per_behavior():
     normalize = True
     data = {}
     behaviors = ["push", "occlude", "occlude_all", "only_robot"]
-    save_goal = False # save a goal for each cost
+    save_goal = False  # save a goal for each cost
     for behavior in behaviors:
         # only record once for each behavior
         record = False
