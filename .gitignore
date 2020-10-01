@@ -1,7 +1,7 @@
-
 # project artifacts
 videos
 logs
+data
 
 # IDE
 .vscode
