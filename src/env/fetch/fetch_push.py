@@ -11,9 +11,9 @@ from src.env.fetch.fetch_env import FetchEnv
 from src.env.fetch.rotations import mat2euler
 from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
 
-# Ensure we get the path separator correct on windows
 MODEL_XML_PATH = os.path.join("fetch", "push.xml")
 LARGE_MODEL_XML_PATH = os.path.join("fetch", "large_push.xml")
+INVISIBLE_LARGE_MODEL_XML_PATH = os.path.join("fetch", "inivisble_large_push.xml")
 
 
 class FetchPushEnv(FetchEnv, utils.EzPickle):
@@ -49,6 +49,9 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         xml_path = MODEL_XML_PATH
         if self._large_block:
             xml_path = LARGE_MODEL_XML_PATH
+        elif self._invisible_demo:
+            xml_path = INVISIBLE_LARGE_MODEL_XML_PATH
+
         self._blur_width = self._img_dim * 2
         self._sigma = config.blur_sigma
         self._unblur_cost_scale = config.unblur_cost_scale
@@ -752,6 +755,10 @@ def plot_costs_per_behavior():
         plt.savefig(f"{size}_{behavior}_costs.png")
         plt.close("all")
 
+def collect_invisible_trajectories():
+    """
+    Collect invisible robot block pushing
+    """
 
 if __name__ == "__main__":
     from src.config import argparser
@@ -759,13 +766,22 @@ if __name__ == "__main__":
     from time import time
     from copy import deepcopy
     from collections import defaultdict
+    from PIL import Image
 
-    plot_behaviors_per_cost()
+    # plot_behaviors_per_cost()
     # plot_costs_per_behavior()
-    # config, _ = argparser()
-    # env = FetchPushEnv(config)
-    # env.reset()
-    # env.render("human")
-    # while True:
-    #     # env.step(env.action_space.sample())
-    #     env.render("human")
+    config, _ = argparser()
+    env = FetchPushEnv(config)
+    env.reset()
+    env.render("human")
+    while True:
+        env.step(env.action_space.sample())
+        env.render("human")
+
+    # img_width = 256
+    # s = 5
+    # w = 2 * img_width
+    # t = (((w - 1) / 2) - 0.5) / s
+    # goal = np.array(Image.open("code.png"))
+    # goal = np.uint8(255 * gaussian(goal, sigma=s, truncate=t, mode="nearest", multichannel=True))
+    # imageio.imwrite("blurredcode.png", goal)
