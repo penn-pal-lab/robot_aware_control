@@ -60,18 +60,18 @@ if __name__ == "__main__":
 
     dataset_path = "data/mock"
     os.makedirs(dataset_path, exist_ok=True)
-    ep_len = 3
+    ep_len = 10
     for i in range(20):
         # video frames of length 10
-        frames = np.ones((ep_len, 128, 128, 3), dtype=np.int8) * i
+        frames = np.ones((ep_len, 128, 128, 3), dtype=np.uint8) * i
         robot_state = np.ones((ep_len, 3)) * i
         actions = np.ones((ep_len - 1,3)) * i
         # create a mock dataset hdf5 file
         filename = os.path.join(dataset_path, f"mock_{i}.hdf5")
         with h5py.File(filename, "w") as hf:
-            hf.create_dataset("frames", data=frames, compression="lzf")
-            hf.create_dataset("robot", data=robot_state)
-            hf.create_dataset("actions", data=actions)
+            hf.create_dataset("frames", data=frames, compression="gzip")
+            hf.create_dataset("robot", data=robot_state, compression="gzip")
+            hf.create_dataset("actions", data=actions, compression="gzip")
 
     config, _ = argparser()
     config.data_root = dataset_path

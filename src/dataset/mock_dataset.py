@@ -15,6 +15,7 @@ class VideoDataset(data.Dataset):
         self._action_dim = config.action_dim
         self._cache = LRUCache(1000)
         self._cf = config
+        self._horizon = config.n_past + config.n_future
 
     def __getitem__(self, index):
         path = self._files[index]
@@ -22,19 +23,37 @@ class VideoDataset(data.Dataset):
         if item is not None:
             return item
         with h5py.File(path, "r") as hf:
-            frames = np.zeros(hf["frames"].shape, dtype=np.uint8)
-            hf["frames"].read_direct(frames)
+            # first check how long video is
+            ep_len = hf["frames"].shape[0]
+            assert ep_len >= self._horizon, f"{ep_len}, {path}"
+            # if video is longer than horizon, sample a starting point
+            start = 0
+            end = self._horizon
+            frames_shape = list(hf["frames"].shape)
+            robot_shape = list(hf["robot"].shape)
+            actions_shape = list(hf["actions"].shape)
+            if ep_len > self._horizon:
+                offset = ep_len - self._horizon
+                start = np.random.randint(0, offset + 1)
+                end = start + self._horizon
+                frames_shape[0] = robot_shape[0] = self._horizon
+                actions_shape[0] = self._horizon - 1
+
             # frames should be L x C x H x W
+            frames = np.zeros(frames_shape, dtype=np.uint8)
+            hf["frames"].read_direct(frames, source_sel=np.s_[start:end])
             frames = self._img_transforms(frames)
-            robot = np.asarray(hf["robot"][:], dtype=np.float32)
-            actions = np.asarray(hf["actions"][:], dtype=np.float32)
+
+            robot = np.zeros(robot_shape, dtype=np.float32)
+            hf["robot"].read_direct(robot, source_sel=np.s_[start:end])
+
+            actions = np.zeros(actions_shape, dtype=np.float32)
+            hf["actions"].read_direct(actions, source_sel=np.s_[start:end - 1])
 
         # double check dimensions of data
         assert robot.shape[0] == frames.shape[0], f"{robot.shape}, {frames.shape}"
         assert robot.shape[0] - 1 == actions.shape[0], f"{robot.shape}, {actions.shape}"
-        assert (
-            frames.shape[0] == self._cf.n_past + self._cf.n_future
-        ), f"{path}, {frames.shape}"
+        assert frames.shape[0] == self._horizon, f"{path}, {frames.shape}"
         assert frames.shape[1] == self._cf.channels, f"{path}, {frames.shape}"
         assert frames.shape[2] == self._cf.image_width, f"{path}, {frames.shape}"
         assert actions.shape[-1] == self._cf.action_dim, f"{path}, {actions.shape}"
