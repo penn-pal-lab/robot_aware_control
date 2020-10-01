@@ -1,5 +1,5 @@
 import argparse
-
+from argparse import ArgumentParser
 
 def str2bool(v):
     return v.lower() == "true"
@@ -38,7 +38,7 @@ def create_parser():
     return parser
 
 
-def add_method_arguments(parser):
+def add_method_arguments(parser: ArgumentParser):
     # method arguments
     parser.add_argument(
         "--reward_type",
@@ -87,7 +87,9 @@ def add_method_arguments(parser):
 
 
 # Env Hyperparameters
-def add_fetch_push_arguments(parser):
+def add_fetch_push_arguments(parser: ArgumentParser):
+    # override prediction dimension stuff
+    parser.set_defaults(robot_dim=6, robot_enc_dim=6)
     parser.add_argument("--img_dim", type=int, default=128)
     parser.add_argument(
         "--camera_name",
@@ -168,8 +170,8 @@ def add_prediction_arguments(parser):
     parser.add_argument("--action_dim", type=int, default=3)
     parser.add_argument("--action_enc_dim", type=int, default=3)
 
-    parser.add_argument("--robot_dim", type=int, default=3)
-    parser.add_argument("--robot_enc_dim", type=int, default=3)
+    parser.add_argument("--robot_dim", type=int, default=6)
+    parser.add_argument("--robot_enc_dim", type=int, default=6)
 
     parser.add_argument(
         "--beta", type=float, default=0.0001, help="weighting on KL to prior"

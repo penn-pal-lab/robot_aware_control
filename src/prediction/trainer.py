@@ -147,10 +147,7 @@ class PredictionTrainer(object):
 
     def train(self):
         """Training, Evaluation, Checkpointing loop"""
-        # TODO: evaluation code
-        # TODO: wandb logging code
         cf = self._config
-
         # load models and dataset
         self._step = self._load_checkpoint()
         self._setup_data()
@@ -160,7 +157,6 @@ class PredictionTrainer(object):
         for epoch in range(cf.niter):
             for model in self.all_models:
                 model.train()
-
             epoch_kld = epoch_mse = 0
             for i in range(cf.epoch_size):
                 data = next(self.training_batch_generator)
