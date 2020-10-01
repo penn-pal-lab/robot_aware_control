@@ -6,14 +6,13 @@ from gym import spaces, utils
 from mujoco_py.generated import const
 from PIL import Image, ImageFilter
 from skimage.filters import gaussian
-
 from src.env.fetch.fetch_env import FetchEnv
 from src.env.fetch.rotations import mat2euler
 from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
 
 MODEL_XML_PATH = os.path.join("fetch", "push.xml")
 LARGE_MODEL_XML_PATH = os.path.join("fetch", "large_push.xml")
-INVISIBLE_LARGE_MODEL_XML_PATH = os.path.join("fetch", "inivisble_large_push.xml")
+INVISIBLE_LARGE_MODEL_XML_PATH = os.path.join("fetch", "invisible_large_push.xml")
 
 
 class FetchPushEnv(FetchEnv, utils.EzPickle):
@@ -46,11 +45,12 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self._push_dist = config.push_dist
         self._background_img = None
         self._large_block = config.large_block
+        self._invisible_demo = config.invisible_demo
         xml_path = MODEL_XML_PATH
-        if self._large_block:
-            xml_path = LARGE_MODEL_XML_PATH
-        elif self._invisible_demo:
+        if self._invisible_demo:
             xml_path = INVISIBLE_LARGE_MODEL_XML_PATH
+        elif self._large_block:
+            xml_path = LARGE_MODEL_XML_PATH
 
         self._blur_width = self._img_dim * 2
         self._sigma = config.blur_sigma
@@ -73,20 +73,48 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         )
         utils.EzPickle.__init__(self)
         self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype="float32")
+        obs = self._get_obs()
+        if self._pixels_ob:
+            self.observation_space = spaces.Dict(
+                dict(
+                    desired_goal=spaces.Box(
+                        -np.inf,
+                        np.inf,
+                        shape=obs["achieved_goal"].shape,
+                        dtype=np.uint8,
+                    ),
+                    achieved_goal=spaces.Box(
+                        -np.inf,
+                        np.inf,
+                        shape=obs["achieved_goal"].shape,
+                        dtype=np.uint8,
+                    ),
+                    observation=spaces.Box(
+                        -np.inf, np.inf, shape=obs["observation"].shape, dtype=np.uint8
+                    ),
+                    robot=spaces.Box(-np.inf, np.inf, shape=(6,), dtype="float32"),
+                )
+            )
 
     def _get_obs(self):
+        # gripper positions
+        grip_pos = self.sim.data.get_site_xpos("robot0:grip")
+        dt = self.sim.nsubsteps * self.sim.model.opt.timestep
+        grip_velp = self.sim.data.get_site_xvelp("robot0:grip") * dt
+        grip_velr = self.sim.data.get_site_xvelr("robot0:grip") * dt
+        robot_qpos, robot_qvel = robot_get_obs(self.sim)
+        gripper_state = robot_qpos[-2:]
+        gripper_vel = robot_qvel[-2:] * dt
         if self._pixels_ob:
             obs = self.render("rgb_array")
+            robot = np.concatenate([grip_pos, grip_velp])
             return {
                 "observation": obs.copy(),
                 "achieved_goal": obs.copy(),
                 "desired_goal": self.goal.copy(),
+                "robot": robot.copy(),
             }
-        # positions
-        grip_pos = self.sim.data.get_site_xpos("robot0:grip")
-        dt = self.sim.nsubsteps * self.sim.model.opt.timestep
-        grip_velp = self.sim.data.get_site_xvelp("robot0:grip") * dt
-        robot_qpos, robot_qvel = robot_get_obs(self.sim)
+        # change to a scalar if the gripper is made symmetric
         if self.has_object:
             object_pos = self.sim.data.get_site_xpos("object0")
             # rotations
@@ -98,10 +126,6 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             object_rel_pos = object_pos - grip_pos
             object_velp -= grip_velp
 
-        gripper_state = robot_qpos[-2:]
-        gripper_vel = (
-            robot_qvel[-2:] * dt
-        )  # change to a scalar if the gripper is made symmetric
         achieved_goal = np.concatenate([object_pos, grip_pos])
         obs = np.concatenate(
             [
@@ -208,7 +232,10 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             w = self._blur_width
             t = (((w - 1) / 2) - 0.5) / s
             self._unblurred_goal = goal
-            goal = np.uint8(255 * gaussian(goal, sigma=s, truncate=t, mode="nearest", multichannel=True))
+            goal = np.uint8(
+                255
+                * gaussian(goal, sigma=s, truncate=t, mode="nearest", multichannel=True)
+            )
 
         # reset to previous state
         self.set_state(init_state)
@@ -281,7 +308,14 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
                 t = (((w - 1) / 2) - 0.5) / s
                 unblurred_ag = achieved_goal
                 achieved_goal = np.uint8(
-                    255 * gaussian(achieved_goal, sigma=s, truncate=t, mode="nearest", multichannel=True)
+                    255
+                    * gaussian(
+                        achieved_goal,
+                        sigma=s,
+                        truncate=t,
+                        mode="nearest",
+                        multichannel=True,
+                    )
                 )
                 blur_cost = np.linalg.norm(achieved_goal - goal)
                 d = blur_cost
@@ -407,12 +441,119 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         action = np.concatenate([action, [0]])
         super()._set_action(action)
 
-    def generate_demo(self, behavior, record, save_goal):
+    def _move(
+        self,
+        target,
+        history,
+        target_type="gripper",
+        max_time=100,
+        threshold=0.01,
+        speed=10,
+    ):
+        if target_type == "gripper":
+            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
+            d = target - gripper_xpos
+        elif target_type == "object":
+            object_xpos = self.sim.data.get_site_xpos("object0").copy()
+            d = target - object_xpos
+        step = 0
+        while np.linalg.norm(d) > threshold and step < max_time:
+            # add some random noise to ac
+            # ac = d + np.random.uniform(-0.03, 0.03, size=3)
+            ac = d * speed
+            history["ac"].append(ac)
+            obs, _, _, info = self.step(ac)
+            history["obs"].append(obs)
+            for k, v in info.items():
+                history[k].append(v)
+            self._vr.capture_frame()
+            if self._record:
+                history["frame"].append(self._vr.last_frame)
+            if target_type == "gripper":
+                gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
+                d = target - gripper_xpos
+            elif target_type == "object":
+                object_xpos = self.sim.data.get_site_xpos("object0").copy()
+                d = target - object_xpos
+            step += 1
+
+        if np.linalg.norm(d) > threshold:
+            print("move failed")
+        elif self._behavior == "push" and target_type == "object":
+            goal_dist = np.linalg.norm(object_xpos - self.goal_pose["object"])
+            print("goal object dist after push", goal_dist)
+
+    def occlude(self, history):
+        # move gripper above cube
+        gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+        gripper_target = gripper_xpos + [0, 0, 0.048]
+        self._move(gripper_target, history)
+        # move gripper to occlude the cube
+        gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+        gripper_target = gripper_xpos + [0.15, 0, 0]
+        self._move(gripper_target, history)
+        # move gripper downwards
+        gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+        gripper_target = gripper_xpos + [0, 0, -0.061]
+        self._move(gripper_target, history)
+
+    def occlude_all(self, history):
+        # move gripper above cube
+        gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+        gripper_target = gripper_xpos + [0, 0, 0.05]
+        self._move(gripper_target, history)
+        # move gripper to occlude the cube
+        gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+        gripper_target = gripper_xpos + [0.25, 0, 0]
+        self._move(gripper_target, history, speed=10, threshold=0.025)
+        # move gripper downwards
+        gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+        gripper_target = gripper_xpos + [0, 0, -0.061]
+        self._move(gripper_target, history, threshold=0.02)
+
+    def push(self, history):
+        # move gripper to center of cube
+        gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
+        block_xpos = self.sim.data.get_site_xpos("object0").copy()
+        gripper_target = gripper_xpos
+        gripper_target[0] = block_xpos[0]
+        self._move(gripper_target, history)
+        # push the block
+        obj_target = self.goal_pose["object"]
+        if self._large_block:
+            self._move(
+                obj_target,
+                history,
+                target_type="object",
+                speed=10,
+                threshold=0.015,
+            )
+        else:
+            self._move(
+                obj_target,
+                history,
+                target_type="object",
+                speed=10,
+                threshold=0.003,
+            )
+
+    def only_robot(self, history):
+        # move gripper above cube
+        gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+        gripper_target = gripper_xpos + [0, 0, 0.07]
+        self._move(gripper_target, self._history)
+        # move gripper to target robot pos
+        gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
+        gripper_target = self.goal_pose["gripper"]
+        self._move(gripper_target, self._history, speed=10, threshold=0.025)
+
+    def generate_demo(self, behavior, record=False, save_goal=False):
         """
         Behaviors: occlude, occlude_all, push, only robot move to goal
         """
-        from src.utils.video_recorder import VideoRecorder
         from collections import defaultdict
+
+        from src.utils.video_recorder import VideoRecorder
 
         title_dict = {
             "weighted": f"Don't Care a={self._robot_pixel_weight}",
@@ -423,12 +564,15 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         }
         size = "large" if self._large_block else "small"
         vp = "multi" if self._multiview else "single"
-        vr = VideoRecorder(
+        self._vr = vr = VideoRecorder(
             self, path=f"{size}_{behavior}_{vp}_view.mp4", enabled=record
         )
-        self.reset()
+        self._record = record
+        self._behavior = behavior
+        obs = self.reset()
         # self.render("human")
-        history = defaultdict(list)
+        self._history = history = defaultdict(list)
+        history["obs"].append(obs)
         vr.capture_frame()
         if record:
             history["frame"].append(vr.last_frame)
@@ -437,107 +581,6 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             imageio.imwrite(
                 f"{size}_{title_dict[self.reward_type]}_goal.png", history["goal"]
             )
-
-        def move(
-            target,
-            history,
-            target_type="gripper",
-            max_time=100,
-            threshold=0.01,
-            speed=10,
-        ):
-            if target_type == "gripper":
-                gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
-                d = target - gripper_xpos
-            elif target_type == "object":
-                object_xpos = self.sim.data.get_site_xpos("object0").copy()
-                d = target - object_xpos
-            step = 0
-            while np.linalg.norm(d) > threshold and step < max_time:
-                # add some random noise to ac
-                # ac = d + np.random.uniform(-0.03, 0.03, size=3)
-                ac = d * speed
-                _, _, _, info = self.step(ac)
-                # self.render("human")
-                for k, v in info.items():
-                    history[k].append(v)
-                vr.capture_frame()
-                if record:
-                    history["frame"].append(vr.last_frame)
-                if target_type == "gripper":
-                    gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
-                    d = target - gripper_xpos
-                elif target_type == "object":
-                    object_xpos = self.sim.data.get_site_xpos("object0").copy()
-                    d = target - object_xpos
-                # print(np.linalg.norm(d))
-                step += 1
-
-            if np.linalg.norm(d) > threshold:
-                print("move failed")
-            elif behavior == "push" and target_type == "object":
-                goal_dist = np.linalg.norm(object_xpos - self.goal_pose["object"])
-                print("goal object dist after push", goal_dist)
-
-        def occlude():
-            # move gripper above cube
-            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
-            gripper_target = gripper_xpos + [0, 0, 0.048]
-            move(gripper_target, history)
-            # move gripper to occlude the cube
-            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
-            gripper_target = gripper_xpos + [0.15, 0, 0]
-            move(gripper_target, history)
-            # move gripper downwards
-            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
-            gripper_target = gripper_xpos + [0, 0, -0.061]
-            move(gripper_target, history)
-            vr.close()
-
-        def occlude_all():
-            # move gripper above cube
-            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
-            gripper_target = gripper_xpos + [0, 0, 0.05]
-            move(gripper_target, history)
-            # move gripper to occlude the cube
-            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
-            gripper_target = gripper_xpos + [0.25, 0, 0]
-            move(gripper_target, history, speed=10, threshold=0.025)
-            # move gripper downwards
-            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
-            gripper_target = gripper_xpos + [0, 0, -0.061]
-            move(gripper_target, history, threshold=0.02)
-            vr.close()
-
-        def push():
-            # move gripper to center of cube
-            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
-            block_xpos = self.sim.data.get_site_xpos("object0").copy()
-            gripper_target = gripper_xpos
-            gripper_target[0] = block_xpos[0]
-            move(gripper_target, history)
-            # push the block
-            obj_target = self.goal_pose["object"]
-            if self._large_block:
-                move(
-                    obj_target, history, target_type="object", speed=20, threshold=0.015
-                )
-            else:
-                move(
-                    obj_target, history, target_type="object", speed=10, threshold=0.003
-                )
-            vr.close()
-
-        def only_robot():
-            # move gripper above cube
-            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
-            gripper_target = gripper_xpos + [0, 0, 0.07]
-            move(gripper_target, history)
-            # move gripper to target robot pos
-            gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
-            gripper_target = self.goal_pose["gripper"]
-            move(gripper_target, history, speed=10, threshold=0.025)
-            vr.close()
 
         def rollout(history, path):
             frames = history["frame"]
@@ -580,13 +623,14 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             plt.close("all")
 
         if behavior == "occlude":
-            occlude()
+            self.occlude(history)
         elif behavior == "push":
-            push()
+            self.push(history)
         elif behavior == "occlude_all":
-            occlude_all()
+            self.occlude_all(history)
         elif behavior == "only_robot":
-            only_robot()
+            self.only_robot(history)
+        self._vr.close()
         # rollout(history, f"{title_dict[self.reward_type]}_{behavior}.png")
         return history
 
@@ -755,28 +799,100 @@ def plot_costs_per_behavior():
         plt.savefig(f"{size}_{behavior}_costs.png")
         plt.close("all")
 
+
 def collect_invisible_trajectories():
     """
     Collect invisible robot block pushing
     """
+    from multiprocessing import Process
+
+    import h5py
+    from tqdm import tqdm
+
+    num_trajectories = 1000  # per worker
+    num_workers = 2
+
+    config, _ = argparser()
+    config.invisible_demo = True
+    config.large_block = True
+    config.demo_dir = "demos/fetch_push"
+    os.makedirs(config.demo_dir, exist_ok=True)
+    config.seed = 0
+    env = FetchPushEnv(config)
+
+    for i in tqdm(range(num_trajectories)):
+        history = env.generate_demo("push", record=False)
+        name = f"fetchpush_{i}.hdf5"
+        path = os.path.join(config.demo_dir, name)
+        obs = history["obs"] # array of observation dictionaries
+        # print(f"traj len: {len(obs)}")
+        frames = []
+        robot = []
+        for ob in obs:
+            frames.append(ob["observation"])
+            robot.append(ob["robot"])
+
+        frames = np.asarray(frames)
+        robot = np.asarray(robot)
+        actions = history["ac"]
+        assert len(frames) - 1 == len(actions)
+        # TODO: make demos X horizon long no matter what
+        with h5py.File(path, "w") as hf:
+            hf.create_dataset("frames", data=frames)
+            hf.create_dataset("robot", data=robot)
+            hf.create_dataset("actions", data=actions)
+
+    # def collect_trajectory(rank, config, num_trajectories):
+    #     config.seed = rank
+    #     env = FetchPushEnv(config)
+    #     it = range(num_trajectories)
+    #     if rank == 0:
+    #         it = tqdm(it)
+
+    #     for i in it:
+    #         history = env.generate_demo("push", record=False)
+    #         name = f"fetchpush_{rank}_{i}.hdf5"
+    #         path = os.path.join(config.demo_dir, name)
+    #         obs = history["obs"]
+    #         actions = history["ac"]
+    #         assert len(obs) - 1 == actions
+
+    #         with h5py.File(path, "w") as hf:
+    #             hf.create_dataset("frames", data=history["frames"])
+    #             hf.create_dataset("agent_state", data=history["robot"])
+    #             hf.create_dataset("actions", data=actions)
+
+    # ps = []
+    # for i in range(num_workers):
+    #     p = Process(target=collect_trajectory, args=(i, config, num_trajectories))
+    #     ps.append(p)
+
+    # for p in ps:
+    #     p.start()
+
+    # for p in ps:
+    #     p.join()
+
 
 if __name__ == "__main__":
-    from src.config import argparser
-    import imageio
-    from time import time
-    from copy import deepcopy
     from collections import defaultdict
+    from copy import deepcopy
+    from time import time
+
+    import imageio
     from PIL import Image
+    from src.config import argparser
 
     # plot_behaviors_per_cost()
     # plot_costs_per_behavior()
-    config, _ = argparser()
-    env = FetchPushEnv(config)
-    env.reset()
-    env.render("human")
-    while True:
-        env.step(env.action_space.sample())
-        env.render("human")
+    collect_invisible_trajectories()
+    # config, _ = argparser()
+    # env = FetchPushEnv(config)
+    # env.reset()
+    # env.render("human")
+    # while True:
+    #     env.step(env.action_space.sample())
+    #     env.render("human")
 
     # img_width = 256
     # s = 5
