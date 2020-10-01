@@ -1,5 +1,6 @@
 import os
-
+import h5py
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 from gym import spaces, utils
@@ -449,6 +450,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         max_time=100,
         threshold=0.01,
         speed=10,
+        noise=False,
     ):
         if target_type == "gripper":
             gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
@@ -459,7 +461,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         step = 0
         while np.linalg.norm(d) > threshold and step < max_time:
             # add some random noise to ac
-            # ac = d + np.random.uniform(-0.03, 0.03, size=3)
+            if noise:
+                d += np.random.uniform(-0.05, 0.05, size=3)
             ac = d * speed
             history["ac"].append(ac)
             obs, _, _, info = self.step(ac)
@@ -477,11 +480,11 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
                 d = target - object_xpos
             step += 1
 
-        if np.linalg.norm(d) > threshold:
-            print("move failed")
-        elif self._behavior == "push" and target_type == "object":
-            goal_dist = np.linalg.norm(object_xpos - self.goal_pose["object"])
-            print("goal object dist after push", goal_dist)
+        # if np.linalg.norm(d) > threshold:
+        #     print("move failed")
+        # elif self._behavior == "push" and target_type == "object":
+        #     goal_dist = np.linalg.norm(object_xpos - self.goal_pose["object"])
+        #     print("goal object dist after push", goal_dist)
 
     def occlude(self, history):
         # move gripper above cube
@@ -527,6 +530,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
                 target_type="object",
                 speed=10,
                 threshold=0.015,
+                noise=True,
+                max_time=13,
             )
         else:
             self._move(
@@ -547,7 +552,20 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         gripper_target = self.goal_pose["gripper"]
         self._move(gripper_target, self._history, speed=10, threshold=0.025)
 
-    def generate_demo(self, behavior, record=False, save_goal=False):
+    def random_robot(self, history, ep_len):
+        # randomly move the robot around
+        for i in range(ep_len):
+            ac = self.action_space.sample()
+            history["ac"].append(ac)
+            obs, _, _, info = self.step(ac)
+            self._vr.capture_frame()
+            history["obs"].append(obs)
+            for k, v in info.items():
+                history[k].append(v)
+
+    def generate_demo(
+        self, behavior, record=False, save_goal=False, record_path=None, ep_len=None
+    ):
         """
         Behaviors: occlude, occlude_all, push, only robot move to goal
         """
@@ -564,9 +582,9 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         }
         size = "large" if self._large_block else "small"
         vp = "multi" if self._multiview else "single"
-        self._vr = vr = VideoRecorder(
-            self, path=f"{size}_{behavior}_{vp}_view.mp4", enabled=record
-        )
+        if record_path is None:
+            record_path = f"{size}_{behavior}_{vp}_view.mp4"
+        self._vr = vr = VideoRecorder(self, path=record_path, enabled=record)
         self._record = record
         self._behavior = behavior
         obs = self.reset()
@@ -630,6 +648,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             self.occlude_all(history)
         elif behavior == "only_robot":
             self.only_robot(history)
+        elif behavior == "random_robot":
+            self.random_robot(history, ep_len)
         self._vr.close()
         # rollout(history, f"{title_dict[self.reward_type]}_{behavior}.png")
         return history
@@ -800,32 +820,24 @@ def plot_costs_per_behavior():
         plt.close("all")
 
 
-def collect_invisible_trajectories():
-    """
-    Collect invisible robot block pushing
-    """
-    from multiprocessing import Process
-
-    import h5py
-    from tqdm import tqdm
-
-    num_trajectories = 1000  # per worker
-    num_workers = 2
-
-    config, _ = argparser()
-    config.invisible_demo = True
-    config.large_block = True
-    config.demo_dir = "demos/fetch_push"
-    os.makedirs(config.demo_dir, exist_ok=True)
-    config.seed = 0
+def collect_trajectory(rank, config, behavior, record, num_trajectories, ep_len):
+    config.seed = rank
     env = FetchPushEnv(config)
-
-    for i in tqdm(range(num_trajectories)):
-        history = env.generate_demo("push", record=False)
-        name = f"fetchpush_{i}.hdf5"
+    len_stats = []
+    it = range(num_trajectories)
+    if rank == 0:
+        it = tqdm(it)
+    for i in it:
+        # only record first episode for sanity check
+        record = rank == 0 and i == 0 and record
+        name = f"{behavior}_{rank}_{i}.hdf5"
         path = os.path.join(config.demo_dir, name)
-        obs = history["obs"] # array of observation dictionaries
-        # print(f"traj len: {len(obs)}")
+        record_path = f"videos/{behavior}_{config.seed}_{i}.mp4"
+        history = env.generate_demo(
+            behavior, record=record, record_path=record_path, ep_len=ep_len
+        )
+        obs = history["obs"]  # array of observation dictionaries
+        len_stats.append(len(obs))
         frames = []
         robot = []
         for ob in obs:
@@ -836,42 +848,54 @@ def collect_invisible_trajectories():
         robot = np.asarray(robot)
         actions = history["ac"]
         assert len(frames) - 1 == len(actions)
-        # TODO: make demos X horizon long no matter what
         with h5py.File(path, "w") as hf:
-            hf.create_dataset("frames", data=frames)
-            hf.create_dataset("robot", data=robot)
-            hf.create_dataset("actions", data=actions)
+            hf.create_dataset("frames", data=frames, compression="gzip")
+            hf.create_dataset("robot", data=robot, compression="gzip")
+            hf.create_dataset("actions", data=actions, compression="gzip")
 
-    # def collect_trajectory(rank, config, num_trajectories):
-    #     config.seed = rank
-    #     env = FetchPushEnv(config)
-    #     it = range(num_trajectories)
-    #     if rank == 0:
-    #         it = tqdm(it)
+    # print out stats about the dataset
+    stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}"
+    print(stats_str)
+    stats_path = os.path.join(config.demo_dir, f"stats_{behavior}_{config.seed}.txt")
+    with open(stats_path, "w") as f:
+        f.write(stats_str)
 
-    #     for i in it:
-    #         history = env.generate_demo("push", record=False)
-    #         name = f"fetchpush_{rank}_{i}.hdf5"
-    #         path = os.path.join(config.demo_dir, name)
-    #         obs = history["obs"]
-    #         actions = history["ac"]
-    #         assert len(obs) - 1 == actions
 
-    #         with h5py.File(path, "w") as hf:
-    #             hf.create_dataset("frames", data=history["frames"])
-    #             hf.create_dataset("agent_state", data=history["robot"])
-    #             hf.create_dataset("actions", data=actions)
+def collect_trajectories():
+    """
+    Collect invisible robot block pushing
+    """
+    from multiprocessing import Process
 
-    # ps = []
-    # for i in range(num_workers):
-    #     p = Process(target=collect_trajectory, args=(i, config, num_trajectories))
-    #     ps.append(p)
+    num_trajectories = 50  # per worker
+    num_workers = 2
+    record = True
+    behavior = "push"
+    ep_len = 12  # gonna be off by -1 because of reset but whatever
 
-    # for p in ps:
-    #     p.start()
+    config, _ = argparser()
+    config.invisible_demo = True
+    config.large_block = True
+    config.demo_dir = "demos/fetch_push"
+    os.makedirs(config.demo_dir, exist_ok=True)
 
-    # for p in ps:
-    #     p.join()
+    ps = []
+    for i in range(num_workers):
+        if i % 2 == 0:
+            behavior = "random_robot"
+        else:
+            behavior = "push"
+        p = Process(
+            target=collect_trajectory,
+            args=(i, config, behavior, record, num_trajectories, ep_len),
+        )
+        ps.append(p)
+
+    for p in ps:
+        p.start()
+
+    for p in ps:
+        p.join()
 
 
 if __name__ == "__main__":
@@ -885,7 +909,7 @@ if __name__ == "__main__":
 
     # plot_behaviors_per_cost()
     # plot_costs_per_behavior()
-    collect_invisible_trajectories()
+    collect_trajectories()
     # config, _ = argparser()
     # env = FetchPushEnv(config)
     # env.reset()
