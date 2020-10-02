@@ -47,10 +47,10 @@ def get_batch(loader, device):
         for sequence in loader:
             # transpose from (B, L, C, W, H) to (L, B, C, W, H)
             frames, robots, actions = sequence
-            frames.transpose_(1,0).to(device)
-            robots.transpose_(1,0).to(device)
-            actions.transpose_(1,0).to(device)
-            yield sequence
+            frames = frames.transpose_(1,0).to(device)
+            robots = robots.transpose_(1,0).to(device)
+            actions = actions.transpose_(1,0).to(device)
+            yield frames, robots, actions
 
 if __name__ == "__main__":
     import numpy as np
