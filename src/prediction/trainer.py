@@ -51,8 +51,9 @@ class PredictionTrainer(object):
         """
 
         def parallel(model):
-            if torch.cuda.device_count() > 1:
-                return torch.nn.DataParallel(model)
+            #if torch.cuda.device_count() > 1:
+            #    self._logger.info("Using multiple GPUs!")
+            #    return torch.nn.DataParallel(model)
             return model
 
         self.frame_predictor = frame_pred = parallel(
@@ -215,7 +216,7 @@ class PredictionTrainer(object):
                 "prior": self.prior,
                 "step": self._step,
             },
-            self._config.log_dir,
+            path,
         )
 
     def _load_checkpoint(self, ckpt_path=None):
