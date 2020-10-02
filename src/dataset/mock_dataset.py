@@ -13,7 +13,7 @@ class VideoDataset(data.Dataset):
         # shift [0,1] to [-1,1]
         self._img_transforms = tf.Compose([tf.Lambda(seq_to_tensor)])
         self._action_dim = config.action_dim
-        self._cache = LRUCache(1000)
+        self._cache = LRUCache(100000)
         self._cf = config
         self._horizon = config.n_past + config.n_future
 

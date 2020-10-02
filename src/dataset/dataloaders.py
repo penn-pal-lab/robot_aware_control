@@ -63,7 +63,7 @@ if __name__ == "__main__":
     ep_len = 10
     for i in range(20):
         # video frames of length 10
-        frames = np.ones((ep_len, 128, 128, 3), dtype=np.uint8) * i
+        frames = np.ones((ep_len, 128, 128, 3), dtype=np.uint8) * 255 *  i // 20
         robot_state = np.ones((ep_len, 3)) * i
         actions = np.ones((ep_len - 1,3)) * i
         # create a mock dataset hdf5 file
@@ -85,6 +85,6 @@ if __name__ == "__main__":
         pin_memory=True,
     )
 
-    generator = get_batch(train_loader)
-    data = next(generator)
-    print(data[0].shape)
+    #generator = get_batch(train_loader, config.device)
+    #data = next(generator)
+    #print(data[0].shape)
