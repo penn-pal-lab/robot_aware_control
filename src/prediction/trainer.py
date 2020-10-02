@@ -112,6 +112,10 @@ class PredictionTrainer(object):
         mse = 0
         kld = 0
         x, robot, ac = data
+        x.to(self._device)
+        robot.to(self._device)
+        ac.to(self._device)
+
         for i in range(1, cf.n_past + cf.n_future):
             h = self.encoder(x[i - 1])
             r = self.robot_enc(robot[i - 1])
@@ -265,6 +269,10 @@ class PredictionTrainer(object):
     def plot(self, data, epoch):
         cf = self._config
         x, robot, ac = data
+        x.to(self._device)
+        robot.to(self._device)
+        ac.to(self._device)
+
         nsample = 1
         gen_seq = [[] for i in range(nsample)]
         gt_seq = [x[i] for i in range(len(x))]
@@ -354,6 +362,10 @@ class PredictionTrainer(object):
         """
         cf = self._config
         x, robot, ac = data
+        x.to(self._device)
+        robot.to(self._device)
+        ac.to(self._device)
+
         self.frame_predictor.hidden = self.frame_predictor.init_hidden()
         self.posterior.hidden = self.posterior.init_hidden()
         gen_seq = []
