@@ -49,48 +49,39 @@ class PredictionTrainer(object):
         - Add optimizer step() call
         - Update save and load ckpt code
         """
+        self.frame_predictor = frame_pred = LSTM(
+            cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim + cf.z_dim,
+            cf.g_dim,
+            cf.rnn_size,
+            cf.predictor_rnn_layers,
+            cf.batch_size,
+        ).to(self._device)
 
-        def parallel(model):
-            #if torch.cuda.device_count() > 1:
-            #    self._logger.info("Using multiple GPUs!")
-            #    return torch.nn.DataParallel(model)
-            return model
+        self.posterior = post = GaussianLSTM(
+            cf.robot_enc_dim + cf.g_dim,
+            cf.z_dim,
+            cf.rnn_size,
+            cf.posterior_rnn_layers,
+            cf.batch_size,
+        ).to(self._device)
 
-        self.frame_predictor = frame_pred = parallel(
-            LSTM(
-                cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim + cf.z_dim,
-                cf.g_dim,
-                cf.rnn_size,
-                cf.predictor_rnn_layers,
-                cf.batch_size,
-            ).to(self._device)
-        )
-        self.posterior = post = parallel(
-            GaussianLSTM(
-                cf.robot_enc_dim + cf.g_dim,
-                cf.z_dim,
-                cf.rnn_size,
-                cf.posterior_rnn_layers,
-                cf.batch_size,
-            ).to(self._device)
-        )
-        self.prior = prior = parallel(
-            GaussianLSTM(
-                cf.robot_enc_dim + cf.g_dim,
-                cf.z_dim,
-                cf.rnn_size,
-                cf.prior_rnn_layers,
-                cf.batch_size,
-            ).to(self._device)
-        )
-        self.encoder = enc = parallel(Encoder(cf.g_dim, cf.channels).to(self._device))
-        self.decoder = dec = parallel(Decoder(cf.g_dim, cf.channels).to(self._device))
+        self.prior = prior = GaussianLSTM(
+            cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim,
+            cf.z_dim,
+            cf.rnn_size,
+            cf.prior_rnn_layers,
+            cf.batch_size,
+        ).to(self._device)
+
+        self.encoder = enc = Encoder(cf.g_dim, cf.channels).to(self._device)
+        self.decoder = dec = Decoder(cf.g_dim, cf.channels).to(self._device)
         self.action_enc = ac = MLPEncoder(cf.action_dim, cf.action_enc_dim, 32).to(
             self._device
         )
-        self.robot_enc = rob = parallel(
-            MLPEncoder(cf.robot_dim, cf.robot_enc_dim, 32).to(self._device)
+        self.robot_enc = rob = MLPEncoder(cf.robot_dim, cf.robot_enc_dim, 32).to(
+            self._device
         )
+
         self.all_models = [frame_pred, post, prior, enc, dec, ac, rob]
 
         # initialize weights
@@ -141,7 +132,7 @@ class PredictionTrainer(object):
             else:
                 h = h[0]
             z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
-            _, mu_p, logvar_p = self.prior(cat([r, h], 1))
+            _, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
             h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
             x_pred = self.decoder([h_pred, skip])
             mse += mse_criterion(x_pred, x[i])
@@ -191,7 +182,6 @@ class PredictionTrainer(object):
             if epoch % cf.checkpoint_interval == 0 and epoch > 0:
                 self._logger.info(f"Saving checkpoint {epoch}")
                 self._save_checkpoint()
-
 
             # plot and evaluate on test set
             self.frame_predictor.eval()
@@ -282,6 +272,9 @@ class PredictionTrainer(object):
 
     @torch.no_grad()
     def plot(self, data, epoch):
+        """
+        Plot the generation with learned prior
+        """
         cf = self._config
         x, robot, ac = data
 
@@ -313,7 +306,7 @@ class PredictionTrainer(object):
                     x_in = x[i]
                     gen_seq[s].append(x_in)
                 else:
-                    z_t, _, _ = self.prior(cat([r, h], 1))
+                    z_t, _, _ = self.prior(cat([a, r, h], 1))
                     h = self.frame_predictor(cat([a, r, h, z_t], 1))
                     x_in = self.decoder([h, skip])
                     gen_seq[s].append(x_in)
@@ -370,7 +363,7 @@ class PredictionTrainer(object):
     @torch.no_grad()
     def plot_rec(self, data, epoch):
         """
-        Plot the 1 step reconstruction with teacher forcing
+        Plot the 1 step reconstruction with posterior instead of learned prior
         """
         cf = self._config
         x, robot, ac = data
