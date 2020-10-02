@@ -166,7 +166,7 @@ class PredictionTrainer(object):
                 epoch_kld += kld
                 self._step += 1
                 wandb.log({"mse": mse, "kld": kld}, step=self._step)
-                progress.update(i + 1)
+                progress.update()
 
             # log epoch statistics
             wandb.log({"epoch/mse": mse, "epoch/kld": kld}, step=self._step)
