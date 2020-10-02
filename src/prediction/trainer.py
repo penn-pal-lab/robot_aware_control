@@ -112,9 +112,6 @@ class PredictionTrainer(object):
         mse = 0
         kld = 0
         x, robot, ac = data
-        x.to(self._device)
-        robot.to(self._device)
-        ac.to(self._device)
 
         for i in range(1, cf.n_past + cf.n_future):
             h = self.encoder(x[i - 1])
@@ -262,16 +259,13 @@ class PredictionTrainer(object):
         Setup the dataset and dataloaders
         """
         train_loader, test_loader = create_loaders(config)
-        self.training_batch_generator = get_batch(train_loader)
-        self.testing_batch_generator = get_batch(test_loader)
+        self.training_batch_generator = get_batch(train_loader, self._device)
+        self.testing_batch_generator = get_batch(test_loader, self._device)
 
     @torch.no_grad()
     def plot(self, data, epoch):
         cf = self._config
         x, robot, ac = data
-        x.to(self._device)
-        robot.to(self._device)
-        ac.to(self._device)
 
         nsample = 1
         gen_seq = [[] for i in range(nsample)]
@@ -362,10 +356,6 @@ class PredictionTrainer(object):
         """
         cf = self._config
         x, robot, ac = data
-        x.to(self._device)
-        robot.to(self._device)
-        ac.to(self._device)
-
         self.frame_predictor.hidden = self.frame_predictor.init_hidden()
         self.posterior.hidden = self.posterior.init_hidden()
         gen_seq = []

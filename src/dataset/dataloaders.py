@@ -42,14 +42,14 @@ def create_loaders(config):
     )
     return train_loader, test_loader
 
-def get_batch(loader):
+def get_batch(loader, device):
     while True:
         for sequence in loader:
             # transpose from (B, L, C, W, H) to (L, B, C, W, H)
             frames, robots, actions = sequence
-            frames.transpose_(1,0)
-            robots.transpose_(1,0)
-            actions.transpose_(1,0)
+            frames.transpose_(1,0).to(device)
+            robots.transpose_(1,0).to(device)
+            actions.transpose_(1,0).to(device)
             yield sequence
 
 if __name__ == "__main__":
