@@ -1,6 +1,8 @@
+import logging
 import os
 from functools import partial
 
+import colorlog
 import ipdb
 import numpy as np
 import torch
@@ -37,6 +39,7 @@ class PredictionTrainer(object):
             dir=config.log_dir,
             entity=config.wandb_entity,
         )
+        self._logger = colorlog.getLogger("file/console")
 
     def _init_models(self, cf):
         """Initialize models and optimizers
@@ -46,34 +49,46 @@ class PredictionTrainer(object):
         - Add optimizer step() call
         - Update save and load ckpt code
         """
-        self.frame_predictor = frame_pred = LSTM(
-            cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim + cf.z_dim,
-            cf.g_dim,
-            cf.rnn_size,
-            cf.predictor_rnn_layers,
-            cf.batch_size,
-        ).to(self._device)
-        self.posterior = post = GaussianLSTM(
-            cf.robot_enc_dim + cf.g_dim,
-            cf.z_dim,
-            cf.rnn_size,
-            cf.posterior_rnn_layers,
-            cf.batch_size,
-        ).to(self._device)
-        self.prior = prior = GaussianLSTM(
-            cf.robot_enc_dim + cf.g_dim,
-            cf.z_dim,
-            cf.rnn_size,
-            cf.prior_rnn_layers,
-            cf.batch_size,
-        ).to(self._device)
-        self.encoder = enc = Encoder(cf.g_dim, cf.channels).to(self._device)
-        self.decoder = dec = Decoder(cf.g_dim, cf.channels).to(self._device)
+
+        def parallel(model):
+            if torch.cuda.device_count() > 1:
+                return torch.nn.DataParallel(model)
+            return model
+
+        self.frame_predictor = frame_pred = parallel(
+            LSTM(
+                cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim + cf.z_dim,
+                cf.g_dim,
+                cf.rnn_size,
+                cf.predictor_rnn_layers,
+                cf.batch_size,
+            ).to(self._device)
+        )
+        self.posterior = post = parallel(
+            GaussianLSTM(
+                cf.robot_enc_dim + cf.g_dim,
+                cf.z_dim,
+                cf.rnn_size,
+                cf.posterior_rnn_layers,
+                cf.batch_size,
+            ).to(self._device)
+        )
+        self.prior = prior = parallel(
+            GaussianLSTM(
+                cf.robot_enc_dim + cf.g_dim,
+                cf.z_dim,
+                cf.rnn_size,
+                cf.prior_rnn_layers,
+                cf.batch_size,
+            ).to(self._device)
+        )
+        self.encoder = enc = parallel(Encoder(cf.g_dim, cf.channels).to(self._device))
+        self.decoder = dec = parallel(Decoder(cf.g_dim, cf.channels).to(self._device))
         self.action_enc = ac = MLPEncoder(cf.action_dim, cf.action_enc_dim, 32).to(
             self._device
         )
-        self.robot_enc = rob = MLPEncoder(cf.robot_dim, cf.robot_enc_dim, 32).to(
-            self._device
+        self.robot_enc = rob = parallel(
+            MLPEncoder(cf.robot_dim, cf.robot_enc_dim, 32).to(self._device)
         )
         self.all_models = [frame_pred, post, prior, enc, dec, ac, rob]
 
@@ -169,11 +184,13 @@ class PredictionTrainer(object):
                 progress.update()
 
             # log epoch statistics
-            wandb.log({"epoch/mse": mse, "epoch/kld": kld}, step=self._step)
-
+            wandb.log({"epoch/mse": epoch_mse, "epoch/kld": epoch_kld}, step=self._step)
+            self._logger.info(f"Epoch {epoch}, mse: {epoch_mse}, kld: {epoch_kld}")
             # checkpoint
             if epoch % cf.checkpoint_interval == 0 and epoch > 0:
+                self._logger.info(f"Saving checkpoint {epoch}")
                 self._save_checkpoint()
+
 
             # plot and evaluate on test set
             self.frame_predictor.eval()
@@ -393,10 +410,6 @@ class PredictionTrainer(object):
 
 
 def make_log_folder(config):
-    import logging
-
-    import colorlog
-
     # make folder for exp logs
     formatter = colorlog.ColoredFormatter(
         "%(log_color)s[%(asctime)s] %(message)s",
