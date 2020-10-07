@@ -100,6 +100,7 @@ def add_fetch_push_arguments(parser: ArgumentParser):
     parser.add_argument("--multiview", type=str2bool, default=False)
     parser.add_argument("--camera_ids", type=str2intlist, default=[0, 4])
     parser.add_argument("--pixels_ob", type=str2bool, default=True)
+    parser.add_argument("--norobot_pixels_ob", type=str2bool, default=False)
     parser.add_argument("--object_dist_threshold", type=float, default=0.01)
     parser.add_argument("--gripper_dist_threshold", type=float, default=0.025)
     parser.add_argument("--push_dist", type=float, default=0.2)

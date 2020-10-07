@@ -11,7 +11,6 @@ from src.dataset.dataloaders import create_loaders, get_batch
 from src.prediction.losses import kl_criterion, mse_criterion
 from src.prediction.models.base import MLPEncoder, init_weights
 from src.prediction.models.lstm import LSTM, GaussianLSTM
-from src.prediction.models.vgg import Decoder, Encoder
 from src.utils.plot import save_gif, save_tensors_image
 from torch import cat, optim
 from tqdm import tqdm
@@ -73,8 +72,17 @@ class PredictionTrainer(object):
             cf.batch_size,
         ).to(self._device)
 
-        self.encoder = enc = Encoder(cf.g_dim, cf.channels).to(self._device)
-        self.decoder = dec = Decoder(cf.g_dim, cf.channels).to(self._device)
+        if cf.image_width == 64:
+            from src.prediction.models.vgg_64 import Decoder, Encoder
+        elif cf.image_width == 128:
+            from src.prediction.models.vgg import Decoder, Encoder
+
+        self.encoder = enc = Encoder(cf.g_dim, cf.channels, cf.multiview).to(
+            self._device
+        )
+        self.decoder = dec = Decoder(cf.g_dim, cf.channels, cf.multiview).to(
+            self._device
+        )
         self.action_enc = ac = MLPEncoder(cf.action_dim, cf.action_enc_dim, 32).to(
             self._device
         )
@@ -166,7 +174,7 @@ class PredictionTrainer(object):
             for model in self.all_models:
                 model.train()
             epoch_kld = epoch_mse = 0
-            for i in range(cf.epoch_size):
+            for _ in range(cf.epoch_size):
                 data = next(self.training_batch_generator)
                 mse, kld = self._train_step(data)
                 epoch_mse += mse
@@ -238,7 +246,7 @@ class PredictionTrainer(object):
             path = None
             for f in files:
                 name = f.split(".")[0]
-                num = name.rsplit("_", 1)[-1]
+                num = int(name.rsplit("_", 1)[-1])
                 if max_step > num:
                     max_step = num
                     path = f
@@ -255,7 +263,6 @@ class PredictionTrainer(object):
                 load_models(ckpt)
                 step = ckpt["step"]
                 return step
-
         else:
             ckpt = torch.load(ckpt_path)
             load_models(ckpt)

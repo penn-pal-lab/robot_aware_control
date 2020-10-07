@@ -38,6 +38,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self._multiview = config.multiview
         self._camera_ids = config.camera_ids
         self._pixels_ob = config.pixels_ob
+        self._norobot_pixels_ob = config.norobot_pixels_ob
         self._distance_threshold = {
             "object": config.object_dist_threshold,
             "gripper": config.gripper_dist_threshold,
@@ -107,7 +108,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         gripper_state = robot_qpos[-2:]
         gripper_vel = robot_qvel[-2:] * dt
         if self._pixels_ob:
-            obs = self.render("rgb_array")
+            obs = self.render("rgb_array", remove_robot=self._norobot_pixels_ob)
             robot = np.concatenate([grip_pos, grip_velp])
             return {
                 "observation": obs.copy(),
@@ -247,11 +248,21 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
     def render(
         self,
         mode="rgb_array",
-        width=512,
-        height=512,
         camera_name=None,
         segmentation=False,
+        remove_robot=False
     ):
+        """
+        If remove_robot, then use inpaint and mask to remove robot pixels
+        remove_robot is used during dataset generation
+        """
+        if remove_robot:
+            img = self.render()
+            seg_mask = self.get_robot_mask()
+            # inpaint the img
+            img[seg_mask] = self._background_img[seg_mask]
+            return img
+
         if self._multiview:
             imgs = []
             for cam_id in self._camera_ids:
@@ -434,7 +445,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         if (
             self.reward_type in ["inpaint", "inpaint-blur"]
             and self._background_img is None
-        ):
+        ) or self._norobot_pixels_ob:
             self._background_img = self._get_background_img()
 
     def _set_action(self, action):
@@ -867,9 +878,9 @@ def collect_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 5000  # per worker
+    num_trajectories = 5000   # per worker
     num_workers = 20
-    record = True
+    record = False
     behavior = "push"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
 
@@ -898,25 +909,119 @@ def collect_trajectories():
         p.join()
 
 
+def collect_multiview_trajectory(
+    rank, config, behavior, record, num_trajectories, ep_len
+):
+    # save the background image for inpainting?
+    # save the robot segmentation mask?
+    # or just save the inpainted image directly?
+    config.seed = rank
+    env = FetchPushEnv(config)
+    len_stats = []
+    it = range(num_trajectories)
+    if rank == 0:
+        it = tqdm(it)
+    for i in it:
+        # only record first episode for sanity check
+        record = rank == 0 and i == 0 and record
+        name = f"{behavior}_{rank}_{i}.hdf5"
+        path = os.path.join(config.demo_dir, name)
+        record_path = f"videos/{behavior}_{config.seed}_{i}.mp4"
+        history = env.generate_demo(
+            behavior, record=record, record_path=record_path, ep_len=ep_len
+        )
+        obs = history["obs"]  # array of observation dictionaries
+        len_stats.append(len(obs))
+        frames = []
+        robot = []
+        for ob in obs:
+            frames.append(ob["observation"])
+            robot.append(ob["robot"])
+
+        frames = np.asarray(frames)
+        robot = np.asarray(robot)
+        actions = history["ac"]
+        assert len(frames) - 1 == len(actions)
+        with h5py.File(path, "w") as hf:
+            hf.create_dataset("frames", data=frames, compression="gzip")
+            hf.create_dataset("robot", data=robot, compression="gzip")
+            hf.create_dataset("actions", data=actions, compression="gzip")
+
+    # print out stats about the dataset
+    stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}"
+    print(stats_str)
+    stats_path = os.path.join(config.demo_dir, f"stats_{behavior}_{config.seed}.txt")
+    with open(stats_path, "w") as f:
+        f.write(stats_str)
+
+
+def collect_multiview_trajectories():
+    """
+    Collect multiview dataset with inpainting
+    """
+    from multiprocessing import Process
+
+    num_trajectories = 5000 # per worker
+    num_workers = 20
+    record = False
+    behavior = "random_robot"
+    ep_len = 12  # gonna be off by -1 because of reset but whatever
+
+    config, _ = argparser()
+    config.invisible_demo = True
+    config.large_block = True
+    config.demo_dir = "demos/fetch_push_mv"
+    config.multiview = True
+    config.norobot_pixels_ob = True
+    config.img_dim = 64
+    os.makedirs(config.demo_dir, exist_ok=True)
+
+    # if num_workers == 1:
+    #     collect_multiview_trajectory(0, config, behavior, record, num_trajectories, ep_len)
+    # else:
+    ps = []
+    for i in range(num_workers):
+        if i % 2 == 0:
+            behavior = "random_robot"
+        else:
+            behavior = "push"
+        p = Process(
+            target=collect_multiview_trajectory,
+            args=(i, config, behavior, record, num_trajectories, ep_len),
+        )
+        ps.append(p)
+
+    for p in ps:
+        p.start()
+
+    for p in ps:
+        p.join()
+
+
 if __name__ == "__main__":
     from collections import defaultdict
     from copy import deepcopy
-    from time import time
 
     import imageio
     from PIL import Image
     from src.config import argparser
+    from torchvision.transforms import ToTensor
 
     # plot_behaviors_per_cost()
     # plot_costs_per_behavior()
-    collect_trajectories()
+    # collect_trajectories()
+    collect_multiview_trajectories()
     # config, _ = argparser()
     # env = FetchPushEnv(config)
     # env.reset()
-    # env.render("human")
     # while True:
     #     env.step(env.action_space.sample())
-    #     env.render("human")
+    #     img = env.render("rgb_array").copy()
+    #     tensor = ToTensor()(img)
+    #     print(tensor.shape)
+    #     import ipdb
+
+    #     ipdb.set_trace()
 
     # img_width = 256
     # s = 5

@@ -55,7 +55,10 @@ class VideoDataset(data.Dataset):
         assert robot.shape[0] - 1 == actions.shape[0], f"{robot.shape}, {actions.shape}"
         assert frames.shape[0] == self._horizon, f"{path}, {frames.shape}"
         assert frames.shape[1] == self._cf.channels, f"{path}, {frames.shape}"
-        assert frames.shape[2] == self._cf.image_width, f"{path}, {frames.shape}"
+        if self._cf.multiview:
+            assert frames.shape[2] == 2 * self._cf.image_width, f"{path}, {frames.shape}"
+        else:
+            assert frames.shape[2] == self._cf.image_width, f"{path}, {frames.shape}"
         assert actions.shape[-1] == self._cf.action_dim, f"{path}, {actions.shape}"
         assert robot.shape[-1] == self._cf.robot_dim, f"{path}, {robot.shape}"
 
