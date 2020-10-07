@@ -1,6 +1,5 @@
 import os
 import h5py
-import ipdb
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
@@ -164,7 +163,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self.sim.forward()
         return True
 
-    def reset(self) -> dict:
+    def reset(self):
         obs = super().reset()
         self._use_unblur = False
         return obs
@@ -974,6 +973,7 @@ def collect_multiview_trajectories():
     config.demo_dir = "demos/fetch_push_mv"
     config.multiview = True
     config.norobot_pixels_ob = True
+    config.img_dim = 64
     os.makedirs(config.demo_dir, exist_ok=True)
 
     # if num_workers == 1:
