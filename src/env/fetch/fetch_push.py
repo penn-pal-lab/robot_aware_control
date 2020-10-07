@@ -878,8 +878,8 @@ def collect_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 10  # per worker
-    num_workers = 2
+    num_trajectories = 5000   # per worker
+    num_workers = 20
     record = False
     behavior = "push"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
@@ -961,8 +961,8 @@ def collect_multiview_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 10 # per worker
-    num_workers = 2
+    num_trajectories = 5000 # per worker
+    num_workers = 20
     record = False
     behavior = "random_robot"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
