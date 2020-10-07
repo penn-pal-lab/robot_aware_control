@@ -5,6 +5,7 @@ logs
 data
 
 # IDE
+*.swp
 .vscode
 
 # Byte-compiled / optimized / DLL files
