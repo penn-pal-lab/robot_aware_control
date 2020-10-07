@@ -98,6 +98,29 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
                 )
             )
 
+    def robot_kinematics(self, sim_state, action):
+        """
+        Calculates the forward kinematics of the robot state.
+        Does not actually affect the mujoco env.
+        sim_state: mujoco state
+        action: end effector control
+        """
+        action = np.clip(action, self.action_space.low, self.action_space.high)
+        self._set_action(action)
+        self.sim.step()
+        self._step_callback()
+        next_robot = self.get_robot_state()
+        next_sim_state = self.get_state()
+        self.set_state(sim_state)
+        return next_robot, next_sim_state
+
+    def get_robot_state(self):
+        grip_pos = self.sim.data.get_site_xpos("robot0:grip")
+        dt = self.sim.nsubsteps * self.sim.model.opt.timestep
+        grip_velp = self.sim.data.get_site_xvelp("robot0:grip") * dt
+        robot = np.concatenate([grip_pos, grip_velp])
+        return robot
+
     def _get_obs(self):
         # gripper positions
         grip_pos = self.sim.data.get_site_xpos("robot0:grip")
@@ -351,6 +374,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         return -d
 
     def compute_reward(self, achieved_goal, goal, info):
+        if self.reward_type == "none":
+            return 0
         if self._pixels_ob:
             if self.reward_type in [
                 "weighted",
@@ -968,7 +993,6 @@ def collect_multiview_trajectories():
     ep_len = 12  # gonna be off by -1 because of reset but whatever
 
     config, _ = argparser()
-    config.invisible_demo = True
     config.large_block = True
     config.demo_dir = "demos/fetch_push_mv"
     config.multiview = True
@@ -976,26 +1000,26 @@ def collect_multiview_trajectories():
     config.img_dim = 64
     os.makedirs(config.demo_dir, exist_ok=True)
 
-    # if num_workers == 1:
-    #     collect_multiview_trajectory(0, config, behavior, record, num_trajectories, ep_len)
-    # else:
-    ps = []
-    for i in range(num_workers):
-        if i % 2 == 0:
-            behavior = "random_robot"
-        else:
-            behavior = "push"
-        p = Process(
-            target=collect_multiview_trajectory,
-            args=(i, config, behavior, record, num_trajectories, ep_len),
-        )
-        ps.append(p)
+    if num_workers == 1:
+        collect_multiview_trajectory(0, config, behavior, record, num_trajectories, ep_len)
+    else:
+        ps = []
+        for i in range(num_workers):
+            if i % 2 == 0:
+                behavior = "random_robot"
+            else:
+                behavior = "push"
+            p = Process(
+                target=collect_multiview_trajectory,
+                args=(i, config, behavior, record, num_trajectories, ep_len),
+            )
+            ps.append(p)
 
-    for p in ps:
-        p.start()
+        for p in ps:
+            p.start()
 
-    for p in ps:
-        p.join()
+        for p in ps:
+            p.join()
 
 
 if __name__ == "__main__":
