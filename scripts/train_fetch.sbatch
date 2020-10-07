@@ -5,9 +5,9 @@
 #SBATCH --time=40:00:00
 #SBATCH --partition=dinesh-compute
 #SBATCH --qos=dinesh-high
-#SBATCH --job-name=acprior
-#SBATCH -o ./acprior.out
-#SBATCH -e ./acprior.out
+#SBATCH --job-name=mvseg
+#SBATCH -o ./mvseg.out
+#SBATCH -e ./mvseg.out
 
- python -m src.prediction.trainer --jobname acprior2 --wandb True --data_root demos/fetch_push --data_threads 3 --batch_size 16 --n_future 4 --n_past 1 --n_eval 5
+ python -m src.prediction.trainer --jobname mvseg --wandb True --data_root demos/fetch_push_mv --data_threads 3 --batch_size 16 --n_future 4 --n_past 1 --n_eval 5 --multiview True --image_width 64
 
