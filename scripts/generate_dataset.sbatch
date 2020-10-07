@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --cpus-per-task=20
+#SBATCH --cpus-per-task=25
 #SBATCH --time=20:00:00
 #SBATCH --partition=dinesh-compute
 #SBATCH --qos=dinesh-high
