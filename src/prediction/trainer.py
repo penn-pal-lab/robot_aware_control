@@ -255,7 +255,6 @@ class PredictionTrainer(object):
                 load_models(ckpt)
                 step = ckpt["step"]
                 return step
-
         else:
             ckpt = torch.load(ckpt_path)
             load_models(ckpt)
