@@ -198,10 +198,11 @@ def cem_env_planner(env, config):
     # Return first action mean, of shape (A)
     return mean[0, :]
 
-def run_cem_episodes(config, use_env=False):
+def run_cem_episodes(config):
     logger = colorlog.getLogger("file/console")
     num_episodes = config.num_episodes
     model = None
+    use_env = config.use_env_dynamics
     env = FetchPushEnv(config)
     if not use_env:
         model = DynamicsModel(config)
