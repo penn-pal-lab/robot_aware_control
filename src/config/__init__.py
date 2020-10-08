@@ -202,12 +202,12 @@ def add_cem_arguments(parser):
     parser.add_argument("--action_candidates", type=int, default=30)
     parser.add_argument("--topk", type=int, default=5)
     parser.add_argument("--dynamics_model_ckpt", type=str, default=None)
-    parser.add_argument("use_env_dynamics", type=str2bool, default=False)
+    parser.add_argument("--use_env_dynamics", type=str2bool, default=False)
 
 
 def argparser():
     """ Directly parses the arguments. """
     parser = create_parser()
     args, unparsed = parser.parse_known_args()
-    assert len(unparsed) == 0
+    assert len(unparsed) == 0, unparsed
     return args, unparsed

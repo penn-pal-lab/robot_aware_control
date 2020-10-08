@@ -4,7 +4,7 @@
 #SBATCH --time=20:00:00
 #SBATCH --partition=dinesh-compute
 #SBATCH --qos=dinesh-high
-#SBATCH -w nvidia-2080ti-5
+#SBATCH -w node-2080ti-5
 #SBATCH --job-name=30acenvcem
 #SBATCH -o ./30acenvcem.out
 #SBATCH -e ./30acenvcem.out
