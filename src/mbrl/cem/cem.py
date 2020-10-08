@@ -48,15 +48,15 @@ class DynamicsModel:
 
 
     def load_model(self, model_path):
-
-        ckpt = torch.load(model_path, map_location=self._device)
-        self.frame_predictor = ckpt["frame_predictor"]
+        d = self._device
+        ckpt = torch.load(model_path, map_location=d)
+        self.frame_predictor = ckpt["frame_predictor"].to(d)
         # self.posterior = ckpt["posterior"]
-        self.prior = ckpt["prior"]
-        self.decoder = ckpt["decoder"]
-        self.encoder = ckpt["encoder"]
-        self.robot_enc = ckpt["robot_enc"]
-        self.action_enc = ckpt["action_enc"]
+        self.prior = ckpt["prior"].to(d)
+        self.decoder = ckpt["decoder"].to(d)
+        self.encoder = ckpt["encoder"].to(d)
+        self.robot_enc = ckpt["robot_enc"].to(d)
+        self.action_enc = ckpt["action_enc"].to(d)
 
     @torch.no_grad()
     def next_img(self, img, robot, action, store_skip=False):
@@ -99,8 +99,8 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, config):
     A = config.action_dim
 
     # Initialize action sequence belief as standard normal, of shape (L, A)
-    mean = torch.zeros(L, A)
-    std = torch.ones(L, A)
+    mean = torch.zeros(L, A).to(dev)
+    std = torch.ones(L, A).to(dev)
     original_env_state = env.get_state()
     ret_topks = []  # for debugging
     start_sim, start_robot, start_img = start
@@ -109,9 +109,9 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, config):
         model.reset(batch_size=J)
         # Sample J candidate action sequence
         m = Normal(mean, std)
-        act_seq = m.sample((J,))  # of shape (J, L, A)
+        act_seq = m.sample((J,)).to(dev)  # of shape (J, L, A)
         # Generate J rollouts
-        ret_preds = torch.zeros(J)
+        ret_preds = torch.zeros(J).to(dev)
         # duplicate the starting states J times
         curr_img = (ToTensor()(start_img.copy())).expand(J, -1, -1, -1).to(dev) # (J x |I|)
         curr_robot = torch.from_numpy(start_robot.copy()).expand(J, -1).to(dev) # J x |A|)
@@ -122,10 +122,10 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, config):
             curr_img = model.next_img(curr_img, curr_robot, ac, t==0)
             # compute the future robot and sim using kinematics solver like mujoco
             for j in range(J):
-                next_robot, next_sim = env.robot_kinematics(curr_sim[j], ac[j].numpy())
+                next_robot, next_sim = env.robot_kinematics(curr_sim[j], ac[j].cpu().numpy())
                 curr_robot[j] = torch.from_numpy(next_robot).to(dev)
                 curr_sim[j] = next_sim
-                rew = -1 * mse_criterion(goal, curr_img[j])
+                rew = -1 * mse_criterion(goal, curr_img[j]).cpu().item()
                 ret_preds[j] += rew
 
         # Select top K action sequences based on cumulative rewards
@@ -141,7 +141,7 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, config):
     # print("\tMeans of top returns: ", ret_topks)
     env.set_state(original_env_state)
     # Return first action mean, of shape (A)
-    return mean[0, :]
+    return mean[0, :].cpu()
 
 def cem_env_planner(env, config):
     """Use actual gym environment to test cem algorithm
@@ -213,7 +213,7 @@ def run_cem_episodes(config, use_env=False):
         ep_history = defaultdict(list)
         trajectory = defaultdict(list)
         obs = env.reset()
-        goal = env.goal
+        goal = (ToTensor()(env.goal)).to(config.device)
         if config.record_trajectory:
             trajectory["obs"].append(obs)
             trajectory["state"].append(env.get_state())
@@ -235,7 +235,6 @@ def run_cem_episodes(config, use_env=False):
                 robot = obs["robot"].astype(np.float32)
                 img = obs["observation"]
                 start = (sim_state, robot, img)
-                goal = (ToTensor()(goal)).to(config.device)
                 action = cem_model_planner(model, env, start, goal, config).numpy()
             obs, rew, done, info = env.step(action)
             if config.record_trajectory:

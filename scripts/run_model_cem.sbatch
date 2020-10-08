@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-#SBATCH --cpus-per-task=2
-#SBATCH --time=10:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --gpus=1
+#SBATCH --time=20:00:00
 #SBATCH --partition=dinesh-compute
 #SBATCH --qos=dinesh-high
 #SBATCH --job-name=modelcem
