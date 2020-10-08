@@ -4,9 +4,7 @@ import time
 from collections import defaultdict
 
 import colorlog
-import h5py
 import matplotlib
-from torchvision.datasets.folder import has_file_allowed_extension
 
 matplotlib.use("agg")
 import pickle
@@ -208,14 +206,6 @@ def run_cem_episodes(config, use_env=False):
     if not use_env:
         model = DynamicsModel(config)
         model.load_model(config.dynamics_model_ckpt)
-        file_type = "png"
-        goal_files= [
-            d.path
-            for d in os.scandir(config.goal_img_dir)
-            if d.is_file() and has_file_allowed_extension(d.path, file_type)
-        ]
-        assert len(goal_files) >= num_episodes
-
     # Do rollouts of CEM control
     all_episode_stats = defaultdict(list)
     success_record = np.zeros(num_episodes)
