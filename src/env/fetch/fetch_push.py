@@ -105,6 +105,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         sim_state: mujoco state
         action: end effector control
         """
+        self.set_state(sim_state)
         action = np.clip(action, self.action_space.low, self.action_space.high)
         self._set_action(action)
         self.sim.step()
@@ -1021,6 +1022,23 @@ def collect_multiview_trajectories():
         for p in ps:
             p.join()
 
+def collect_cem_goals():
+    """Collect goal images for testing CEM planning"""
+    config, _ = argparser()
+    config.large_block = True
+    config.demo_dir = "demos/cem_goals"
+    config.multiview = True
+    config.norobot_pixels_ob = True
+    config.reward_type = "inpaint"
+    config.img_dim = 64
+    os.makedirs(config.demo_dir, exist_ok=True)
+    env = FetchPushEnv(config)
+    for i in range(200):
+        env._push_dist = np.random.uniform(0.07, 0.2)
+        img = env._sample_goal()
+        img_path = os.path.join(config.demo_dir, f"{i}.png")
+        imageio.imwrite(img_path, img)
+
 
 if __name__ == "__main__":
     from collections import defaultdict
@@ -1034,7 +1052,8 @@ if __name__ == "__main__":
     # plot_behaviors_per_cost()
     # plot_costs_per_behavior()
     # collect_trajectories()
-    collect_multiview_trajectories()
+    # collect_multiview_trajectories()
+    collect_cem_goals()
     # config, _ = argparser()
     # env = FetchPushEnv(config)
     # env.reset()

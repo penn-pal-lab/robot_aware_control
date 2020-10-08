@@ -1,25 +1,153 @@
 import logging
-import colorlog
 import os
-from collections import defaultdict
 import time
+from collections import defaultdict
 
+import colorlog
+import h5py
 import matplotlib
+from torchvision.datasets.folder import has_file_allowed_extension
 
 matplotlib.use("agg")
-import matplotlib.pyplot as plt
-import wandb
-import numpy as np
-import torch
-from src.utils.video_recorder import VideoRecorder
-from torch.distributions.normal import Normal
 import pickle
 
+import imageio
+import ipdb
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import wandb
 from src.env.fetch.fetch_push import FetchPushEnv
+from src.utils.video_recorder import VideoRecorder
+from src.prediction.losses import mse_criterion
+from torch import cat
+from torch.distributions.normal import Normal
+from torchvision.transforms import ToTensor
 
 
-# Use actual gym environment to test cem algorithm
-def cem_planner(env, config):
+class DynamicsModel:
+    def __init__(self, config, env=None):
+        self._last_frame_skip = config.last_frame_skip
+        self._skip = None
+        self._env = env
+        use_cuda = torch.cuda.is_available()
+        device = torch.device("cuda" if use_cuda else "cpu")
+        self._device = device
+
+    def reset(self, batch_size=None):
+        """
+        Call to reset any intermediate variables, like the ground truth skip cxn or
+        batch size of hidden state for RNN
+        """
+        self._skip = None
+        self.frame_predictor.hidden = self.frame_predictor.init_hidden(batch_size)
+        self.prior.hidden = self.prior.init_hidden(batch_size)
+        self.prior.eval()
+        self.decoder.eval()
+        self.encoder.eval()
+        self.robot_enc.eval()
+        self.action_enc.eval()
+
+
+    def load_model(self, model_path):
+
+        ckpt = torch.load(model_path, map_location=self._device)
+        self.frame_predictor = ckpt["frame_predictor"]
+        # self.posterior = ckpt["posterior"]
+        self.prior = ckpt["prior"]
+        self.decoder = ckpt["decoder"]
+        self.encoder = ckpt["encoder"]
+        self.robot_enc = ckpt["robot_enc"]
+        self.action_enc = ckpt["action_enc"]
+
+    @torch.no_grad()
+    def next_img(self, img, robot, action, store_skip=False):
+        """
+        Predicts the next img given current img, robot, and action
+        F(s' | s, r, a)
+        img is (N x |S|)
+        action is (N x |A|)
+        """
+        h = self.encoder(img)
+        r = self.robot_enc(robot)
+        a = self.action_enc(action)
+        h, skip = h
+        if store_skip:
+            self._skip = skip
+        if not self._last_frame_skip:
+            skip = self._skip
+        z_t, _, _ = self.prior(cat([a, r, h], 1))
+        h = self.frame_predictor(cat([a, r, h, z_t], 1))
+        next_img = self.decoder([h, skip])
+        return next_img
+
+
+def cem_model_planner(model: DynamicsModel, env, start, goal, config):
+    """
+    Use learned model to test cem algorithm.
+    Need the cost function, goal image
+    Start is a tuple of (start img, start robot, start sim) where each is (J, _)
+    Goal is a goal img
+    """
+    dev = config.device
+    # Hyperparameters
+    L = config.horizon  # Prediction window size
+    I = config.opt_iter  # Number of optimization iterations
+    J = config.action_candidates  # Number of candidate action sequences
+    K = (
+        config.topk
+    )  # Number of top K candidate action sequences to select for optimization
+
+    A = config.action_dim
+
+    # Initialize action sequence belief as standard normal, of shape (L, A)
+    mean = torch.zeros(L, A)
+    std = torch.ones(L, A)
+    original_env_state = env.get_state()
+    ret_topks = []  # for debugging
+    start_sim, start_robot, start_img = start
+    # Optimization loop
+    for i in range(I):
+        model.reset(batch_size=J)
+        # Sample J candidate action sequence
+        m = Normal(mean, std)
+        act_seq = m.sample((J,))  # of shape (J, L, A)
+        # Generate J rollouts
+        ret_preds = torch.zeros(J)
+        # duplicate the starting states J times
+        curr_img = (ToTensor()(start_img.copy())).expand(J, -1, -1, -1).to(dev) # (J x |I|)
+        curr_robot = torch.from_numpy(start_robot.copy()).expand(J, -1).to(dev) # J x |A|)
+        curr_sim = [start_sim] * J # (J x D)
+        for t in range(L):
+            ac = act_seq[:, t] # (J, |A|)
+            # compute the next img
+            curr_img = model.next_img(curr_img, curr_robot, ac, t==0)
+            # compute the future robot and sim using kinematics solver like mujoco
+            for j in range(J):
+                next_robot, next_sim = env.robot_kinematics(curr_sim[j], ac[j].numpy())
+                curr_robot[j] = torch.from_numpy(next_robot).to(dev)
+                curr_sim[j] = next_sim
+                rew = -1 * mse_criterion(goal, curr_img[j])
+                ret_preds[j] += rew
+
+        # Select top K action sequences based on cumulative rewards
+        ret_topk, idx = ret_preds.topk(K)
+        top_act_seq = torch.index_select(
+            act_seq, dim=0, index=idx
+        )  # of shape (K, L, A)
+        ret_topks.append("%.3f" % ret_topk.mean())  # Record mean of top returns
+        # Update parameters for normal distribution
+        std, mean = torch.std_mean(top_act_seq, dim=0)
+
+    # Print means of top returns, for debugging
+    # print("\tMeans of top returns: ", ret_topks)
+    env.set_state(original_env_state)
+    # Return first action mean, of shape (A)
+    return mean[0, :]
+
+def cem_env_planner(env, config):
+    """Use actual gym environment to test cem algorithm
+    """
     # Hyperparameters
     L = config.horizon  # Prediction window size
     I = config.opt_iter  # Number of optimization iterations
@@ -72,11 +200,22 @@ def cem_planner(env, config):
     # Return first action mean, of shape (A)
     return mean[0, :]
 
-
-def run_cem_episodes(config):
+def run_cem_episodes(config, use_env=False):
     logger = colorlog.getLogger("file/console")
     num_episodes = config.num_episodes
+    model = None
     env = FetchPushEnv(config)
+    if not use_env:
+        model = DynamicsModel(config)
+        model.load_model(config.dynamics_model_ckpt)
+        file_type = "png"
+        goal_files= [
+            d.path
+            for d in os.scandir(config.goal_img_dir)
+            if d.is_file() and has_file_allowed_extension(d.path, file_type)
+        ]
+        assert len(goal_files) >= num_episodes
+
     # Do rollouts of CEM control
     all_episode_stats = defaultdict(list)
     success_record = np.zeros(num_episodes)
@@ -98,7 +237,16 @@ def run_cem_episodes(config):
         logger.info("\n=== Episode %d ===\n" % (i))
         while True:
             logger.info("\tStep {}".format(s))
-            action = cem_planner(env, config).numpy()  # Action convert to numpy array
+            if use_env:
+                action = cem_env_planner(env, config).numpy()
+            else:
+                sim_state = env.get_state()
+                robot = obs["robot"].astype(np.float32)
+                img = obs["observation"]
+                start = (sim_state, robot, img)
+                goal_path = goal_files[i]
+                goal = (ToTensor()(imageio.imread(goal_path))).to(config.device)
+                action = cem_model_planner(model, env, start, goal, config).numpy()
             obs, rew, done, info = env.step(action)
             if config.record_trajectory:
                 trajectory["obs"].append(obs)
@@ -205,6 +353,11 @@ def make_log_folder(config):
 
     filelogger.addHandler(fh)
     filelogger.addHandler(ch)
+
+    # device
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda" if use_cuda else "cpu")
+    config.device = device
 
     # wandb stuff
     if not config.wandb:
