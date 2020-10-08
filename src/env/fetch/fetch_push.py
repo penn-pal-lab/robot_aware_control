@@ -1031,10 +1031,10 @@ def collect_cem_goals():
     config.norobot_pixels_ob = True
     config.reward_type = "inpaint"
     config.img_dim = 64
+    config.push_dist = 0.135 # with noise, (0.07, 0.2)
     os.makedirs(config.demo_dir, exist_ok=True)
     env = FetchPushEnv(config)
     for i in range(200):
-        env._push_dist = np.random.uniform(0.07, 0.2)
         img = env._sample_goal()
         img_path = os.path.join(config.demo_dir, f"{i}.png")
         imageio.imwrite(img_path, img)

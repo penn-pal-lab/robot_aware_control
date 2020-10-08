@@ -223,6 +223,7 @@ def run_cem_episodes(config, use_env=False):
         ep_history = defaultdict(list)
         trajectory = defaultdict(list)
         obs = env.reset()
+        goal = env.goal
         if config.record_trajectory:
             trajectory["obs"].append(obs)
             trajectory["state"].append(env.get_state())
@@ -244,8 +245,7 @@ def run_cem_episodes(config, use_env=False):
                 robot = obs["robot"].astype(np.float32)
                 img = obs["observation"]
                 start = (sim_state, robot, img)
-                goal_path = goal_files[i]
-                goal = (ToTensor()(imageio.imread(goal_path))).to(config.device)
+                goal = (ToTensor()(goal)).to(config.device)
                 action = cem_model_planner(model, env, start, goal, config).numpy()
             obs, rew, done, info = env.step(action)
             if config.record_trajectory:

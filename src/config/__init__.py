@@ -202,8 +202,6 @@ def add_cem_arguments(parser):
     parser.add_argument("--action_candidates", type=int, default=30)
     parser.add_argument("--topk", type=int, default=5)
     parser.add_argument("--dynamics_model_ckpt", type=str, default=None)
-    parser.add_argument("--goal_img_dir", type=str, default="demos/cem_goals")
-
 
 def argparser():
     """ Directly parses the arguments. """
