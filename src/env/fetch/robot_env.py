@@ -5,6 +5,7 @@ import numpy as np
 import gym
 from gym import error, spaces
 from gym.utils import seeding
+import os
 
 try:
     import mujoco_py
@@ -16,6 +17,12 @@ except ImportError as e:
     )
 
 DEFAULT_SIZE = 500
+DEVICE_ID = -1
+if "SLURM_JOB_GPUS" in os.environ:
+    DEVICE_ID = int(os.environ["SLURM_JOB_GPUS"])
+elif "SLURM_STEP_GPUS" in os.environ:
+    DEVICE_ID = int(os.environ["SLURM_STEP_GPUS"])
+print("SLURM GPU:", DEVICE_ID)
 
 
 class RobotEnv(gym.GoalEnv):
@@ -115,7 +122,7 @@ class RobotEnv(gym.GoalEnv):
         self._render_callback()
         if mode == "rgb_array":
             data = self.sim.render(
-                width, height, camera_name=camera_name, segmentation=segmentation
+                width, height, camera_name=camera_name, segmentation=segmentation, device_id=DEVICE_ID
             )
             # original image is upside-down, so flip it
             return data[::-1, :, :]
