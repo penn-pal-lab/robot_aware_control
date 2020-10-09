@@ -21,6 +21,8 @@ from src.prediction.losses import mse_criterion
 from torch import cat
 from torch.distributions.normal import Normal
 from torchvision.transforms import ToTensor
+from skimage.filters import gaussian
+from src.utils.plot import save_image
 
 
 class DynamicsModel:
@@ -79,8 +81,50 @@ class DynamicsModel:
         next_img = self.decoder([h, skip])
         return next_img
 
+class InpaintBlurCost:
+    def __init__(self, config) -> None:
+        self.blur_width = config.img_dim * 2
+        self.sigma = config.blur_sigma
+        self.unblur_cost_scale = config.unblur_cost_scale
+        self.img_dim = config.img_dim
+        self.blur_img = self._blur_single
+        self.to_tensor = ToTensor()
+        if config.multiview:
+            self.blur_img = self._blur_multiview
 
-def cem_model_planner(model: DynamicsModel, env, start, goal, config):
+    def _blur(self, img):
+        s = self.sigma
+        w = self.blur_width
+        t = (((w - 1) / 2) - 0.5) / s
+        blur = (255 * gaussian(img, sigma=s, truncate=t, multichannel=True)).astype(np.uint8)
+        return blur
+
+    def _blur_single(self, img):
+        img = img.cpu().permute(1,2,0)
+        return self._blur(img)
+
+    def _blur_multiview(self, img):
+        img = img.cpu().permute(1,2,0)
+        img1 = img[:self.img_dim]
+        img2 = img[self.img_dim:]
+        blur_img1 = self._blur(img1)
+        blur_img2 = self._blur(img2)
+        blur_img = np.concatenate([blur_img1, blur_img2])
+        return blur_img
+
+
+    def __call__(self, img, goal, blur=True):
+        scale = -1
+        if blur:
+            img = self.to_tensor(self.blur_img(img))
+            goal = self.to_tensor(self.blur_img(goal))
+        else:
+            scale = -1 * self.unblur_cost_scale
+
+        cost = scale * mse_criterion(img, goal)
+        return cost
+
+def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
     """
     Use learned model to test cem algorithm.
     Need the cost function, goal image
@@ -125,7 +169,12 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, config):
                 next_robot, next_sim = env.robot_kinematics(curr_sim[j], ac[j].cpu().numpy())
                 curr_robot[j] = torch.from_numpy(next_robot).to(dev)
                 curr_sim[j] = next_sim
-                rew = -1 * mse_criterion(goal, curr_img[j]).cpu().item()
+                if config.reward_type == "inpaint-blur":
+                    blur = t < L - config.unblur_timestep
+                    rew = cost(goal, curr_img[j], blur)
+                elif config.reward_type == "inpaint":
+                    rew = cost(goal, curr_img[j])
+                # rew = -1 * mse_criterion(goal, curr_img[j]).cpu().item()
                 ret_preds[j] += rew
 
         # Select top K action sequences based on cumulative rewards
@@ -207,6 +256,10 @@ def run_cem_episodes(config):
     if not use_env:
         model = DynamicsModel(config)
         model.load_model(config.dynamics_model_ckpt)
+        if config.reward_type == "inpaint":
+            cost = mse_criterion
+        elif config.reward_type == "inpaint-blur":
+            cost = InpaintBlurCost(config)
     # Do rollouts of CEM control
     all_episode_stats = defaultdict(list)
     success_record = np.zeros(num_episodes)
@@ -236,7 +289,7 @@ def run_cem_episodes(config):
                 robot = obs["robot"].astype(np.float32)
                 img = obs["observation"]
                 start = (sim_state, robot, img)
-                action = cem_model_planner(model, env, start, goal, config).numpy()
+                action = cem_model_planner(model, env, start, goal, cost, config).numpy()
             obs, rew, done, info = env.step(action)
             if config.record_trajectory:
                 trajectory["obs"].append(obs)
