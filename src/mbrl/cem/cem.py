@@ -277,7 +277,6 @@ def run_cem_episodes(config):
             enabled=i % config.record_video_interval == 0,
         )
 
-        ret = 0  # Episode return
         s = 0  # Step count
         logger.info("\n=== Episode %d ===\n" % (i))
         while True:
@@ -290,15 +289,14 @@ def run_cem_episodes(config):
                 img = obs["observation"]
                 start = (sim_state, robot, img)
                 action = cem_model_planner(model, env, start, goal, cost, config).numpy()
-            obs, rew, done, info = env.step(action)
+            obs, _, done, info = env.step(action, compute_reward=False)
             if config.record_trajectory:
                 trajectory["obs"].append(obs)
                 trajectory["ac"].append(action)
                 trajectory["state"].append(env.get_state())
-            ret += rew
             s += 1
             vr.capture_frame()
-            logger.info("\tReward: {}".format(rew))
+            logger.info("\tObject Dist: {}".format(info["object_dist"]))
             succ = info["is_success"]
             # don't care about success as early termination
             if done or s > config.max_episode_length:

@@ -76,7 +76,7 @@ class RobotEnv(gym.GoalEnv):
         self.np_random = np.random.RandomState(seed)
         return seed
 
-    def step(self, action):
+    def step(self, action, compute_reward=True):
         action = np.clip(action, self.action_space.low, self.action_space.high)
         self._set_action(action)
         self.sim.step()
@@ -86,8 +86,9 @@ class RobotEnv(gym.GoalEnv):
         done = False
         info = {}
         info["is_success"] = self._is_success(obs["achieved_goal"], self.goal, info)
-
-        reward = self.compute_reward(obs["achieved_goal"], self.goal, info)
+        reward = 0
+        if compute_reward:
+            reward = self.compute_reward(obs["achieved_goal"], self.goal, info)
         info["reward"] = reward
         return obs, reward, done, info
 
