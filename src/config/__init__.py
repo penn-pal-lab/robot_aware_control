@@ -203,6 +203,8 @@ def add_cem_arguments(parser):
     parser.add_argument("--topk", type=int, default=5)
     parser.add_argument("--dynamics_model_ckpt", type=str, default=None)
     parser.add_argument("--use_env_dynamics", type=str2bool, default=False)
+    parser.add_argument("--debug_trajectory_path", type=str, default=None)
+    parser.add_argument("--debug_cem", type=str2bool, default=False)
 
 
 def argparser():

@@ -1,12 +1,10 @@
 import logging
 import os
-import time
 from collections import defaultdict
 
 import colorlog
 import matplotlib
 
-matplotlib.use("agg")
 import pickle
 
 import imageio
@@ -22,14 +20,12 @@ from torch import cat
 from torch.distributions.normal import Normal
 from torchvision.transforms import ToTensor
 from skimage.filters import gaussian
-from src.utils.plot import save_image
-
+from src.utils.plot import save_gif
 
 class DynamicsModel:
-    def __init__(self, config, env=None):
+    def __init__(self, config):
         self._last_frame_skip = config.last_frame_skip
         self._skip = None
-        self._env = env
         use_cuda = torch.cuda.is_available()
         device = torch.device("cuda" if use_cuda else "cpu")
         self._device = device
@@ -47,7 +43,6 @@ class DynamicsModel:
         self.encoder.eval()
         self.robot_enc.eval()
         self.action_enc.eval()
-
 
     def load_model(self, model_path):
         d = self._device
@@ -81,6 +76,7 @@ class DynamicsModel:
         next_img = self.decoder([h, skip])
         return next_img
 
+
 class InpaintBlurCost:
     def __init__(self, config) -> None:
         self.blur_width = config.img_dim * 2
@@ -96,22 +92,23 @@ class InpaintBlurCost:
         s = self.sigma
         w = self.blur_width
         t = (((w - 1) / 2) - 0.5) / s
-        blur = (255 * gaussian(img, sigma=s, truncate=t, multichannel=True)).astype(np.uint8)
+        blur = (255 * gaussian(img, sigma=s, truncate=t, multichannel=True)).astype(
+            np.uint8
+        )
         return blur
 
     def _blur_single(self, img):
-        img = img.cpu().permute(1,2,0)
+        img = img.cpu().permute(1, 2, 0)
         return self._blur(img)
 
     def _blur_multiview(self, img):
-        img = img.cpu().permute(1,2,0)
-        img1 = img[:self.img_dim]
-        img2 = img[self.img_dim:]
+        img = img.cpu().permute(1, 2, 0)
+        img1 = img[: self.img_dim]
+        img2 = img[self.img_dim :]
         blur_img1 = self._blur(img1)
         blur_img2 = self._blur(img2)
         blur_img = np.concatenate([blur_img1, blur_img2])
         return blur_img
-
 
     def __call__(self, img, goal, blur=True):
         scale = -1
@@ -124,6 +121,7 @@ class InpaintBlurCost:
         cost = scale * mse_criterion(img, goal)
         return cost
 
+
 def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
     """
     Use learned model to test cem algorithm.
@@ -131,7 +129,9 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
     Start is a tuple of (start img, start robot, start sim) where each is (J, _)
     Goal is a goal img
     """
+    info = {}
     dev = config.device
+    debug = config.debug_cem
     # Hyperparameters
     L = config.horizon  # Prediction window size
     I = config.opt_iter  # Number of optimization iterations
@@ -146,7 +146,7 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
     mean = torch.zeros(L, A).to(dev)
     std = torch.ones(L, A).to(dev)
     original_env_state = env.get_state()
-    ret_topks = []  # for debugging
+    ret_topks = []
     start_sim, start_robot, start_img = start
     # Optimization loop
     for i in range(I):
@@ -157,16 +157,27 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
         # Generate J rollouts
         ret_preds = torch.zeros(J).to(dev)
         # duplicate the starting states J times
-        curr_img = (ToTensor()(start_img.copy())).expand(J, -1, -1, -1).to(dev) # (J x |I|)
-        curr_robot = torch.from_numpy(start_robot.copy()).expand(J, -1).to(dev) # J x |A|)
-        curr_sim = [start_sim] * J # (J x D)
+        curr_img = (
+            (ToTensor()(start_img.copy())).expand(J, -1, -1, -1).to(dev)
+        )  # (J x |I|)
+        curr_robot = (
+            torch.from_numpy(start_robot.copy()).expand(J, -1).to(dev)
+        )  # J x |A|)
+        curr_sim = [start_sim] * J  # (J x D)
         for t in range(L):
-            ac = act_seq[:, t] # (J, |A|)
+            ac = act_seq[:, t]  # (J, |A|)
             # compute the next img
-            curr_img = model.next_img(curr_img, curr_robot, ac, t==0)
+            curr_img = model.next_img(curr_img, curr_robot, ac, t == 0)
+            if debug and i == I - 1:
+                if t == 0:
+                    # curr img should be J, C, W, H
+                    debug_preds = torch.zeros((L, *curr_img.shape)).to(dev)
+                debug_preds[t] = curr_img
             # compute the future robot and sim using kinematics solver like mujoco
             for j in range(J):
-                next_robot, next_sim = env.robot_kinematics(curr_sim[j], ac[j].cpu().numpy())
+                next_robot, next_sim = env.robot_kinematics(
+                    curr_sim[j], ac[j].cpu().numpy()
+                )
                 curr_robot[j] = torch.from_numpy(next_robot).to(dev)
                 curr_sim[j] = next_sim
                 if config.reward_type == "inpaint-blur":
@@ -182,6 +193,9 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
         top_act_seq = torch.index_select(
             act_seq, dim=0, index=idx
         )  # of shape (K, L, A)
+        if config.debug_cem:
+            info["top_preds"] = torch.index_select(debug_preds, dim=1, index=idx).cpu()
+
         ret_topks.append("%.3f" % ret_topk.mean())  # Record mean of top returns
         # Update parameters for normal distribution
         std, mean = torch.std_mean(top_act_seq, dim=0)
@@ -190,11 +204,11 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
     # print("\tMeans of top returns: ", ret_topks)
     env.set_state(original_env_state)
     # Return first action mean, of shape (A)
-    return mean[0, :].cpu()
+    return mean[0, :].cpu().numpy(), info
+
 
 def cem_env_planner(env, config):
-    """Use actual gym environment to test cem algorithm
-    """
+    """Use actual gym environment to test cem algorithm"""
     # Hyperparameters
     L = config.horizon  # Prediction window size
     I = config.opt_iter  # Number of optimization iterations
@@ -247,6 +261,7 @@ def cem_env_planner(env, config):
     # Return first action mean, of shape (A)
     return mean[0, :]
 
+
 def run_cem_episodes(config):
     logger = colorlog.getLogger("file/console")
     num_episodes = config.num_episodes
@@ -288,7 +303,13 @@ def run_cem_episodes(config):
                 robot = obs["robot"].astype(np.float32)
                 img = obs["observation"]
                 start = (sim_state, robot, img)
-                action = cem_model_planner(model, env, start, goal, cost, config).numpy()
+                action, info = cem_model_planner(model, env, start, goal, cost, config)
+                if config.debug_cem:
+                    # (L, K, C, W, H)
+                    cem_preds = info["top_preds"]
+                    debug_path = os.path.join(config.plot_dir, f"ep{i}_step{s}_cem.gif")
+                    save_gif(debug_path, cem_preds)
+
             obs, _, done, info = env.step(action, compute_reward=False)
             if config.record_trajectory:
                 trajectory["obs"].append(obs)
@@ -343,7 +364,7 @@ def run_cem_episodes(config):
     wandb.log({"Results": table}, step=0)
 
 
-def make_log_folder(config):
+def setup_loggers(config):
     # make folder for exp logs
     formatter = colorlog.ColoredFormatter(
         "%(log_color)s[%(asctime)s] %(message)s",
@@ -418,5 +439,5 @@ if __name__ == "__main__":
     from src.config import argparser
 
     config, _ = argparser()
-    make_log_folder(config)
+    setup_loggers(config)
     run_cem_episodes(config)
