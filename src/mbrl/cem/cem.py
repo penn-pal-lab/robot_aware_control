@@ -193,8 +193,6 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
         top_act_seq = torch.index_select(
             act_seq, dim=0, index=idx
         )  # of shape (K, L, A)
-        if config.debug_cem:
-            info["top_preds"] = torch.index_select(debug_preds, dim=1, index=idx).cpu()
 
         ret_topks.append("%.3f" % ret_topk.mean())  # Record mean of top returns
         # Update parameters for normal distribution
@@ -202,6 +200,8 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
 
     # Print means of top returns, for debugging
     # print("\tMeans of top returns: ", ret_topks)
+    if config.debug_cem:
+        info["top_preds"] = torch.index_select(debug_preds, dim=1, index=idx).cpu()
     env.set_state(original_env_state)
     # Return first action mean, of shape (A)
     return mean[0, :].cpu().numpy(), info
