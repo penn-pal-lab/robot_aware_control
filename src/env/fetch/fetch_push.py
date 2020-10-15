@@ -248,6 +248,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             if self.reward_type in ["inpaint-blur", "inpaint"]:
                 # inpaint the goal image with robot pixels
                 goal[self.goal_mask] = self._background_img[self.goal_mask]
+                self._unblurred_goal = goal
             elif self.reward_type == "blackrobot":
                 # set the robot pixels to 0
                 goal[self.goal_mask] = np.zeros(3)

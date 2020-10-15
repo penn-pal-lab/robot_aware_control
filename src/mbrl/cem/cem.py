@@ -113,7 +113,10 @@ class InpaintBlurCost:
     def __call__(self, img, goal, blur=True):
         scale = -1
         if blur:
+            # imageio.imwrite("img.png", img.permute(1,2,0))
             img = self.to_tensor(self.blur_img(img))
+            # imageio.imwrite("blur_img.png", img.permute(1,2,0))
+            # ipdb.set_trace()
             goal = self.to_tensor(self.blur_img(goal))
         else:
             scale = -1 * self.unblur_cost_scale
@@ -182,9 +185,9 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
                 curr_sim[j] = next_sim
                 if config.reward_type == "inpaint-blur":
                     blur = t < L - config.unblur_timestep
-                    rew = cost(goal, curr_img[j], blur)
+                    rew = cost(curr_img[j], goal, blur)
                 elif config.reward_type == "inpaint":
-                    rew = cost(goal, curr_img[j])
+                    rew = cost(curr_img[j], goal)
                 # rew = -1 * mse_criterion(goal, curr_img[j]).cpu().item()
                 ret_preds[j] += rew
 
@@ -201,6 +204,7 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
     # Print means of top returns, for debugging
     # print("\tMeans of top returns: ", ret_topks)
     if config.debug_cem:
+        idx = idx[:3] # just save top 3 trajectories
         info["top_preds"] = torch.index_select(debug_preds, dim=1, index=idx).cpu()
     env.set_state(original_env_state)
     # Return first action mean, of shape (A)
@@ -282,7 +286,7 @@ def run_cem_episodes(config):
         ep_history = defaultdict(list)
         trajectory = defaultdict(list)
         obs = env.reset()
-        goal = (ToTensor()(env.goal)).to(config.device)
+        goal = (ToTensor()(env._unblurred_goal)).to(config.device)
         if config.record_trajectory:
             trajectory["obs"].append(obs)
             trajectory["state"].append(env.get_state())
@@ -307,8 +311,13 @@ def run_cem_episodes(config):
                 if config.debug_cem:
                     # (L, K, C, W, H)
                     cem_preds = info["top_preds"]
+                    # create (L, 1, C, W, H) goal tensor
+                    L = cem_preds.shape[0]
+                    goal_ep = goal.cpu().unsqueeze(0)
+                    goal_ep = goal_ep.expand(L, -1, -1, -1, -1)
+                    cem_eps = cat([goal_ep, cem_preds], dim=1)
                     debug_path = os.path.join(config.plot_dir, f"ep{i}_step{s}_cem.gif")
-                    save_gif(debug_path, cem_preds)
+                    save_gif(debug_path, cem_eps)
 
             obs, _, done, info = env.step(action, compute_reward=False)
             if config.record_trajectory:
