@@ -5,7 +5,9 @@ import numpy as np
 import torch
 import torch.utils.data as data
 import torchvision.transforms as tf
-
+import multiprocessing as mp
+import ctypes
+from tqdm import tqdm
 
 class VideoDataset(data.Dataset):
     def __init__(self, files, config):
@@ -13,16 +15,14 @@ class VideoDataset(data.Dataset):
         # shift [0,1] to [-1,1]
         self._img_transforms = tf.Compose([tf.Lambda(seq_to_tensor)])
         self._action_dim = config.action_dim
-        self._cache = LRUCache(100000)
+        # self._cache = LRUCache(100000)
         self._cf = config
         self._horizon = config.n_past + config.n_future
 
-    def __getitem__(self, index):
-        path = self._files[index]
-        item = self._cache.get(path)
-        if item is None:
+        # try loading everything
+        for i, path in tqdm(enumerate(files), desc="loading data into ram"):
             with h5py.File(path, "r") as hf:
-                # first check how long video is
+                 # first check how long video is
                 ep_len = hf["frames"].shape[0]
                 assert ep_len >= self._horizon, f"{ep_len}, {path}"
                 # if video is longer than horizon, sample a starting point
@@ -41,18 +41,51 @@ class VideoDataset(data.Dataset):
 
                 actions = np.zeros(actions_shape, dtype=np.float32)
                 hf["actions"].read_direct(actions)
-            # add to cache
-            self._cache.put(path, (frames, robot, actions))
-        else:
-            frames, robot, actions = item
-            ep_len = frames.shape[0]
-            assert ep_len >= self._horizon, f"{ep_len}, {path}"
-            start = 0
-            end = self._horizon
-            frames_shape = list(frames.shape)
-            robot_shape = list(robot.shape)
-            actions_shape = list(actions.shape)
+                self._data[i] = (frames, robot, actions)
 
+    def __getitem__(self, index):
+        path = self._files[index]
+        # item = self._cache.get(path)
+        # if item is None:
+        #     with h5py.File(path, "r") as hf:
+        #         # first check how long video is
+        #         ep_len = hf["frames"].shape[0]
+        #         assert ep_len >= self._horizon, f"{ep_len}, {path}"
+        #         # if video is longer than horizon, sample a starting point
+        #         start = 0
+        #         frames_shape = list(hf["frames"].shape)
+        #         robot_shape = list(hf["robot"].shape)
+        #         actions_shape = list(hf["actions"].shape)
+
+        #         # frames should be L x C x H x W
+        #         frames = np.zeros(frames_shape, dtype=np.uint8)
+        #         hf["frames"].read_direct(frames)
+        #         frames = self._img_transforms(frames)
+
+        #         robot = np.zeros(robot_shape, dtype=np.float32)
+        #         hf["robot"].read_direct(robot)
+
+        #         actions = np.zeros(actions_shape, dtype=np.float32)
+        #         hf["actions"].read_direct(actions)
+        #     # add to cache
+        #     self._cache.put(path, (frames, robot, actions))
+        # else:
+            # frames, robot, actions = item
+            # ep_len = frames.shape[0]
+            # assert ep_len >= self._horizon, f"{ep_len}, {path}"
+            # start = 0
+            # end = self._horizon
+            # frames_shape = list(frames.shape)
+            # robot_shape = list(robot.shape)
+            # actions_shape = list(actions.shape)
+        frames, robot, actions = self._data[index]
+        ep_len = frames.shape[0]
+        assert ep_len >= self._horizon, f"{ep_len}, {path}"
+        start = 0
+        end = self._horizon
+        frames_shape = list(frames.shape)
+        robot_shape = list(robot.shape)
+        actions_shape = list(actions.shape)
         # if video is longer than horizon, sample a starting point
         if ep_len > self._horizon:
             offset = ep_len - self._horizon
