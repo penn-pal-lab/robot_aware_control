@@ -75,6 +75,8 @@ if __name__ == "__main__":
 
     config, _ = argparser()
     config.data_root = dataset_path
+    config.robot_dim = 3
+    config.device = "cpu"
     train_data, val = create_split(config)
     train_loader = DataLoader(
         train_data,
@@ -85,6 +87,6 @@ if __name__ == "__main__":
         pin_memory=True,
     )
 
-    #generator = get_batch(train_loader, config.device)
-    #data = next(generator)
-    #print(data[0].shape)
+    generator = get_batch(train_loader, config.device)
+    data = next(generator)
+    print(data[0].shape)
