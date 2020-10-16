@@ -48,27 +48,32 @@ class PredictionTrainer(object):
         - Add optimizer step() call
         - Update save and load ckpt code
         """
+        self.all_models = []
+        input_dim = cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim
+        if cf.stoch:
+            input_dim += cf.z_dim
+            self.posterior = post = GaussianLSTM(
+                cf.robot_enc_dim + cf.g_dim,
+                cf.z_dim,
+                cf.rnn_size,
+                cf.posterior_rnn_layers,
+                cf.batch_size,
+            ).to(self._device)
+
+            self.prior = prior = GaussianLSTM(
+                cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim,
+                cf.z_dim,
+                cf.rnn_size,
+                cf.prior_rnn_layers,
+                cf.batch_size,
+            ).to(self._device)
+            self.all_models.extend([post, prior])
+
         self.frame_predictor = frame_pred = LSTM(
-            cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim + cf.z_dim,
+            input_dim,
             cf.g_dim,
             cf.rnn_size,
             cf.predictor_rnn_layers,
-            cf.batch_size,
-        ).to(self._device)
-
-        self.posterior = post = GaussianLSTM(
-            cf.robot_enc_dim + cf.g_dim,
-            cf.z_dim,
-            cf.rnn_size,
-            cf.posterior_rnn_layers,
-            cf.batch_size,
-        ).to(self._device)
-
-        self.prior = prior = GaussianLSTM(
-            cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim,
-            cf.z_dim,
-            cf.rnn_size,
-            cf.prior_rnn_layers,
             cf.batch_size,
         ).to(self._device)
 
@@ -90,7 +95,7 @@ class PredictionTrainer(object):
             self._device
         )
 
-        self.all_models = [frame_pred, post, prior, enc, dec, ac, rob]
+        self.all_models.extend([frame_pred, enc, dec, ac, rob])
 
         # initialize weights
         for model in self.all_models:
@@ -106,8 +111,9 @@ class PredictionTrainer(object):
             raise ValueError("Unknown optimizer: %s" % cf.optimizer)
 
         self.frame_predictor_optimizer = optimizer(self.frame_predictor.parameters())
-        self.posterior_optimizer = optimizer(self.posterior.parameters())
-        self.prior_optimizer = optimizer(self.prior.parameters())
+        if cf.stoch:
+            self.posterior_optimizer = optimizer(self.posterior.parameters())
+            self.prior_optimizer = optimizer(self.prior.parameters())
         self.encoder_optimizer = optimizer(self.encoder.parameters())
         self.decoder_optimizer = optimizer(self.decoder.parameters())
         self.action_encoder_optimizer = optimizer(self.action_enc.parameters())
@@ -121,8 +127,9 @@ class PredictionTrainer(object):
 
         # initialize the recurrent states
         self.frame_predictor.hidden = self.frame_predictor.init_hidden()
-        self.posterior.hidden = self.posterior.init_hidden()
-        self.prior.hidden = self.prior.init_hidden()
+        if cf.stoch:
+            self.posterior.hidden = self.posterior.init_hidden()
+            self.prior.hidden = self.prior.init_hidden()
 
         mse = 0
         kld = 0
@@ -139,27 +146,99 @@ class PredictionTrainer(object):
                 h, skip = h
             else:
                 h = h[0]
-            z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
-            _, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
-            h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
+
+            if cf.stoch:
+                z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
+                _, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
+                h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
+            else:
+                h_pred = self.frame_predictor(cat([a, r, h], 1))
             x_pred = self.decoder([h_pred, skip])
             mse += mse_criterion(x_pred, x[i])
-            kld += kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
+            if cf.stoch:
+                kld += kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
         loss = mse + kld * cf.beta
         loss.backward()
 
         self.frame_predictor_optimizer.step()
-        self.posterior_optimizer.step()
-        self.prior_optimizer.step()
+        if cf.stoch:
+            self.posterior_optimizer.step()
+            self.prior_optimizer.step()
         self.encoder_optimizer.step()
         self.decoder_optimizer.step()
         self.action_encoder_optimizer.step()
         self.robot_encoder_optimizer.step()
+        if cf.stoch:
+            return (
+                mse.data.cpu().numpy() / (cf.n_past + cf.n_future),
+                kld.data.cpu().numpy() / (cf.n_future + cf.n_past),
+            )
+        else:
+            return (mse.data.cpu().numpy() / (cf.n_past + cf.n_future), 0)
 
-        return (
-            mse.data.cpu().numpy() / (cf.n_past + cf.n_future),
-            kld.data.cpu().numpy() / (cf.n_future + cf.n_past),
-        )
+    def _eval_epoch(self):
+        epoch_mse = []
+        epoch_kld = []
+        for sequence in self.test_loader:
+            # transpose from (B, L, C, W, H) to (L, B, C, W, H)
+            frames, robots, actions = sequence
+            frames = frames.transpose_(1,0).to(self._device)
+            robots = robots.transpose_(1,0).to(self._device)
+            actions = actions.transpose_(1,0).to(self._device)
+            data = (frames, robots, actions)
+            mse, kld = self._eval_step(data)
+            epoch_mse.append(mse)
+            epoch_kld.append(kld)
+
+        eval_stats = {
+            "eval/mse": np.mean(epoch_mse),
+            "eval/epoch_mse": np.sum(epoch_mse),
+            "eval/kld": np.mean(epoch_kld),
+            "eval/epoch_kld": np.sum(epoch_kld),
+        }
+        wandb.log(eval_stats, step=self._step)
+
+    @torch.no_grad()
+    def _eval_step(self, data):
+        cf = self._config
+        # initialize the recurrent states
+        self.frame_predictor.hidden = self.frame_predictor.init_hidden()
+        if cf.stoch:
+            self.posterior.hidden = self.posterior.init_hidden()
+            self.prior.hidden = self.prior.init_hidden()
+
+        mse = 0
+        kld = 0
+        x, robot, ac = data
+        for i in range(1, cf.n_past + cf.n_future):
+            h = self.encoder(x[i - 1])
+            r = self.robot_enc(robot[i - 1])
+            a = self.action_enc(ac[i - 1])
+            h_target = self.encoder(x[i])[0]
+            r_target = self.robot_enc(robot[i])
+            # if n_past is 1, then we need to manually set skip var
+            if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
+                h, skip = h
+            else:
+                h = h[0]
+
+            if cf.stoch:
+                z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
+                _, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
+                h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
+            else:
+                h_pred = self.frame_predictor(cat([a, r, h], 1))
+            x_pred = self.decoder([h_pred, skip])
+            mse += mse_criterion(x_pred, x[i])
+            if cf.stoch:
+                kld += kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
+        if cf.stoch:
+            return (
+                mse.data.cpu().numpy() / (cf.n_past + cf.n_future),
+                kld.data.cpu().numpy() / (cf.n_future + cf.n_past),
+            )
+        else:
+            return (mse.data.cpu().numpy() / (cf.n_past + cf.n_future), 0)
 
     def train(self):
         """Training, Evaluation, Checkpointing loop"""
@@ -171,6 +250,11 @@ class PredictionTrainer(object):
         # start training
         progress = tqdm(initial=self._step, total=cf.niter * cf.epoch_size)
         for epoch in range(cf.niter):
+            self._eval_epoch()
+            test_data = next(self.testing_batch_generator)
+            self.plot(test_data, epoch)
+            self.plot_rec(test_data, epoch)
+
             for model in self.all_models:
                 model.train()
             epoch_kld = epoch_mse = 0
@@ -193,29 +277,29 @@ class PredictionTrainer(object):
 
             # plot and evaluate on test set
             self.frame_predictor.eval()
-            self.posterior.eval()
-            self.prior.eval()
+            if cf.stoch:
+                self.posterior.eval()
+                self.prior.eval()
             # self.encoder.eval()
             # self.decoder.eval()
+            self._eval_epoch()
             test_data = next(self.testing_batch_generator)
             self.plot(test_data, epoch)
             self.plot_rec(test_data, epoch)
 
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
-        torch.save(
-            {
-                "encoder": self.encoder,
-                "robot_enc": self.robot_enc,
-                "action_enc": self.action_enc,
-                "decoder": self.decoder,
-                "frame_predictor": self.frame_predictor,
-                "posterior": self.posterior,
-                "prior": self.prior,
-                "step": self._step,
-            },
-            path,
-        )
+        data = {
+            "encoder": self.encoder,
+            "robot_enc": self.robot_enc,
+            "action_enc": self.action_enc,
+            "decoder": self.decoder,
+            "frame_predictor": self.frame_predictor,
+            "step": self._step,
+        }
+        if self._config.stoch:
+            data.update({"posterior": self.posterior, "prior": self.prior})
+        torch.save(data, path)
 
     def _load_checkpoint(self, ckpt_path=None):
         """
@@ -227,8 +311,9 @@ class PredictionTrainer(object):
 
         def load_models(ckpt):
             self.frame_predictor = ckpt["frame_predictor"]
-            self.posterior = ckpt["posterior"]
-            self.prior = ckpt["prior"]
+            if self._config.stoch:
+                self.posterior = ckpt["posterior"]
+                self.prior = ckpt["prior"]
             self.decoder = ckpt["decoder"]
             self.encoder = ckpt["encoder"]
             self.robot_enc = ckpt["robot_enc"]
@@ -273,9 +358,9 @@ class PredictionTrainer(object):
         """
         Setup the dataset and dataloaders
         """
-        train_loader, test_loader = create_loaders(config)
+        train_loader, self.test_loader = create_loaders(config)
         self.training_batch_generator = get_batch(train_loader, self._device)
-        self.testing_batch_generator = get_batch(test_loader, self._device)
+        self.testing_batch_generator = get_batch(self.test_loader, self._device)
 
     @torch.no_grad()
     def plot(self, data, epoch):
@@ -290,8 +375,9 @@ class PredictionTrainer(object):
         gt_seq = [x[i] for i in range(len(x))]
         for s in range(nsample):
             self.frame_predictor.hidden = self.frame_predictor.init_hidden()
-            self.posterior.hidden = self.posterior.init_hidden()
-            self.prior.hidden = self.prior.init_hidden()
+            if self._config.stoch:
+                self.posterior.hidden = self.posterior.init_hidden()
+                self.prior.hidden = self.prior.init_hidden()
             # first frame of all videos
             gen_seq[s].append(x[0])
             x_in = x[0]
@@ -308,13 +394,21 @@ class PredictionTrainer(object):
                     r_target = self.robot_enc(robot[i])
                     h_target = self.encoder(x[i])
                     h_target = h_target[0]
-                    z_t, _, _ = self.posterior(cat([r_target, h_target], 1))
-                    self.frame_predictor(cat([a, r, h, z_t], 1))
+                    if cf.stoch:
+                        z_t, _, _ = self.posterior(cat([r_target, h_target], 1))
+                        # condition the recurrent state of prior
+                        self.prior(cat([a, r, h,], 1))
+                        self.frame_predictor(cat([a, r, h, z_t], 1))
+                    else:
+                        self.frame_predictor(cat([a, r, h], 1))
                     x_in = x[i]
                     gen_seq[s].append(x_in)
                 else:
-                    z_t, _, _ = self.prior(cat([a, r, h], 1))
-                    h = self.frame_predictor(cat([a, r, h, z_t], 1))
+                    if cf.stoch:
+                        z_t, _, _ = self.prior(cat([a, r, h], 1))
+                        h = self.frame_predictor(cat([a, r, h, z_t], 1))
+                    else:
+                        h = self.frame_predictor(cat([a, r, h], 1))
                     x_in = self.decoder([h, skip])
                     gen_seq[s].append(x_in)
 
@@ -375,7 +469,8 @@ class PredictionTrainer(object):
         cf = self._config
         x, robot, ac = data
         self.frame_predictor.hidden = self.frame_predictor.init_hidden()
-        self.posterior.hidden = self.posterior.init_hidden()
+        if cf.stoch:
+            self.posterior.hidden = self.posterior.init_hidden()
         gen_seq = []
         gen_seq.append(x[0])
         x_in = x[0]
@@ -389,13 +484,17 @@ class PredictionTrainer(object):
                 h, skip = h
             else:
                 h, _ = h
+            if cf.stoch:
+                z_t, _, _ = self.posterior(cat([r_target, h_target], 1))
+                embed = cat([a, r, h, z_t], 1)
+            else:
+                embed = cat([a, r, h], 1)
 
-            z_t, _, _ = self.posterior(cat([r_target, h_target], 1))
             if i < cf.n_past:
-                self.frame_predictor(cat([a, r, h, z_t], 1))
+                self.frame_predictor(embed)
                 gen_seq.append(x[i])
             else:
-                h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
+                h_pred = self.frame_predictor(embed)
                 x_pred = self.decoder([h_pred, skip]).detach()
                 gen_seq.append(x_pred)
 
