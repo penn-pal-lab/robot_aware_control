@@ -18,9 +18,10 @@ class VideoDataset(data.Dataset):
         # self._cache = LRUCache(100000)
         self._cf = config
         self._horizon = config.n_past + config.n_future
+        self._data = []
 
         # try loading everything
-        for i, path in tqdm(enumerate(files), desc="loading data into ram"):
+        for path in tqdm(files, desc="loading data into ram"):
             with h5py.File(path, "r") as hf:
                  # first check how long video is
                 ep_len = hf["frames"].shape[0]
@@ -41,7 +42,7 @@ class VideoDataset(data.Dataset):
 
                 actions = np.zeros(actions_shape, dtype=np.float32)
                 hf["actions"].read_direct(actions)
-                self._data[i] = (frames, robot, actions)
+                self._data.append((frames, robot, actions))
 
     def __getitem__(self, index):
         path = self._files[index]

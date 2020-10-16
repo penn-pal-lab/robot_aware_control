@@ -3,6 +3,7 @@ videos
 demos
 logs
 data
+*.out
 
 # IDE
 *.swp

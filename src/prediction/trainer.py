@@ -190,10 +190,13 @@ class PredictionTrainer(object):
             epoch_mse.append(mse)
             epoch_kld.append(kld)
 
+        avg_mse = np.mean(epoch_mse)
+        avg_kld = np.mean(epoch_kld)
+        self._logger.info(f"Eval avg mse: {avg_mse}, avg kld: {avg_kld}")
         eval_stats = {
-            "eval/mse": np.mean(epoch_mse),
+            "eval/mse": avg_mse,
             "eval/epoch_mse": np.sum(epoch_mse),
-            "eval/kld": np.mean(epoch_kld),
+            "eval/kld": avg_kld,
             "eval/epoch_kld": np.sum(epoch_kld),
         }
         wandb.log(eval_stats, step=self._step)

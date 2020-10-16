@@ -5,8 +5,9 @@
 #SBATCH --time=40:00:00
 #SBATCH --partition=dinesh-compute
 #SBATCH --qos=dinesh-high
-#SBATCH --job-name=stoch32svg
-#SBATCH -o ./stoch32svg.out
-#SBATCH -e ./stoch32svg.out
+#SBATCH --job-name=detsvg256g
+#SBATCH -w node-2080ti-5
+#SBATCH -o ./detsvg256g.out
+#SBATCH -e ./detsvg256g.out
 
- python -m src.prediction.trainer --jobname stoch32svg  --wandb True --data_root demos/fetch_push_mv --data_threads 3 --batch_size 16 --n_future 4 --n_past 1 --n_eval 5 --multiview True --image_width 64 --z_dim 32
+ python -m src.prediction.trainer --jobname det256g  --wandb True --data_root demos/fetch_push_mv --data_threads 0 --batch_size 16 --n_future 4 --n_past 1 --n_eval 5 --multiview True --image_width 64 --z_dim 32 --stoch False --epoch_size 5000 --g_dim 256
