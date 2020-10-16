@@ -29,6 +29,7 @@ class DynamicsModel:
         use_cuda = torch.cuda.is_available()
         device = torch.device("cuda" if use_cuda else "cpu")
         self._device = device
+        self._stoch = config.stoch
 
     def reset(self, batch_size=None):
         """
@@ -37,8 +38,9 @@ class DynamicsModel:
         """
         self._skip = None
         self.frame_predictor.hidden = self.frame_predictor.init_hidden(batch_size)
-        self.prior.hidden = self.prior.init_hidden(batch_size)
-        self.prior.eval()
+        if self._stoch:
+            self.prior.hidden = self.prior.init_hidden(batch_size)
+            self.prior.eval()
         self.decoder.eval()
         self.encoder.eval()
         self.robot_enc.eval()
@@ -48,8 +50,9 @@ class DynamicsModel:
         d = self._device
         ckpt = torch.load(model_path, map_location=d)
         self.frame_predictor = ckpt["frame_predictor"].to(d)
-        # self.posterior = ckpt["posterior"]
-        self.prior = ckpt["prior"].to(d)
+        if self._stoch:
+            # self.posterior = ckpt["posterior"]
+            self.prior = ckpt["prior"].to(d)
         self.decoder = ckpt["decoder"].to(d)
         self.encoder = ckpt["encoder"].to(d)
         self.robot_enc = ckpt["robot_enc"].to(d)
@@ -71,8 +74,11 @@ class DynamicsModel:
             self._skip = skip
         if not self._last_frame_skip:
             skip = self._skip
-        z_t, _, _ = self.prior(cat([a, r, h], 1))
-        h = self.frame_predictor(cat([a, r, h, z_t], 1))
+        if self._stoch:
+            z_t, _, _ = self.prior(cat([a, r, h], 1))
+            h = self.frame_predictor(cat([a, r, h, z_t], 1))
+        else:
+            h = self.frame_predictor(cat([a, r, h], 1))
         next_img = self.decoder([h, skip])
         return next_img
 
