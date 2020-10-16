@@ -250,11 +250,6 @@ class PredictionTrainer(object):
         # start training
         progress = tqdm(initial=self._step, total=cf.niter * cf.epoch_size)
         for epoch in range(cf.niter):
-            self._eval_epoch()
-            test_data = next(self.testing_batch_generator)
-            self.plot(test_data, epoch)
-            self.plot_rec(test_data, epoch)
-
             for model in self.all_models:
                 model.train()
             epoch_kld = epoch_mse = 0
