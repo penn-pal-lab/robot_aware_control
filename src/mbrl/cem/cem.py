@@ -193,7 +193,7 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
                     blur = t < L - config.unblur_timestep
                     rew = cost(curr_img[j], goal, blur)
                 elif config.reward_type == "inpaint":
-                    rew = cost(curr_img[j], goal)
+                    rew = cost(curr_img[j], goal, blur=False)
                 # rew = -1 * mse_criterion(goal, curr_img[j]).cpu().item()
                 ret_preds[j] += rew
 
