@@ -3,6 +3,7 @@ import numpy as np
 from src.env.fetch.rotations import mat2euler
 from src.env.fetch.robot_env import RobotEnv
 import src.env.fetch.utils as utils
+from pyquaternion import Quaternion
 
 
 def goal_distance(goal_a, goal_b):
@@ -97,6 +98,10 @@ class FetchEnv(RobotEnv):
             1.0,
             0.0,
         ]  # fixed rotation of the end effector, expressed as a quaternion
+        # default_rot = Quaternion(self.sim.data.mocap_quat[0].copy())
+        # y_rot = Quaternion(axis=[1, 0, 0], degrees=10) # Rotate 5 deg about X
+        # rot_ctrl = list(default_rot * y_rot)
+
         gripper_ctrl = np.array([gripper_ctrl, gripper_ctrl])
         assert gripper_ctrl.shape == (2,)
         if self.block_gripper:
@@ -104,7 +109,7 @@ class FetchEnv(RobotEnv):
         action = np.concatenate([pos_ctrl, rot_ctrl, gripper_ctrl])
 
         # Apply action to simulation.
-        utils.ctrl_set_action(self.sim, action)
+        utils.ctrl_set_action(self.sim, action) # doesn't do anything if mocap
         utils.mocap_set_action(self.sim, action)
 
     def _get_obs(self):
