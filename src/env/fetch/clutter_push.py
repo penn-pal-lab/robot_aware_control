@@ -1,6 +1,6 @@
 import os
 import h5py
-from tqdm import tqdm
+from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
 import numpy as np
 from gym import spaces, utils
@@ -27,7 +27,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             "robot0:slide0": 0.175,
             "robot0:slide1": 0.48,
             "robot0:slide2": 0.1,
-            "object0:joint": [1, 0.75, 0.45, 1.0, 0.0, 0.0, 0.0],
+            "object0:joint": [0.92, 0.75, 0.42, 1.0, 0.0, 0.0, 0.0],
         }
         self._robot_pixel_weight = config.robot_pixel_weight
         reward_type = config.reward_type
@@ -165,6 +165,9 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         }
 
     def _reset_sim(self):
+        """
+        Gets called by goal env's reset right before sampling new goal.
+        """
         self.sim.set_state(self.initial_state)
 
         # Randomize start position of object.
@@ -175,7 +178,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         # assert object_qpos.shape == (7,)
         # object_qpos[:2] = object_xpos
         # self.sim.data.set_joint_qpos('object0:joint', object_qpos)
-
+        self._sample_obstacle()
         self.sim.forward()
         return True
 
@@ -184,13 +187,112 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         self._use_unblur = False
         return obs
 
+    def make_push_object_demo(self):
+        """
+        Generates a demonstration containing a sequence of images of the puck
+        moving towards the goal.
+        """
+        # move robot gripper up so it's not in view of camera
+        init_state = self.get_state()
+        robot_pos = self.sim.data.get_site_xpos("robot0:grip").copy()
+        robot_noise = np.array([-1, 0, 0.5])
+        gripper_target = robot_pos + robot_noise
+
+        gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
+        self.sim.data.set_mocap_pos("robot0:mocap", gripper_target)
+        self.sim.data.set_mocap_quat("robot0:mocap", gripper_rotation)
+        for _ in range(10):
+            self.sim.step()
+        self.sim.forward()
+
+        puck_xyz = self.sim.data.get_joint_qpos("object0:joint")[:3].copy()
+        start_state = puck_xyz[:2]
+        goal_state = self.goal_pose["object"][:2]
+        ob0_pos = self.sim.data.get_joint_qpos("obstacle0:joint")[:2].copy()
+        ob1_pos = self.sim.data.get_joint_qpos("obstacle1:joint")[:2].copy()
+        info = {"ob0_pos": ob0_pos, "ob1_pos": ob1_pos, "start_state": start_state, "goal_state": goal_state}
+        obstacle_list = [
+            CollisionSphere(ob0_pos, 0.07),
+            CollisionSphere(ob1_pos, 0.07),
+        ]
+        # attempt straight line push
+        can_push_straight = True
+        for ob in obstacle_list:
+            u = (goal_state - start_state) / np.linalg.norm(goal_state - start_state)
+            if ob.line_in_collision(start_state, u):
+                can_push_straight = False
+                break
+
+        if can_push_straight:
+            path = np.linspace(start_state, goal_state, num=5)
+        else:
+            rrt1 = PlanarRRT(
+                start_state=start_state,
+                goal_state=goal_state,
+                dim_ranges=[(1.06 - 0.2, 1.06 + 0.2), (0.75 - 0.2, 0.75 + 0.2)],
+                max_iter=5000,
+                obstacles=obstacle_list,
+                step_size=0.05,
+                visualize=False,
+                goal_bias=0.05,
+            )
+
+            path = rrt1.build()
+            if path is None:
+                print("Could not build a path")
+
+        info["straight_push"] = can_push_straight
+        imgs = []
+        for p in path:
+            ob0_pose = np.concatenate([p, [puck_xyz[2], 1, 0, 0, 0]])
+            self.sim.data.set_joint_qpos("object0:joint", ob0_pose)
+            self.sim.forward()
+            imgs.append(self.render("rgb_array"))
+
+        self.set_state(init_state)
+        reset_mocap2body_xpos(self.sim)
+        reset_mocap_welds(self.sim)
+        return path, imgs, info
+
+    def _sample_obstacle(self):
+        # get height, width of obstacle distribution box
+        left = self.sim.data.get_site_xpos("arenaleft")
+        right = self.sim.data.get_site_xpos("arenaright")
+        top = self.sim.data.get_site_xpos("cluttertop")
+        bot = self.sim.data.get_site_xpos("clutterbottom")
+        center = (top + (bot - top) / 2)[:2]
+        height = np.abs(top - bot)[0]
+        width = np.abs(left - right)[1]
+        height -= 0.03
+        width -= 0.03  # account for obstacle size
+        height /= 2
+        width /= 2
+        rand_height = np.random.uniform(-height, height)
+        rand_width = np.random.uniform(-width, width)
+
+        ob_z = self.sim.data.get_joint_qpos("obstacle0:joint")[2]
+        ob0_pos = center + (rand_height, rand_width)
+        ob0_pose = np.concatenate([ob0_pos, [ob_z, 1, 0, 0, 0]])
+        self.sim.data.set_joint_qpos("obstacle0:joint", ob0_pose)
+
+        # rejection sample the next obstacle
+        ob1_pos = ob0_pos
+        while np.linalg.norm(ob1_pos - ob0_pos) < 0.06:
+            rand_height = np.random.uniform(-height, height)
+            rand_width = np.random.uniform(-width, width)
+            ob1_pos = center + (rand_height, rand_width)
+
+        ob_z = self.sim.data.get_joint_qpos("obstacle1:joint")[2]
+        ob1_pose = np.concatenate([ob1_pos, [ob_z, 1, 0, 0, 0]])
+        self.sim.data.set_joint_qpos("obstacle1:joint", ob1_pose)
+
     def _sample_goal(self):
         noise = np.zeros(3)
         # pushing axis noise
         # noise[0] = self.np_random.uniform(0.15, 0.15 + self.target_range, size=1)
         noise[0] = self._push_dist
         # side axis noise
-        noise[1] = self.np_random.uniform(-0.02, 0.02, size=1)
+        noise[1] = self.np_random.uniform(-0.1, 0.1, size=1)
 
         goal = self.initial_object_xpos[:3] + noise
         goal += self.target_offset
@@ -263,11 +365,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         return goal
 
     def render(
-        self,
-        mode="rgb_array",
-        camera_name=None,
-        segmentation=False,
-        remove_robot=False
+        self, mode="rgb_array", camera_name=None, segmentation=False, remove_robot=False
     ):
         """
         If remove_robot, then use inpaint and mask to remove robot pixels
@@ -446,13 +544,15 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         for geom_id, _ in enumerate(self.sim.model.geom_bodyid):
             geom_name = self.sim.model.geom_id2name(geom_id)
             if geom_name is not None and "robot" in geom_name:
-                robot_col[geom_name] = (self.sim.model.geom_contype[geom_id],
-                                        self.sim.model.geom_conaffinity[geom_id])
+                robot_col[geom_name] = (
+                    self.sim.model.geom_contype[geom_id],
+                    self.sim.model.geom_conaffinity[geom_id],
+                )
                 self.sim.model.geom_contype[geom_id] = 0
                 self.sim.model.geom_conaffinity[geom_id] = 0
 
         gripper_target = np.array(
-            [-0.498 - 0.19, 0.005, -0.431 + self.gripper_extra_height]
+            [-0.75, 0.005, -0.445 + self.gripper_extra_height]
         ) + self.sim.data.get_site_xpos("robot0:grip")
         gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
         self.sim.data.set_mocap_pos("robot0:mocap", gripper_target)
@@ -468,7 +568,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 self.sim.model.geom_contype[geom_id] = contype
                 self.sim.model.geom_conaffinity[geom_id] = conaffinity
 
-        # for _ in range(10):
         self.sim.step()
         # Extract information for sampling goals.
         self.initial_gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
@@ -901,7 +1000,7 @@ def collect_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 5000   # per worker
+    num_trajectories = 5000  # per worker
     num_workers = 20
     record = False
     behavior = "push"
@@ -984,7 +1083,7 @@ def collect_multiview_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 5000 # per worker
+    num_trajectories = 5000  # per worker
     num_workers = 20
     record = False
     behavior = "random_robot"
@@ -999,7 +1098,9 @@ def collect_multiview_trajectories():
     os.makedirs(config.demo_dir, exist_ok=True)
 
     if num_workers == 1:
-        collect_multiview_trajectory(0, config, behavior, record, num_trajectories, ep_len)
+        collect_multiview_trajectory(
+            0, config, behavior, record, num_trajectories, ep_len
+        )
     else:
         ps = []
         for i in range(num_workers):
@@ -1019,6 +1120,7 @@ def collect_multiview_trajectories():
         for p in ps:
             p.join()
 
+
 def collect_cem_goals():
     """Collect goal images for testing CEM planning"""
     config, _ = argparser()
@@ -1028,14 +1130,57 @@ def collect_cem_goals():
     config.norobot_pixels_ob = True
     config.reward_type = "inpaint"
     config.img_dim = 64
-    config.push_dist = 0.135 # with noise, (0.07, 0.2)
+    config.push_dist = 0.135  # with noise, (0.07, 0.2)
     os.makedirs(config.demo_dir, exist_ok=True)
     env = ClutterPushEnv(config)
     for i in range(200):
-        img = env._sample_goal()
+        img = env.reset()
         img_path = os.path.join(config.demo_dir, f"{i}.png")
         imageio.imwrite(img_path, img)
 
+
+def collect_object_demos():
+    """Collect object only demonstrations"""
+    config, _ = argparser()
+    config.demo_dir = "demos/object_demos"
+    config.multiview = True
+    config.img_dim = 64
+    config.push_dist = 0.25
+    num_demos = 10
+    record_gif = True
+
+    os.makedirs(config.demo_dir, exist_ok=True)
+    if record_gif:
+        gif_dir = os.path.join(config.demo_dir, "gif")
+        os.makedirs(gif_dir, exist_ok=True)
+    env = ClutterPushEnv(config)
+    stats_dict = defaultdict(list)
+    for i in trange(num_demos, desc="Object Only Demos"):
+        env.reset()
+        push_path, imgs, info = env.make_push_object_demo()
+        name = "easy" if info["straight_push"] else "hard"
+        stats_dict[f"{name}_len"].append(len(push_path))
+        name = f"{name}_{i}"
+        if record_gif:
+            gif_path = os.path.join(gif_dir, f"{name}.gif")
+            imageio.mimwrite(gif_path, imgs)
+        path = os.path.join(config.demo_dir, f"{name}.hdf5")
+        with h5py.File(path, "w") as hf:
+            for k, v in info.items():
+                hf.attrs[k] = v
+            hf.create_dataset("frames", data=imgs, compression="gzip")
+            hf.create_dataset("states", data=push_path, compression="gzip")
+
+    # print out stats
+    stats_path = os.path.join(config.demo_dir, "stats.txt")
+    easy_len = stats_dict["easy_len"]
+    easy_stats = f"Easy count: {len(easy_len)}, min len: {np.min(easy_len)}, max len: {np.max(easy_len)}, avg len: {np.mean(easy_len)}\n"
+    hard_len = stats_dict["hard_len"]
+    hard_stats = f"Hard count:{len(hard_len)}, min len: {np.min(hard_len)}, max len: {np.max(hard_len)}, avg len: {np.mean(hard_len)}\n"
+    with open(stats_path, "w") as f:
+        f.writelines([easy_stats, hard_stats])
+    print(easy_stats)
+    print(hard_stats)
 
 if __name__ == "__main__":
     from collections import defaultdict
@@ -1045,29 +1190,37 @@ if __name__ == "__main__":
     from PIL import Image
     from src.config import argparser
     from torchvision.transforms import ToTensor
+    from src.env.fetch.collision import CollisionSphere, CollisionBox
+    from src.env.fetch.planar_rrt import PlanarRRT
 
     # plot_behaviors_per_cost()
     # plot_costs_per_behavior()
     # collect_trajectories()
     # collect_multiview_trajectories()
     # collect_cem_goals()
-    config, _ = argparser()
-    env = ClutterPushEnv(config)
-    env.reset()
-    env.render("human")
-    while True:
-        push = (-1,0,0)
-        env.step(push)
-        env.render("human")
-        # goal = env.goal
-        # imageio.imwrite("goal.png", goal)
-        # break
-        # img = env.render("rgb_array")
-        # imageio.imwrite("test.png", img)
-        # break
-        # tensor = ToTensor()(img)
-        # print(tensor.shape)
-        # import ipdb
+    collect_object_demos()
+    # config, _ = argparser()
+    # env = ClutterPushEnv(config)
+    # for i in range(10):
+    #     env.reset()
+    # imageio.imwrite("scene.png", env.render("rgb_array"))
+    # imageio.imwrite("goal.png", env.goal)
+    # imgs = []
+    # for i in range(20):
+    #     push = (1, 0, 0)
+    #     env.step(push)
+    #     env.reset()
+    #     img = env.render("rgb_array")
+    #     imgs.append(img)
+    #     goal = env.goal
+    #     imageio.imwrite("goal.png", goal)
+    #     break
+    #     img = env.render("rgb_array")
+    #     imageio.imwrite("test.png", img)
+    #     break
+    #     tensor = ToTensor()(img)
+    #     print(tensor.shape)
+    #     import ipdb
 
     #     ipdb.set_trace()
 

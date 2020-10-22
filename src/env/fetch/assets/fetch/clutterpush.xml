@@ -209,18 +209,23 @@
 			<site name="object0" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
         </body>
 
-        <body name="arenaboundary" pos="1.14 0.75 0.4">
+        <body name="arenaboundary" pos="1.06 0.75 0.4">
             <site name="arenaright" pos="0 0.2 0" size="0.2 0.005 0.005" rgba="0 0 0 0.1" type="box"></site>
             <site name="arenaleft" pos="0 -0.2 0" size="0.2 0.005 0.005" rgba="0 0 0 0.1" type="box"></site>
             <site name="arenatop" pos="-0.2 0 0" size="0.005 0.2 0.005" rgba="0 0 0 0.1" type="box"></site>
             <site name="arenabottom" pos="0.2 0 0" size="0.005 0.2 0.005" rgba="0 0 0 0.1" type="box"></site>
         </body>
-        <body name="arenacenter" pos="1.14 0.75 0.42">
+        <body name="arenacenter" pos="1.06 0.75 0.42">
             <site name="arenacenter"  size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
         </body>
-        <body name="clutterboundary" pos="1.14 0.75 0.4">
+        <body name="clutterboundary" pos="1.06 0.75 0.4">
             <site name="cluttertop" pos="-0.1 0 0" size="0.005 0.2 0.005" rgba="1 0 0 0.1" type="box"></site>
             <site name="clutterbottom" pos="0.06 0 0" size="0.005 0.2 0.005" rgba="1 0 0 0.1" type="box"></site>
+        </body>
+
+        <body name="goalboundary" pos="1.22 0.75 0.4">
+            <site name="goaltop" pos="-0.1 0 0" size="0.005 0.2 0.005" rgba="0 1 0 0.1" type="box"></site>
+            <site name="goalbottom" pos="0.04 0 0" size="0.005 0.2 0.005" rgba="0 1 0 0.1" type="box"></site>
         </body>
 
         <body name="obstacle0" pos="1.14 0.7 0.42">
