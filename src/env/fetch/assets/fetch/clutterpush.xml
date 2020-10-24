@@ -203,11 +203,6 @@
 		<body name="sidecamera_target" pos="1 0.75 0.4">
 			<site name="sidecamera_target" pos="0 0 0" size="0.1 0.1 0.1" rgba="1 0 0 0" type="sphere"></site>
 		</body>
-		<body name="object0" pos="1 0.75 0.42">
-			<joint name="object0:joint" type="free" damping="0.01"></joint>
-			<geom size="0.025 0.02" type="cylinder" condim="3" name="object0" material="block_mat" mass="2" friction="2 0.005 0.0001" euler="0 0 1.57"></geom>
-			<site name="object0" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
-        </body>
 
         <body name="arenaboundary" pos="1.06 0.75 0.4">
             <site name="arenaright" pos="0 0.2 0" size="0.2 0.005 0.005" rgba="0 0 0 0.1" type="box"></site>
@@ -228,15 +223,21 @@
             <site name="goalbottom" pos="0.04 0 0" size="0.005 0.2 0.005" rgba="0 1 0 0.1" type="box"></site>
         </body>
 
-        <body name="obstacle0" pos="1.14 0.7 0.42">
-            <joint name="obstacle0:joint" type="free" damping="0.01"></joint>
-			<geom size="0.03 0.03 0.02" type="box" condim="3" name="obstacle0" rgba="0 1 0 1" material="block_mat" mass="2" friction="2 0.005 0.0001"></geom>
+        <body name="object0" pos="1 0.75 0.42">
+			<joint name="object0:joint" type="free" damping="0.01"></joint>
+			<geom size="0.025 0.02" type="cylinder" condim="3" name="object0" material="block_mat" mass="2" friction="2 0.005 0.0001" euler="0 0 1.57"></geom>
+			<site name="object0" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
         </body>
-        
-        <body name="obstacle1" pos="1.14 0.82 0.42">
-            <joint name="obstacle1:joint" type="free" damping="0.01"></joint>
-			<geom size="0.03 0.03 0.02" type="box" condim="3" name="obstacle1" rgba="1 0 0 1" material="block_mat" mass="2" friction="2 0.005 0.0001"></geom>
+
+        <body name="object1" pos="1.14 0.82 0.42">
+            <joint name="object1:joint" type="free" damping="0.01"></joint>
+			<geom size="0.03 0.03 0.02" type="box" condim="3" name="object1" rgba="1 0 0 1" material="block_mat" mass="2" friction="2 0.005 0.0001"></geom>
 		</body>
+
+        <body name="object2" pos="1.14 0.7 0.42">
+            <joint name="object2:joint" type="free" damping="0.01"></joint>
+			<geom size="0.03 0.03 0.02" type="box" condim="3" name="object2" rgba="0 1 0 1" material="block_mat" mass="2" friction="2 0.005 0.0001"></geom>
+        </body>
 
 		<light directional="true" ambient="0.2 0.2 0.2" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" castshadow="false" pos="0 0 4" dir="0 0 -1" name="light0"></light>
 

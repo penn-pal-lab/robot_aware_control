@@ -4,6 +4,7 @@ import pickle
 from collections import defaultdict
 
 import colorlog
+import h5py
 import imageio
 import ipdb
 import matplotlib
@@ -11,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import wandb
-from src.env.fetch.fetch_push import FetchPushEnv
+from src.env.fetch.clutter_push import ClutterPushEnv
 from src.prediction.losses import InpaintBlurCost, mse_criterion
 from src.prediction.models.dynamics import DynamicsModel
 from src.utils.plot import save_gif
@@ -19,155 +20,37 @@ from src.utils.video_recorder import VideoRecorder
 from torch import cat
 from torch.distributions.normal import Normal
 from torchvision.transforms import ToTensor
+from src.mbrl.cem.cem import cem_model_planner, cem_env_planner
+from torchvision.datasets.folder import has_file_allowed_extension
 
 
-def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
-    """
-    Use learned model to test cem algorithm.
-    Need the cost function, goal image
-    Start is a tuple of (start img, start robot, start sim) where each is (J, _)
-    Goal is a goal img
-    """
-    info = {}
-    dev = config.device
-    debug = config.debug_cem
-    # Hyperparameters
-    L = config.horizon  # Prediction window size
-    I = config.opt_iter  # Number of optimization iterations
-    J = config.action_candidates  # Number of candidate action sequences
-    K = (
-        config.topk
-    )  # Number of top K candidate action sequences to select for optimization
+def load_demo_dataset(config):
+    file_type = "hdf5"
+    files = []
+    for d in os.scandir(config.object_demo_dir):
+        if d.is_file() and has_file_allowed_extension(d.path, file_type):
+            if config.demo_difficulty in d.name:
+                files.append(d.path)
+    assert config.num_episodes <= len(files), f"need at least {config.num_episodes} demos"
+    return files[:config.num_episodes]
 
-    A = config.action_dim
-
-    # Initialize action sequence belief as standard normal, of shape (L, A)
-    mean = torch.zeros(L, A).to(dev)
-    std = torch.ones(L, A).to(dev)
-    original_env_state = env.get_state()
-    ret_topks = []
-    start_sim, start_robot, start_img = start
-    # Optimization loop
-    for i in range(I):
-        model.reset(batch_size=J)
-        # Sample J candidate action sequence
-        m = Normal(mean, std)
-        act_seq = m.sample((J,)).to(dev)  # of shape (J, L, A)
-        # Generate J rollouts
-        ret_preds = torch.zeros(J).to(dev)
-        # duplicate the starting states J times
-        curr_img = (
-            (ToTensor()(start_img.copy())).expand(J, -1, -1, -1).to(dev)
-        )  # (J x |I|)
-        curr_robot = (
-            torch.from_numpy(start_robot.copy()).expand(J, -1).to(dev)
-        )  # J x |A|)
-        curr_sim = [start_sim] * J  # (J x D)
-        for t in range(L):
-            ac = act_seq[:, t]  # (J, |A|)
-            # compute the next img
-            curr_img = model.next_img(curr_img, curr_robot, ac, t == 0)
-            if debug and i == I - 1:
-                if t == 0:
-                    # curr img should be J, C, W, H
-                    debug_preds = torch.zeros((L, *curr_img.shape)).to(dev)
-                debug_preds[t] = curr_img
-            # compute the future robot and sim using kinematics solver like mujoco
-            for j in range(J):
-                next_robot, next_sim = env.robot_kinematics(
-                    curr_sim[j], ac[j].cpu().numpy()
-                )
-                curr_robot[j] = torch.from_numpy(next_robot).to(dev)
-                curr_sim[j] = next_sim
-                if config.reward_type == "inpaint-blur":
-                    blur = t < L - config.unblur_timestep
-                    rew = cost(curr_img[j], goal, blur)
-                elif config.reward_type == "inpaint":
-                    rew = -1 * cost(curr_img[j], goal).cpu().item()
-                # rew = -1 * mse_criterion(goal, curr_img[j]).cpu().item()
-                ret_preds[j] += rew
-
-        # Select top K action sequences based on cumulative rewards
-        ret_topk, idx = ret_preds.topk(K)
-        top_act_seq = torch.index_select(
-            act_seq, dim=0, index=idx
-        )  # of shape (K, L, A)
-
-        ret_topks.append("%.3f" % ret_topk.mean())  # Record mean of top returns
-        # Update parameters for normal distribution
-        std, mean = torch.std_mean(top_act_seq, dim=0)
-
-    # Print means of top returns, for debugging
-    # print("\tMeans of top returns: ", ret_topks)
-    if config.debug_cem:
-        idx = idx[:3]  # just save top 3 trajectories
-        info["top_preds"] = torch.index_select(debug_preds, dim=1, index=idx).cpu()
-    env.set_state(original_env_state)
-    # Return first action mean, of shape (A)
-    return mean[0, :].cpu().numpy(), info
-
-
-def cem_env_planner(env, config):
-    """Use actual gym environment to test cem algorithm"""
-    # Hyperparameters
-    L = config.horizon  # Prediction window size
-    I = config.opt_iter  # Number of optimization iterations
-    J = config.action_candidates  # Number of candidate action sequences
-    K = (
-        config.topk
-    )  # Number of top K candidate action sequences to select for optimization
-
-    # Infer action size
-    A = env.action_space.shape[0]
-
-    # Initialize action sequence belief as standard normal, of shape (L, A)
-    mean = torch.zeros(L, A)
-    std = torch.ones(L, A)
-
-    ret_topks = []  # for debugging
-    # Optimization loop
-    for i in range(I):  # Use tqdm to track progress
-        # Sample J candidate action sequence
-        m = Normal(mean, std)
-        act_seq = m.sample((J,))  # of shape (J, L, A)
-
-        # Generate J rollouts
-        ret_preds = torch.zeros(J)
-        for j in range(J):
-            # Copy environment with its state, goal, and set to dense reward
-            # use set_state and get_state
-            env_state = env.get_state()
-            env._use_unblur = False
-            for l in range(L):
-                action = act_seq[j, l].numpy()
-                env._use_unblur = l >= L - config.unblur_timestep
-                _, rew, _, _ = env.step(action)  # Take one step
-                ret_preds[j] += rew  # accumulate rewards
-                env._use_unblur = False
-            env.set_state(env_state)  # reset env to before rollout
-
-        # Select top K action sequences based on cumulative rewards
-        ret_topk, idx = ret_preds.topk(K)
-        top_act_seq = torch.index_select(
-            act_seq, dim=0, index=idx
-        )  # of shape (K, L, A)
-        ret_topks.append("%.3f" % ret_topk.mean())  # Record mean of top returns
-
-        # Update parameters for normal distribution
-        std, mean = torch.std_mean(top_act_seq, dim=0)
-
-    # Print means of top returns, for debugging
-    # print("\tMeans of top returns: ", ret_topks)
-    # Return first action mean, of shape (A)
-    return mean[0, :]
+def load_demo(path):
+    with h5py.File(path, "r") as hf:
+        frames = hf["frames"][:]
+        states = hf["states"][:]
+        info = {}
+        for k,v in hf.attrs.items():
+            info[k] = v
+    return frames, states, info
 
 
 def run_cem_episodes(config):
+    demos = load_demo_dataset(config)
     logger = colorlog.getLogger("file/console")
     num_episodes = config.num_episodes
     model = None
     use_env = config.use_env_dynamics
-    env = FetchPushEnv(config)
+    env = ClutterPushEnv(config)
     if not use_env:
         model = DynamicsModel(config)
         model.load_model(config.dynamics_model_ckpt)
@@ -177,11 +60,18 @@ def run_cem_episodes(config):
             cost = InpaintBlurCost(config)
     # Do rollouts of CEM control
     all_episode_stats = defaultdict(list)
-    success_record = np.zeros(num_episodes)
+    goal_idx = 1 # start at 2nd goal since 1st is trivial
     for i in range(num_episodes):  # this can be parallelized
-        ep_history = defaultdict(list)
+        frames, demo_states, demo_info = load_demo(demos[i])
         trajectory = defaultdict(list)
-        obs = env.reset()
+        goal_img = frames[goal_idx]
+        goal_state = demo_states[goal_idx]
+        env.reset(goal_img, goal_state, demo_info)
+        # mask = np.abs(obs["observation"] - frames[0]).astype(np.uint8)
+        # all_imgs = np.concatenate([frames[0], obs["observation"], mask], axis=1)
+        # imageio.imwrite("comp.png", all_imgs)
+        # import ipdb; ipdb.set_trace()
+
         goal = (ToTensor()(env._unblurred_goal)).to(config.device)
         if config.record_trajectory:
             trajectory["obs"].append(obs)

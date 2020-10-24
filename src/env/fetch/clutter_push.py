@@ -164,7 +164,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             "desired_goal": self.goal.copy(),
         }
 
-    def _reset_sim(self):
+    def _reset_sim(self, demo_info=None):
         """
         Gets called by goal env's reset right before sampling new goal.
         """
@@ -178,12 +178,37 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         # assert object_qpos.shape == (7,)
         # object_qpos[:2] = object_xpos
         # self.sim.data.set_joint_qpos('object0:joint', object_qpos)
-        self._sample_obstacle()
+
+        if demo_info is not None:
+            ob0_pose = self.sim.data.get_joint_qpos("obstacle0:joint").copy()
+            ob0_pose[:2] = demo_info["ob0_pos"]
+            self.sim.data.set_joint_qpos("obstacle0:joint", ob0_pose)
+
+            ob1_pose = self.sim.data.get_joint_qpos("obstacle1:joint").copy()
+            ob1_pose[:2] = demo_info["ob1_pos"]
+            self.sim.data.set_joint_qpos("obstacle1:joint", ob1_pose)
+
+            puck_pose = self.sim.data.get_joint_qpos("object0:joint").copy()
+            puck_pose[:2] = demo_info["start_state"]
+            self.sim.data.set_joint_qpos("object0:joint", puck_pose)
+        else:
+            self._sample_obstacle()
         self.sim.forward()
         return True
 
-    def reset(self):
-        obs = super().reset()
+    def reset(self, goal=None, goal_state=None, demo_info=None):
+        """
+        Goal is an (image, pos) from the demo (pos is used for metrics)
+        demo_info contains initialization info
+        """
+        did_reset_sim = False
+        while not did_reset_sim:
+            did_reset_sim = self._reset_sim(demo_info)
+        if goal is None:
+            self.goal = self._sample_goal().copy()
+        else:
+            self.goal = self.set_goal(goal, goal_state).copy()
+        obs = self._get_obs()
         self._use_unblur = False
         return obs
 
@@ -285,6 +310,24 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         ob_z = self.sim.data.get_joint_qpos("obstacle1:joint")[2]
         ob1_pose = np.concatenate([ob1_pos, [ob_z, 1, 0, 0, 0]])
         self.sim.data.set_joint_qpos("obstacle1:joint", ob1_pose)
+
+    def set_goal(self, frame, goal_state):
+        """
+        Assume goal is image, and reward type is either L2, inpaint, inpaint-blur
+        """
+        self.goal_pose["object"][:2] = goal_state
+        goal = self._unblurred_goal = frame
+        if self.reward_type == "inpaint-blur":
+            # https://stackoverflow.com/questions/25216382/gaussian-filter-in-scipy
+            s = self._sigma
+            w = self._blur_width
+            t = (((w - 1) / 2) - 0.5) / s
+            self._unblurred_goal = goal
+            goal = np.uint8(
+                255
+                * gaussian(goal, sigma=s, truncate=t, mode="nearest", multichannel=True)
+            )
+        return goal
 
     def _sample_goal(self):
         noise = np.zeros(3)
@@ -430,25 +473,26 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             # set robot pixels to background image
             achieved_goal[ag_mask] = self._background_img[ag_mask]
             if self.reward_type == "inpaint-blur":
-                s = self._sigma
-                w = self._blur_width
-                t = (((w - 1) / 2) - 0.5) / s
-                unblurred_ag = achieved_goal
-                achieved_goal = np.uint8(
-                    255
-                    * gaussian(
-                        achieved_goal,
-                        sigma=s,
-                        truncate=t,
-                        mode="nearest",
-                        multichannel=True,
-                    )
-                )
-                blur_cost = np.linalg.norm(achieved_goal - goal)
-                d = blur_cost
                 if self._use_unblur:
+                    unblurred_ag = achieved_goal
                     unblur_cost = np.linalg.norm(unblurred_ag - self._unblurred_goal)
                     d = self._unblur_cost_scale * unblur_cost
+                else:
+                    s = self._sigma
+                    w = self._blur_width
+                    t = (((w - 1) / 2) - 0.5) / s
+                    achieved_goal = np.uint8(
+                        255
+                        * gaussian(
+                            achieved_goal,
+                            sigma=s,
+                            truncate=t,
+                            mode="nearest",
+                            multichannel=True,
+                        )
+                    )
+                    blur_cost = np.linalg.norm(achieved_goal - goal)
+                    d = blur_cost
                 return -d
 
             else:

@@ -209,6 +209,8 @@ def add_cem_arguments(parser):
     parser.add_argument("--use_env_dynamics", type=str2bool, default=False)
     parser.add_argument("--debug_trajectory_path", type=str, default=None)
     parser.add_argument("--debug_cem", type=str2bool, default=False)
+    parser.add_argument("--object_demo_dir", type=str, default=None)
+    parser.add_argument("--demo_difficulty", type=str, default="hard", choices=["easy", "hard"])
 
 
 def argparser():

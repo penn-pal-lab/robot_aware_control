@@ -1,6 +1,9 @@
 """Loss functions for the video prediction"""
+import numpy as np
 import torch
 import torch.nn as nn
+from skimage.filters import gaussian
+from torchvision.transforms import ToTensor
 
 mse_criterion = nn.MSELoss()
 
@@ -15,3 +18,50 @@ def kl_criterion(mu1, logvar1, mu2, logvar2, bs):
     )
     assert kld.shape[0] == bs
     return kld.sum() / bs
+
+class InpaintBlurCost:
+    def __init__(self, config) -> None:
+        self.blur_width = config.img_dim * 2
+        self.sigma = config.blur_sigma
+        self.unblur_cost_scale = config.unblur_cost_scale
+        self.img_dim = config.img_dim
+        self.blur_img = self._blur_single
+        self.to_tensor = ToTensor()
+        if config.multiview:
+            self.blur_img = self._blur_multiview
+
+    def _blur(self, img):
+        s = self.sigma
+        w = self.blur_width
+        t = (((w - 1) / 2) - 0.5) / s
+        blur = (255 * gaussian(img, sigma=s, truncate=t, multichannel=True)).astype(
+            np.uint8
+        )
+        return blur
+
+    def _blur_single(self, img):
+        img = img.cpu().permute(1, 2, 0)
+        return self._blur(img)
+
+    def _blur_multiview(self, img):
+        img = img.cpu().permute(1, 2, 0)
+        img1 = img[: self.img_dim]
+        img2 = img[self.img_dim :]
+        blur_img1 = self._blur(img1)
+        blur_img2 = self._blur(img2)
+        blur_img = np.concatenate([blur_img1, blur_img2])
+        return blur_img
+
+    def __call__(self, img, goal, blur=True):
+        scale = -1
+        if blur:
+            # imageio.imwrite("img.png", img.permute(1,2,0))
+            img = self.to_tensor(self.blur_img(img))
+            # imageio.imwrite("blur_img.png", img.permute(1,2,0))
+            # ipdb.set_trace()
+            goal = self.to_tensor(self.blur_img(goal))
+        else:
+            scale = -1 * self.unblur_cost_scale
+
+        cost = scale * mse_criterion(img, goal)
+        return cost
