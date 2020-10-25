@@ -209,23 +209,15 @@
             <site name="arenaleft" pos="0 -0.2 0" size="0.2 0.005 0.005" rgba="0 0 0 0.1" type="box"></site>
             <site name="arenatop" pos="-0.2 0 0" size="0.005 0.2 0.005" rgba="0 0 0 0.1" type="box"></site>
             <site name="arenabottom" pos="0.2 0 0" size="0.005 0.2 0.005" rgba="0 0 0 0.1" type="box"></site>
+            <site name="spawn" pos="0 0 0" size="0.1 0.005" rgba="0 0 0 0.1" type="cylinder"></site>
         </body>
         <body name="arenacenter" pos="1.06 0.75 0.42">
             <site name="arenacenter"  size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
         </body>
-        <body name="clutterboundary" pos="1.06 0.75 0.4">
-            <site name="cluttertop" pos="-0.1 0 0" size="0.005 0.2 0.005" rgba="1 0 0 0.1" type="box"></site>
-            <site name="clutterbottom" pos="0.06 0 0" size="0.005 0.2 0.005" rgba="1 0 0 0.1" type="box"></site>
-        </body>
-
-        <body name="goalboundary" pos="1.22 0.75 0.4">
-            <site name="goaltop" pos="-0.1 0 0" size="0.005 0.2 0.005" rgba="0 1 0 0.1" type="box"></site>
-            <site name="goalbottom" pos="0.04 0 0" size="0.005 0.2 0.005" rgba="0 1 0 0.1" type="box"></site>
-        </body>
 
         <body name="object0" pos="1 0.75 0.42">
 			<joint name="object0:joint" type="free" damping="0.01"></joint>
-			<geom size="0.025 0.02" type="cylinder" condim="3" name="object0" material="block_mat" mass="2" friction="2 0.005 0.0001" euler="0 0 1.57"></geom>
+			<geom size="0.025 0.02" type="cylinder" condim="3" name="object0" material="block_mat" mass="2" friction="2 0.005 0.0001" quat="1 0 0 0"></geom>
 			<site name="object0" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
         </body>
 

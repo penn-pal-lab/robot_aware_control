@@ -1,5 +1,6 @@
 import os
 import h5py
+import ipdb
 from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,12 +24,16 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
     """
 
     def __init__(self, config):
-        initial_qpos = {
+        # initialize objects out of bounds first
+        self.initial_qpos = initial_qpos = {
             "robot0:slide0": 0.175,
             "robot0:slide1": 0.48,
             "robot0:slide2": 0.1,
-            "object0:joint": [0.92, 0.75, 0.42, 1.0, 0.0, 0.0, 0.0],
+            "object0:joint": [1.5, 0.75, 0.44, 1.0, 0.0, 0.0, 0.0],
+            "object1:joint": [1.6, 0.75, 0.44, 1.0, 0.0, 0.0, 0.0],
+            "object2:joint": [1.7, 0.75, 0.44, 1.0, 0.0, 0.0, 0.0],
         }
+        self._objects = ["object0", "object1", "object2"]
         self._robot_pixel_weight = config.robot_pixel_weight
         reward_type = config.reward_type
         self._img_dim = config.img_dim
@@ -180,19 +185,13 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         # self.sim.data.set_joint_qpos('object0:joint', object_qpos)
 
         if demo_info is not None:
-            ob0_pose = self.sim.data.get_joint_qpos("obstacle0:joint").copy()
-            ob0_pose[:2] = demo_info["ob0_pos"]
-            self.sim.data.set_joint_qpos("obstacle0:joint", ob0_pose)
-
-            ob1_pose = self.sim.data.get_joint_qpos("obstacle1:joint").copy()
-            ob1_pose[:2] = demo_info["ob1_pos"]
-            self.sim.data.set_joint_qpos("obstacle1:joint", ob1_pose)
-
-            puck_pose = self.sim.data.get_joint_qpos("object0:joint").copy()
-            puck_pose[:2] = demo_info["start_state"]
-            self.sim.data.set_joint_qpos("object0:joint", puck_pose)
+            for obj in self._objects:
+                obj_joint = obj + ":joint"
+                obj_pose = self.sim.data.get_joint_qpos(obj_joint).copy()
+                obj_pose = demo_info[obj_joint]
+                self.sim.data.set_joint_qpos(obj_joint, obj_pose)
         else:
-            self._sample_obstacle()
+            self._sample_objects()
         self.sim.forward()
         return True
 
@@ -216,6 +215,12 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         """
         Generates a demonstration containing a sequence of images of the puck
         moving towards the goal.
+        For each object:
+            Move the object to the goal using straight push or RRT
+            Update the obstacle list with the goal pose
+        Returns the path, imgs, info
+        info dict contains start and goal pos, order of parts pushed, and idx of each
+        object's push trajectory
         """
         # move robot gripper up so it's not in view of camera
         init_state = self.get_state()
@@ -230,86 +235,137 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             self.sim.step()
         self.sim.forward()
 
-        puck_xyz = self.sim.data.get_joint_qpos("object0:joint")[:3].copy()
-        start_state = puck_xyz[:2]
-        goal_state = self.goal_pose["object"][:2]
-        ob0_pos = self.sim.data.get_joint_qpos("obstacle0:joint")[:2].copy()
-        ob1_pos = self.sim.data.get_joint_qpos("obstacle1:joint")[:2].copy()
-        info = {"ob0_pos": ob0_pos, "ob1_pos": ob1_pos, "start_state": start_state, "goal_state": goal_state}
-        obstacle_list = [
-            CollisionSphere(ob0_pos, 0.07),
-            CollisionSphere(ob1_pos, 0.07),
-        ]
-        # attempt straight line push
-        can_push_straight = True
-        for ob in obstacle_list:
-            u = (goal_state - start_state) / np.linalg.norm(goal_state - start_state)
-            if ob.line_in_collision(start_state, u):
-                can_push_straight = False
-                break
-
-        if can_push_straight:
-            path = np.linspace(start_state, goal_state, num=5)
-        else:
-            rrt1 = PlanarRRT(
-                start_state=start_state,
-                goal_state=goal_state,
-                dim_ranges=[(1.06 - 0.2, 1.06 + 0.2), (0.75 - 0.2, 0.75 + 0.2)],
-                max_iter=5000,
-                obstacles=obstacle_list,
-                step_size=0.05,
-                visualize=False,
-                goal_bias=0.05,
-            )
-
-            path = rrt1.build()
-            if path is None:
-                print("Could not build a path")
-
-        info["straight_push"] = can_push_straight
+        start_pos = {obj: self._get_joint_qpos(obj + ":joint")[:2] for obj in self._objects}
+        goal_pos = {obj: pose[:2] for obj, pose in self.goal_pose.items()}
+        collision_radius = 0.07
+        obstacles = {k: CollisionSphere(p, collision_radius) for k, p in start_pos.items()}
+        info = {}
+        for k, v in start_pos.items():
+            info["start_" + k] = v
+        for k, v in goal_pos.items():
+            info["goal_" + k] = v
         imgs = []
-        for p in path:
-            ob0_pose = np.concatenate([p, [puck_xyz[2], 1, 0, 0, 0]])
-            self.sim.data.set_joint_qpos("object0:joint", ob0_pose)
-            self.sim.forward()
-            imgs.append(self.render("rgb_array"))
+        all_path = []
+        info["push_order"] = push_order = np.random.permutation(len(self._objects))
+        for idx in push_order:
+            obj = self._objects[idx]
+            # attempt straight line push
+            start_state = start_pos[obj]
+            goal_state = goal_pos[obj]
+            can_push_straight = True
+            for name, collider in obstacles.items():
+                if obj == name:
+                    continue
+                goal_start = goal_state - start_state
+                u = (goal_start) / np.linalg.norm(goal_start)
+                if collider.line_in_collision(start_state, u):
+                    can_push_straight = False
+                    break
+
+            if can_push_straight:
+                path = np.linspace(start_state, goal_state, num=5)
+            else:
+                # dimensions of arena
+                center = self.sim.data.get_site_xpos("spawn")[:2]
+                left = self.sim.data.get_site_xpos("arenaleft")
+                right = self.sim.data.get_site_xpos("arenaright")
+                top = self.sim.data.get_site_xpos("arenatop")
+                bot = self.sim.data.get_site_xpos("arenabottom")
+                height = np.abs(top - bot)[0] / 2
+                width = np.abs(right - left)[1] / 2
+                dim_ranges = [
+                    (center[0] - height, center[0] + height),
+                    (center[1] - width, center[1] + width),
+                ]
+                colliders = []
+                for name, collider in obstacles.items():
+                    if name != obj:
+                        colliders.append(collider)
+                rrt1 = PlanarRRT(
+                    start_state=start_state,
+                    goal_state=goal_state,
+                    dim_ranges=dim_ranges,
+                    max_iter=10000,
+                    obstacles=colliders,
+                    step_size=0.05,
+                    visualize=False,
+                    goal_bias=0.3,
+                    visualize_path=f"{obj}.png"
+                )
+
+                path = rrt1.build()
+                if path is None:
+                    print("Could not build a path")
+
+            info[obj + "_straight_push"] = can_push_straight
+            info[obj+"_idx"] = (len(all_path), len(all_path) + len(path))
+            all_path.extend(path)
+            for p in path:
+                obj_pose = self._get_joint_qpos(obj+":joint")
+                obj_pose = np.concatenate([p, obj_pose[2:]])
+                self._set_joint_qpos(obj + ":joint", obj_pose)
+                self.sim.forward()
+                imgs.append(self.render("rgb_array"))
+            # update object's collision to be after push
+            obstacles[obj] = CollisionSphere(goal_state, collision_radius)
 
         self.set_state(init_state)
         reset_mocap2body_xpos(self.sim)
         reset_mocap_welds(self.sim)
-        return path, imgs, info
+        return all_path, imgs, info
 
-    def _sample_obstacle(self):
-        # get height, width of obstacle distribution box
-        left = self.sim.data.get_site_xpos("arenaleft")
-        right = self.sim.data.get_site_xpos("arenaright")
-        top = self.sim.data.get_site_xpos("cluttertop")
-        bot = self.sim.data.get_site_xpos("clutterbottom")
-        center = (top + (bot - top) / 2)[:2]
-        height = np.abs(top - bot)[0]
-        width = np.abs(left - right)[1]
-        height -= 0.03
-        width -= 0.03  # account for obstacle size
-        height /= 2
-        width /= 2
-        rand_height = np.random.uniform(-height, height)
-        rand_width = np.random.uniform(-width, width)
+    def _sample_from_circle(self, center, radius):
+        """
+        https://stackoverflow.com/questions/30564015/how-to-generate-random-points-in-a-circular-distribution
+        """
+        alpha = 2 * 3.1415 * np.random.uniform()
+        r = radius * np.sqrt(np.random.uniform())
+        # calculating coordinates
+        x = r * np.cos(alpha) + center[0]
+        y = r * np.sin(alpha) + center[1]
+        return np.array([x, y])
 
-        ob_z = self.sim.data.get_joint_qpos("obstacle0:joint")[2]
-        ob0_pos = center + (rand_height, rand_width)
-        ob0_pose = np.concatenate([ob0_pos, [ob_z, 1, 0, 0, 0]])
-        self.sim.data.set_joint_qpos("obstacle0:joint", ob0_pose)
+    def _sample_from_rectangle(self, center, half_width, half_height):
+        x = np.random.uniform(-half_width, half_width) + center[0]
+        y = np.random.uniform(-half_height, half_height) + center[1]
+        return np.array([x, y])
 
-        # rejection sample the next obstacle
-        ob1_pos = ob0_pos
-        while np.linalg.norm(ob1_pos - ob0_pos) < 0.06:
-            rand_height = np.random.uniform(-height, height)
-            rand_width = np.random.uniform(-width, width)
-            ob1_pos = center + (rand_height, rand_width)
-
-        ob_z = self.sim.data.get_joint_qpos("obstacle1:joint")[2]
-        ob1_pose = np.concatenate([ob1_pos, [ob_z, 1, 0, 0, 0]])
-        self.sim.data.set_joint_qpos("obstacle1:joint", ob1_pose)
+    def _sample_objects(self):
+        # set objects in radius around spawn
+        center = self.sim.data.get_site_xpos("spawn")[:2]
+        spawn_id = self.sim.model.site_name2id("spawn")
+        radius = self.sim.model.site_size[spawn_id][0]
+        failed = False
+        sampled_points = []
+        for obj in self._objects:
+            # reject sample if it overlaps with previous objects
+            for i in range(100):
+                no_overlap = True
+                xy = self._sample_from_circle(center, radius)
+                for other_xy in sampled_points:
+                    if np.linalg.norm(xy - other_xy) < 0.07:
+                        no_overlap = False
+                        break
+                if no_overlap:
+                    sampled_points.append(xy)
+                    break
+            joint = obj + ":joint"
+            pose = self.sim.data.get_joint_qpos(joint)
+            z = pose[2]
+            if no_overlap:
+                obj_quat = pose[3:]
+                obj_pose = [xy[0], xy[1], z, *obj_quat]
+                self.sim.data.set_joint_qpos(joint, obj_pose)
+            else:
+                failed = True
+        # use default qpose if failed
+        if failed:
+            print("using default qpose since sampling failed")
+            for k, v in self.initial_qpos.items():
+                if "object" in k:
+                    obj_pose = list(v)
+                    obj_pose[2] = 0.43
+                    self.sim.data.set_joint_qpos(k, obj_pose)
 
     def set_goal(self, frame, goal_state):
         """
@@ -330,56 +386,107 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         return goal
 
     def _sample_goal(self):
-        noise = np.zeros(3)
-        # pushing axis noise
-        # noise[0] = self.np_random.uniform(0.15, 0.15 + self.target_range, size=1)
-        noise[0] = self._push_dist
-        # side axis noise
-        noise[1] = self.np_random.uniform(-0.1, 0.1, size=1)
-
-        goal = self.initial_object_xpos[:3] + noise
-        goal += self.target_offset
-        goal[2] = self.height_offset
-
+        """
+        For each object, place it somewhere in the arena
+        reject sample if it is in spawn or overlapping with another object either in
+        spawn or goal
+        """
         init_state = self.get_state()
-        # move block to target position
-        obj_pose = [0, 0, 0, 1, 0, 0, 0]
-        obj_pose[:3] = goal[:3]
-        self.sim.data.set_joint_qpos("object0:joint", obj_pose)
-        reset_mocap_welds(self.sim)
+        # first turn off robot collision
+        robot_col = {}
+        for geom_id, _ in enumerate(self.sim.model.geom_bodyid):
+            geom_name = self.sim.model.geom_id2name(geom_id)
+            if geom_name is not None and "robot" in geom_name:
+                robot_col[geom_name] = (
+                    self.sim.model.geom_contype[geom_id],
+                    self.sim.model.geom_conaffinity[geom_id],
+                )
+                self.sim.model.geom_contype[geom_id] = 0
+                self.sim.model.geom_conaffinity[geom_id] = 0
+
+        # dimensions of arena
+        center = self.sim.data.get_site_xpos("spawn")[:2]
+        left = self.sim.data.get_site_xpos("arenaleft")
+        right = self.sim.data.get_site_xpos("arenaright")
+        top = self.sim.data.get_site_xpos("arenatop")
+        bot = self.sim.data.get_site_xpos("arenabottom")
+        width = np.abs(right - left)[1] / 2
+        height = np.abs(top - bot)[0] / 2
+        # dimensions of spawn
+        spawn_id = self.sim.model.site_name2id("spawn")
+        radius = self.sim.model.site_size[spawn_id][0]
+        failed = False
+        sampled_points = []
+        for obj in self._objects:  # add spawn points to consider for overlap
+            spawn_xy = self._get_joint_qpos(obj + ":joint")[:2]
+            sampled_points.append(spawn_xy)
+        for obj in self._objects:
+            # reject sample if it overlaps with previous objects
+            for i in range(1000):
+                no_overlap = True
+                xy = self._sample_from_rectangle(center, width, height)
+                for other_xy in sampled_points:
+                    if np.linalg.norm(xy - other_xy) < 0.08 or np.linalg.norm(
+                        xy - center
+                    ) < (radius + 0.06):
+                        no_overlap = False
+                        break
+                if no_overlap:
+                    sampled_points.append(xy)
+                    break
+            joint = obj + ":joint"
+            pose = self._get_joint_qpos(joint)
+            z = pose[2]
+            if no_overlap:
+                obj_quat = [1, 0, 0, 0]
+                obj_pose = [xy[0], xy[1], z, *obj_quat]
+                self._set_joint_qpos(joint, obj_pose)
+            else:
+                failed = True
+        # use default qpose if failed
+        if failed:
+            print("using default qpose since sampling failed")
+            for k, v in self.initial_qpos.items():
+                if "object" in k:
+                    obj_pose = list(v)
+                    self._set_joint_qpos(k, obj_pose)
         self.sim.forward()
-        # move robot behind block position or make it random
-        obj_pos = self.sim.data.get_site_xpos("object0").copy()
-        if self._robot_goal_distribution == "random":
-            robot_noise = np.array([-0.1, 0, 0])  # 10cm behind block so no collide
-            robot_noise[1] = self.np_random.uniform(-0.2, 0.2, size=1)  # side axis
-            robot_noise[2] = self.np_random.uniform(0.01, 0.3, size=1)  # z axis
-            gripper_target = obj_pos + robot_noise
-        elif self._robot_goal_distribution == "behind_block":
-            gripper_target = obj_pos + [-0.05, 0, 0]
+        # move robot arm back to the center
+        # obj_pos = self.sim.data.get_site_xpos("object0").copy()
+        # if self._robot_goal_distribution == "random":
+        #     robot_noise = np.array([-0.1, 0, 0])  # 10cm behind block so no collide
+        #     robot_noise[1] = self.np_random.uniform(-0.2, 0.2, size=1)  # side axis
+        #     robot_noise[2] = self.np_random.uniform(0.01, 0.3, size=1)  # z axis
+        #     gripper_target = obj_pos + robot_noise
+        # elif self._robot_goal_distribution == "behind_block":
+        #     gripper_target = obj_pos + [-0.05, 0, 0]
         gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
+        gripper_target = [0.8, 0.75, 0.9]
         self.sim.data.set_mocap_pos("robot0:mocap", gripper_target)
         self.sim.data.set_mocap_quat("robot0:mocap", gripper_rotation)
         for _ in range(10):
             self.sim.step()
 
-        # set target site to obj pos
-        site_id = self.sim.model.site_name2id("target0")
-        sites_offset = (
-            self.sim.data.site_xpos[site_id] - self.sim.model.site_pos[site_id]
-        ).copy()
-        obj_pos = self.sim.data.get_site_xpos("object0").copy()
-        self.sim.model.site_pos[site_id] = obj_pos - sites_offset
-        self.sim.forward()
-        obj_pos = self.sim.data.get_site_xpos("object0").copy()
-        robot_pos = self.sim.data.get_site_xpos("robot0:grip").copy()
+        # reenable robot collision
+        for geom_id, _ in enumerate(self.sim.model.geom_bodyid):
+            geom_name = self.sim.model.geom_id2name(geom_id)
+            if geom_name is not None and "robot" in geom_name:
+                contype, conaffinity = robot_col[geom_name]
+                self.sim.model.geom_contype[geom_id] = contype
+                self.sim.model.geom_conaffinity[geom_id] = conaffinity
+        self.sim.step()
+
         if self._pixels_ob:
             goal = self.render(mode="rgb_array")
         else:
+            obj_pos = self.sim.data.get_site_xpos("object0").copy()
+            robot_pos = self.sim.data.get_site_xpos("robot0:grip").copy()
             goal = np.concatenate([obj_pos, robot_pos])
 
         # record goal info for checking success later
-        self.goal_pose = {"object": obj_pos, "gripper": robot_pos}
+        self.goal_pose = {
+            obj: self._get_joint_qpos(obj + ":joint")[:3] for obj in self._objects
+        }
         if self.reward_type in ["inpaint-blur", "inpaint", "weighted", "blackrobot"]:
             self.goal_mask = self.get_robot_mask()
             if self.reward_type in ["inpaint-blur", "inpaint"]:
@@ -400,7 +507,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 255
                 * gaussian(goal, sigma=s, truncate=t, mode="nearest", multichannel=True)
             )
-
         # reset to previous state
         self.set_state(init_state)
         reset_mocap2body_xpos(self.sim)
@@ -448,8 +554,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
 
     def _is_success(self, achieved_goal, desired_goal, info):
         current_pose = {
-            "object": self.sim.data.get_site_xpos("object0").copy(),
-            "gripper": self.sim.data.get_site_xpos("robot0:grip").copy(),
+            obj: self._get_joint_qpos(obj + ":joint")[:2] for obj in self._objects
         }
         for k, v in current_pose.items():
             dist = np.linalg.norm(v - self.goal_pose[k])
@@ -673,6 +778,12 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         # elif self._behavior == "push" and target_type == "object":
         #     goal_dist = np.linalg.norm(object_xpos - self.goal_pose["object"])
         #     print("goal object dist after push", goal_dist)
+
+    def _get_joint_qpos(self, joint_name):
+        return self.sim.data.get_joint_qpos(joint_name).copy()
+
+    def _set_joint_qpos(self, joint_name, pose):
+        self.sim.data.set_joint_qpos(joint_name, pose)
 
     def occlude(self, history):
         # move gripper above cube
@@ -1202,8 +1313,14 @@ def collect_object_demos():
     for i in trange(num_demos, desc="Object Only Demos"):
         env.reset()
         push_path, imgs, info = env.make_push_object_demo()
-        name = "easy" if info["straight_push"] else "hard"
-        stats_dict[f"{name}_len"].append(len(push_path))
+        name = ""
+        for obj in env._objects:
+            if info[obj + "_straight_push"]:
+                name += "e"
+            else:
+                name += "h"
+
+        stats_dict["len"].append(len(push_path))
         name = f"{name}_{i}"
         if record_gif:
             gif_path = os.path.join(gif_dir, f"{name}.gif")
@@ -1217,19 +1334,17 @@ def collect_object_demos():
 
     # print out stats
     stats_path = os.path.join(config.demo_dir, "stats.txt")
-    easy_len = stats_dict["easy_len"]
-    easy_stats = f"Easy count: {len(easy_len)}, min len: {np.min(easy_len)}, max len: {np.max(easy_len)}, avg len: {np.mean(easy_len)}\n"
-    hard_len = stats_dict["hard_len"]
-    hard_stats = f"Hard count:{len(hard_len)}, min len: {np.min(hard_len)}, max len: {np.max(hard_len)}, avg len: {np.mean(hard_len)}\n"
+    easy_len = stats_dict["len"]
+    easy_stats = f"count: {len(easy_len)}, min len: {np.min(easy_len)}, max len: {np.max(easy_len)}, avg len: {np.mean(easy_len)}\n"
     with open(stats_path, "w") as f:
-        f.writelines([easy_stats, hard_stats])
+        f.writelines([easy_stats])
     print(easy_stats)
-    print(hard_stats)
 
 if __name__ == "__main__":
     from collections import defaultdict
     from copy import deepcopy
 
+    import time
     import imageio
     from PIL import Image
     from src.config import argparser
@@ -1247,8 +1362,11 @@ if __name__ == "__main__":
     # env = ClutterPushEnv(config)
     # for i in range(10):
     #     env.reset()
-    # imageio.imwrite("scene.png", env.render("rgb_array"))
-    # imageio.imwrite("goal.png", env.goal)
+    #     frames, imgs, info = env.make_push_object_demo()
+    #     imageio.mimwrite(f"demo{i}.gif", imgs)
+        # env.render("human")
+        # time.sleep(1)
+        # imageio.imwrite(f"goal{i}.png", goal)
     # imgs = []
     # for i in range(20):
     #     push = (1, 0, 0)
