@@ -10,6 +10,7 @@ from skimage.filters import gaussian
 from src.env.fetch.fetch_env import FetchEnv
 from src.env.fetch.rotations import mat2euler
 from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
+import pickle
 
 MODEL_XML_PATH = os.path.join("fetch", "push.xml")
 LARGE_MODEL_XML_PATH = os.path.join("fetch", "large_push.xml")
@@ -38,6 +39,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self._multiview = config.multiview
         self._camera_ids = config.camera_ids
         self._pixels_ob = config.pixels_ob
+        self._depth_ob = config.depth_ob
         self._norobot_pixels_ob = config.norobot_pixels_ob
         self._distance_threshold = {
             "object": config.object_dist_threshold,
@@ -77,26 +79,32 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype="float32")
         obs = self._get_obs()
         if self._pixels_ob:
-            self.observation_space = spaces.Dict(
-                dict(
-                    desired_goal=spaces.Box(
-                        -np.inf,
-                        np.inf,
-                        shape=obs["achieved_goal"].shape,
-                        dtype=np.uint8,
-                    ),
-                    achieved_goal=spaces.Box(
-                        -np.inf,
-                        np.inf,
-                        shape=obs["achieved_goal"].shape,
-                        dtype=np.uint8,
-                    ),
-                    observation=spaces.Box(
-                        -np.inf, np.inf, shape=obs["observation"].shape, dtype=np.uint8
-                    ),
-                    robot=spaces.Box(-np.inf, np.inf, shape=(6,), dtype="float32"),
-                )
+            ob_dict = dict(
+                desired_goal=spaces.Box(
+                    -np.inf,
+                    np.inf,
+                    shape=obs["achieved_goal"].shape,
+                    dtype=np.uint8,
+                ),
+                achieved_goal=spaces.Box(
+                    -np.inf,
+                    np.inf,
+                    shape=obs["achieved_goal"].shape,
+                    dtype=np.uint8,
+                ),
+                observation=spaces.Box(
+                    -np.inf, np.inf, shape=obs["observation"].shape, dtype=np.uint8
+                ),
+                robot=spaces.Box(-np.inf, np.inf, shape=(6,), dtype="float32"),
             )
+            if self._depth_ob:
+                ob_dict["world_coord"] = spaces.Box(
+                    -np.inf,
+                    np.inf,
+                    shape=obs["world_coord"].shape,
+                    dtype="float32",
+                )
+            self.observation_space = spaces.Dict(ob_dict)
 
     def robot_kinematics(self, sim_state, action):
         """
@@ -132,14 +140,23 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         gripper_state = robot_qpos[-2:]
         gripper_vel = robot_qvel[-2:] * dt
         if self._pixels_ob:
-            obs = self.render("rgb_array", remove_robot=self._norobot_pixels_ob)
+            out = self.render(
+                "rgb_array", remove_robot=self._norobot_pixels_ob, get_depth_map=self._depth_ob
+            )
+            if self._depth_ob:
+                img, world_coord = out
+            else:
+                img = out
             robot = np.concatenate([grip_pos, grip_velp])
-            return {
-                "observation": obs.copy(),
-                "achieved_goal": obs.copy(),
+            obs = {
+                "observation": img.copy(),
+                "achieved_goal": img.copy(),
                 "desired_goal": self.goal.copy(),
                 "robot": robot.copy(),
             }
+            if self._depth_ob:
+                obs["world_coord"] = world_coord
+            return obs
         # change to a scalar if the gripper is made symmetric
         if self.has_object:
             object_pos = self.sim.data.get_site_xpos("object0")
@@ -275,12 +292,16 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         mode="rgb_array",
         camera_name=None,
         segmentation=False,
-        remove_robot=False
+        remove_robot=False,
+        get_depth_map=False,
     ):
         """
         If remove_robot, then use inpaint and mask to remove robot pixels
         remove_robot is used during dataset generation
         """
+        import math
+        from src.env.fetch.inverse_transform import pixel_coord_np, getHomogenousT
+        from scipy.spatial.transform import Rotation as R
         if remove_robot:
             img = self.render()
             seg_mask = self.get_robot_mask()
@@ -290,17 +311,62 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
 
         if self._multiview:
             imgs = []
+            mv_world_coords = []
             for cam_id in self._camera_ids:
                 camera_name = self.sim.model.camera_id2name(cam_id)
-                img = super().render(
-                    mode,
-                    self._img_dim,
-                    self._img_dim,
-                    camera_name=camera_name,
-                    segmentation=segmentation,
-                )
+                if not get_depth_map:
+                    img = super().render(
+                        mode,
+                        self._img_dim,
+                        self._img_dim,
+                        camera_name=camera_name,
+                        segmentation=segmentation,
+                    )
+                else:
+                    img, depth = self.sim.render(
+                        width=self._img_dim,
+                        height=self._img_dim,
+                        camera_name=camera_name,
+                        depth=True,
+                    )
+                    img, depth = img[::-1, :, :], depth[::-1, :]
+                    extent = self.sim.model.stat.extent
+                    near_ = self.sim.model.vis.map.znear * extent
+                    far_ = self.sim.model.vis.map.zfar * extent
+
+                    # intrinsics
+                    height = width = self._img_dim
+                    fovy = self.sim.model.cam_fovy[cam_id]
+                    f = 0.5 * height / math.tan(fovy * math.pi / 360)
+                    K = np.array(((f, 0, width / 2), (0, f, height / 2), (0, 0, 1)))
+                    K_inv = np.linalg.inv(K)
+                    depth = -(
+                        near_ / (1 - depth * (1 - near_ / far_))
+                    )  # -1 because camera is looking along the -Z axis of its frame
+                    """
+                    replace pixel coords with keypoints coordinates in pixel space
+                    shape = (3,N) where N is no. of keypoints and third row is filled with 1s
+                    """
+                    pixel_coords = pixel_coord_np(width=width, height=height)
+                    cam_coords = K_inv[:3, :3] @ pixel_coords * depth.flatten()
+                    cam_quat = self.sim.model.cam_quat[cam_id]
+                    cam_pos = self.sim.model.cam_pos[cam_id]
+                    r = R.from_quat(
+                        [cam_quat[1], cam_quat[2], cam_quat[3], cam_quat[0]]
+                    )
+                    T = getHomogenousT(r.as_matrix(), cam_pos)
+                    cam_homogenous_coords = np.vstack(
+                        (cam_coords, np.ones(cam_coords.shape[1]))
+                    )
+                    world_coords = T @ cam_homogenous_coords
+                    world_coords[:3, :] = world_coords[:3, :] / world_coords[-1, :]
+                    mv_world_coords.append(world_coords[:3].reshape((3, height, width)))
                 imgs.append(img)
+
             multiview_img = np.concatenate(imgs, axis=0)
+            if get_depth_map:
+                multiview_coords = np.concatenate(mv_world_coords, axis=1)
+                return multiview_img, multiview_coords
             return multiview_img
         return super().render(
             mode,
@@ -504,6 +570,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             ac = d * speed
             history["ac"].append(ac)
             obs, _, _, info = self.step(ac)
+            # self.render("human")
             history["obs"].append(obs)
             for k, v in info.items():
                 history[k].append(v)
@@ -905,14 +972,14 @@ def collect_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 5000   # per worker
-    num_workers = 20
+    num_trajectories = 10  # per worker
+    num_workers = 1
     record = False
     behavior = "push"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
 
     config, _ = argparser()
-    config.invisible_demo = True
+    config.invisible_demo = False
     config.large_block = True
     config.demo_dir = "demos/fetch_push"
     os.makedirs(config.demo_dir, exist_ok=True)
@@ -946,6 +1013,8 @@ def collect_multiview_trajectory(
     env = FetchPushEnv(config)
     len_stats = []
     it = range(num_trajectories)
+    all_frames = []
+    all_world_coord = []
     if rank == 0:
         it = tqdm(it)
     for i in it:
@@ -960,19 +1029,31 @@ def collect_multiview_trajectory(
         obs = history["obs"]  # array of observation dictionaries
         len_stats.append(len(obs))
         frames = []
-        robot = []
+        # robot = []
+        world_coord = []
         for ob in obs:
+            world_coord.append(ob["world_coord"].transpose(1,2,0))
             frames.append(ob["observation"])
-            robot.append(ob["robot"])
+            # robot.append(ob["robot"])
 
         frames = np.asarray(frames)
-        robot = np.asarray(robot)
-        actions = history["ac"]
-        assert len(frames) - 1 == len(actions)
-        with h5py.File(path, "w") as hf:
-            hf.create_dataset("frames", data=frames, compression="gzip")
-            hf.create_dataset("robot", data=robot, compression="gzip")
-            hf.create_dataset("actions", data=actions, compression="gzip")
+        world_coord = np.asarray(world_coord)
+
+        all_world_coord.append(world_coord)
+        all_frames.append(frames)
+        # robot = np.asarray(robot)
+        # actions = history["ac"]
+        # assert len(frames) - 1 == len(actions)
+    with h5py.File(path, "w") as hf:
+        for i, (frame, world_coord) in tqdm(enumerate(zip(all_frames, all_world_coord))):
+            hf.create_dataset(f"frame_{i}", data=frame, compression="gzip")
+            hf.create_dataset(f"world_coord_{i}", data=world_coord, compression="gzip")
+        # print("Frame shape:", all_frames.shape)
+        # print("World Coord shape:", all_world_coord.shape)
+        # hf.create_dataset("frames", data=all_frames, compression="gzip")
+        # hf.create_dataset("world_coord", data=all_world_coord, compression="gzip")
+        # hf.create_dataset("robot", data=robot, compression="gzip")
+        # hf.create_dataset("actions", data=actions, compression="gzip")
 
     # print out stats about the dataset
     stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}"
@@ -988,22 +1069,26 @@ def collect_multiview_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 5000 # per worker
-    num_workers = 20
+    num_trajectories = 2  # per worker
+    num_workers = 1
     record = False
-    behavior = "random_robot"
+    behavior = "push"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
 
     config, _ = argparser()
     config.large_block = True
-    config.demo_dir = "demos/fetch_push_mv"
+    config.demo_dir = "demos/tckn_data"
     config.multiview = True
-    config.norobot_pixels_ob = True
-    config.img_dim = 64
+    config.norobot_pixels_ob = False
+    config.reward_type = "dense"
+    config.img_dim = 128
+    config.depth_ob = True
     os.makedirs(config.demo_dir, exist_ok=True)
 
     if num_workers == 1:
-        collect_multiview_trajectory(0, config, behavior, record, num_trajectories, ep_len)
+        collect_multiview_trajectory(
+            0, config, behavior, record, num_trajectories, ep_len
+        )
     else:
         ps = []
         for i in range(num_workers):
@@ -1023,6 +1108,7 @@ def collect_multiview_trajectories():
         for p in ps:
             p.join()
 
+
 def collect_cem_goals():
     """Collect goal images for testing CEM planning"""
     config, _ = argparser()
@@ -1032,7 +1118,7 @@ def collect_cem_goals():
     config.norobot_pixels_ob = True
     config.reward_type = "inpaint"
     config.img_dim = 64
-    config.push_dist = 0.135 # with noise, (0.07, 0.2)
+    config.push_dist = 0.135  # with noise, (0.07, 0.2)
     os.makedirs(config.demo_dir, exist_ok=True)
     env = FetchPushEnv(config)
     for i in range(200):
@@ -1049,12 +1135,16 @@ if __name__ == "__main__":
     from PIL import Image
     from src.config import argparser
     from torchvision.transforms import ToTensor
+    import pickle
 
     # plot_behaviors_per_cost()
     # plot_costs_per_behavior()
     # collect_trajectories()
-    # collect_multiview_trajectories()
-    collect_cem_goals()
+    collect_multiview_trajectories()
+    # collect_cem_goals()
+    # with open("demos/tckn_data/100push.pkl", "rb") as f:
+    #     data = pickle.load(f)
+    #     import ipdb; ipdb.set_trace()
     # config, _ = argparser()
     # env = FetchPushEnv(config)
     # env.reset()

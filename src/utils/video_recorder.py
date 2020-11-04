@@ -129,8 +129,8 @@ class VideoRecorder(object):
 
         render_mode = "ansi" if self.ansi_mode else "rgb_array"
         frame = self.env.render(mode=render_mode)
-        goal = self.env._unblurred_goal
-        frame = np.concatenate([frame, goal], axis=1)
+        # goal = self.env._unblurred_goal
+        # frame = np.concatenate([frame, goal], axis=1)
 
         if frame is None:
             if self._async:
