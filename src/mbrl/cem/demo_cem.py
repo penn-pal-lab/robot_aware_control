@@ -29,8 +29,7 @@ def load_demo_dataset(config):
     files = []
     for d in os.scandir(config.object_demo_dir):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            if config.demo_difficulty in d.name:
-                files.append(d.path)
+            files.append(d.path)
     assert config.num_episodes <= len(files), f"need at least {config.num_episodes} demos"
     return files[:config.num_episodes]
 
@@ -60,27 +59,33 @@ def run_cem_episodes(config):
             cost = InpaintBlurCost(config)
     # Do rollouts of CEM control
     all_episode_stats = defaultdict(list)
-    goal_idx = 1 # start at 2nd goal since 1st is trivial
     for i in range(num_episodes):  # this can be parallelized
         frames, demo_states, demo_info = load_demo(demos[i])
         trajectory = defaultdict(list)
-        goal_img = frames[goal_idx]
+        subtask_idx = 0
+        goal_idx = 1 # start at 2nd goal since 1st is trivial
         goal_state = demo_states[goal_idx]
-        env.reset(goal_img, goal_state, demo_info)
-        # mask = np.abs(obs["observation"] - frames[0]).astype(np.uint8)
-        # all_imgs = np.concatenate([frames[0], obs["observation"], mask], axis=1)
-        # imageio.imwrite("comp.png", all_imgs)
-        # import ipdb; ipdb.set_trace()
+        goal_obj = f"object{demo_info['push_order'][subtask_idx]}"
+        goal_img = frames[goal_idx]
+        obs = env.reset(goal_obj, goal_img, goal_state, demo_info)
 
         goal = (ToTensor()(env._unblurred_goal)).to(config.device)
         if config.record_trajectory:
             trajectory["obs"].append(obs)
             trajectory["state"].append(env.get_state())
-        vr = VideoRecorder(
-            env,
-            path=os.path.join(config.video_dir, f"test_{i}.mp4"),
-            enabled=i % config.record_video_interval == 0,
-        )
+        # vr = VideoRecorder(
+        #     env,
+        #     path=os.path.join(config.video_dir, f"test_{i}.mp4"),
+        #     enabled=i % config.record_video_interval == 0,
+        # )
+        record = i % config.record_video_interval == 0
+        if record:
+            gif = []
+            env_ob = env.render("rgb_array") # no inpainting
+            ob = obs["observation"] # inpainting
+            goal = env._unblurred_goal
+            gif_img = np.concatenate([env_ob, ob, goal], axis=1)
+            gif.append(gif_img)
 
         s = 0  # Step count
         logger.info("\n=== Episode %d ===\n" % (i))
@@ -111,9 +116,28 @@ def run_cem_episodes(config):
                 trajectory["ac"].append(action)
                 trajectory["state"].append(env.get_state())
             s += 1
-            vr.capture_frame()
-            logger.info("\tObject Dist: {}".format(info["object_dist"]))
+            if record:
+                env_ob = env.render("rgb_array") # no inpainting
+                ob = obs["observation"] # inpainting
+                goal = env._unblurred_goal
+                gif_img = np.concatenate([env_ob, ob, goal], axis=1)
+                gif.append(gif_img)
+
+            logger.info(f"\t{goal_obj} dist: {info[goal_obj+'_dist']}")
             succ = info["is_success"]
+            # subgoal checking
+            if succ:
+                # TODO: update subtask idx to next object in multiple object pushing
+                goal_idx += 1
+                if goal_idx >= len(frames):
+                    print("Done with all goals")
+                    done = True
+                else:
+                    goal_obj = f"object{demo_info['push_order'][subtask_idx]}"
+                    goal_state = demo_states[goal_idx]
+                    goal_img = frames[goal_idx]
+                    env.set_goal(goal_obj, goal_img, goal_state)
+            # check if we switch to next obj
             # don't care about success as early termination
             if done or s > config.max_episode_length:
                 logger.info("=" * 10 + f"Episode {i}" + "=" * 10)
@@ -128,7 +152,9 @@ def run_cem_episodes(config):
                     logger.info(f"{k}: {v}")
                     all_episode_stats[k].append(v)
                 break
-        vr.close()
+        if record:
+            gif_path = os.path.join(config.video_dir, f"ep_{i}.gif")
+            imageio.mimwrite(gif_path, gif)
 
     # Close video recorder
     env.close()

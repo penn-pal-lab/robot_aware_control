@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import wandb
 from src.env.fetch.fetch_push import FetchPushEnv
+from src.env.fetch.clutter_push import ClutterPushEnv
 from src.prediction.losses import InpaintBlurCost, mse_criterion
 from src.prediction.models.dynamics import DynamicsModel
 from src.utils.plot import save_gif
@@ -167,7 +168,7 @@ def run_cem_episodes(config):
     num_episodes = config.num_episodes
     model = None
     use_env = config.use_env_dynamics
-    env = FetchPushEnv(config)
+    env = ClutterPushEnv(config)
     if not use_env:
         model = DynamicsModel(config)
         model.load_model(config.dynamics_model_ckpt)
@@ -177,9 +178,7 @@ def run_cem_episodes(config):
             cost = InpaintBlurCost(config)
     # Do rollouts of CEM control
     all_episode_stats = defaultdict(list)
-    success_record = np.zeros(num_episodes)
     for i in range(num_episodes):  # this can be parallelized
-        ep_history = defaultdict(list)
         trajectory = defaultdict(list)
         obs = env.reset()
         goal = (ToTensor()(env._unblurred_goal)).to(config.device)
@@ -191,19 +190,21 @@ def run_cem_episodes(config):
             path=os.path.join(config.video_dir, f"test_{i}.mp4"),
             enabled=i % config.record_video_interval == 0,
         )
-
+        vr.capture_frame()
+        terminate_ep = False
         s = 0  # Step count
         logger.info("\n=== Episode %d ===\n" % (i))
+        gif = []
         while True:
             logger.info("\tStep {}".format(s))
             if use_env:
-                action = cem_env_planner(env, config).numpy()
+                action_seq = cem_env_planner(env, config).numpy()
             else:
                 sim_state = env.get_state()
                 robot = obs["robot"].astype(np.float32)
                 img = obs["observation"]
                 start = (sim_state, robot, img)
-                action, info = cem_model_planner(model, env, start, goal, cost, config)
+                action_seq, info = cem_model_planner(model, env, start, goal, cost, config)
                 if config.debug_cem:
                     # (L, K, C, W, H)
                     cem_preds = info["top_preds"]
@@ -215,28 +216,39 @@ def run_cem_episodes(config):
                     debug_path = os.path.join(config.plot_dir, f"ep{i}_step{s}_cem.gif")
                     save_gif(debug_path, cem_eps)
 
-            obs, _, done, info = env.step(action, compute_reward=False)
-            if config.record_trajectory:
-                trajectory["obs"].append(obs)
-                trajectory["ac"].append(action)
-                trajectory["state"].append(env.get_state())
-            s += 1
-            vr.capture_frame()
-            logger.info("\tObject Dist: {}".format(info["object_dist"]))
-            succ = info["is_success"]
-            # don't care about success as early termination
-            if done or s > config.max_episode_length:
-                logger.info("=" * 10 + f"Episode {i}" + "=" * 10)
-                if config.record_trajectory and (
-                    i % config.record_trajectory_interval == 0
-                ):
-                    path = os.path.join(config.trajectory_dir, f"ep_s{succ}_{i}.pkl")
-                    with open(path, "wb") as f:
-                        pickle.dump(trajectory, f)
-                # log the last step's information
+
+            for action in action_seq:
+                obs, _, done, info = env.step(action, compute_reward=False)
+                if config.record_trajectory:
+                    trajectory["obs"].append(obs)
+                    trajectory["ac"].append(action)
+                    trajectory["state"].append(env.get_state())
+                s += 1
+                gif.append(obs["observation"])
+                vr.capture_frame()
+                dist_str = "\t"
                 for k, v in info.items():
-                    logger.info(f"{k}: {v}")
-                    all_episode_stats[k].append(v)
+                    if "dist" in k and v > 0.01:
+                        dist_str += f"{k}: {v} "
+                logger.info(dist_str)
+                succ = info["is_success"]
+                # don't care about success as early termination
+                if done or s > config.max_episode_length:
+                    imageio.mimwrite("inpaintobs.gif", gif)
+                    terminate_ep = True
+                    logger.info("=" * 10 + f"Episode {i}" + "=" * 10)
+                    if config.record_trajectory and (
+                        i % config.record_trajectory_interval == 0
+                    ):
+                        path = os.path.join(config.trajectory_dir, f"ep_s{succ}_{i}.pkl")
+                        with open(path, "wb") as f:
+                            pickle.dump(trajectory, f)
+                    # log the last step's information
+                    for k, v in info.items():
+                        logger.info(f"{k}: {v}")
+                        all_episode_stats[k].append(v)
+                    break
+            if terminate_ep:
                 break
         vr.close()
 

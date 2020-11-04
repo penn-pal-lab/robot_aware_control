@@ -1,6 +1,7 @@
 import os
 import h5py
 import ipdb
+import imageio
 from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,7 +30,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             "robot0:slide0": 0.175,
             "robot0:slide1": 0.48,
             "robot0:slide2": 0.1,
-            "object0:joint": [1.5, 0.75, 0.44, 1.0, 0.0, 0.0, 0.0],
+            "object0:joint": [1.5, 0.75, 0.42, 1.0, 0.0, 0.0, 0.0],
             "object1:joint": [1.6, 0.75, 0.44, 1.0, 0.0, 0.0, 0.0],
             "object2:joint": [1.7, 0.75, 0.44, 1.0, 0.0, 0.0, 0.0],
         }
@@ -43,8 +44,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         self._pixels_ob = config.pixels_ob
         self._norobot_pixels_ob = config.norobot_pixels_ob
         self._distance_threshold = {
-            "object": config.object_dist_threshold,
-            "gripper": config.gripper_dist_threshold,
+            o: config.object_dist_threshold for o in self._objects
         }
         self._robot_goal_distribution = config.robot_goal_distribution
         self._push_dist = config.push_dist
@@ -169,9 +169,10 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             "desired_goal": self.goal.copy(),
         }
 
-    def _reset_sim(self, demo_info=None):
+    def _reset_sim(self, spawn_info=None):
         """
         Gets called by goal env's reset right before sampling new goal.
+        spawn_info will have the poses of the objects and the robot spawn point
         """
         self.sim.set_state(self.initial_state)
 
@@ -184,29 +185,31 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         # object_qpos[:2] = object_xpos
         # self.sim.data.set_joint_qpos('object0:joint', object_qpos)
 
-        if demo_info is not None:
+        if spawn_info is not None:
             for obj in self._objects:
                 obj_joint = obj + ":joint"
                 obj_pose = self.sim.data.get_joint_qpos(obj_joint).copy()
-                obj_pose = demo_info[obj_joint]
+                obj_pose = spawn_info[obj]
                 self.sim.data.set_joint_qpos(obj_joint, obj_pose)
         else:
             self._sample_objects()
         self.sim.forward()
         return True
 
-    def reset(self, goal=None, goal_state=None, demo_info=None):
+    def reset(self, spawn_info=None, goal_info=None):
         """
-        Goal is an (image, pos) from the demo (pos is used for metrics)
-        demo_info contains initialization info
+        spawn_info contains the spawn poses of the objects
+        goal_info contains the goal poses, images, etc.
         """
         did_reset_sim = False
         while not did_reset_sim:
-            did_reset_sim = self._reset_sim(demo_info)
-        if goal is None:
+            did_reset_sim = self._reset_sim(spawn_info)
+        # if self.reward_type in ["inpaint", "inpaint-blur"] or self._norobot_pixels_ob:
+        #     self._background_img = self._get_background_img()
+        if goal_info is None:
             self.goal = self._sample_goal().copy()
         else:
-            self.goal = self.set_goal(goal, goal_state).copy()
+            self.goal = self.set_goal(object, goal_info).copy()
         obs = self._get_obs()
         self._use_unblur = False
         return obs
@@ -235,10 +238,14 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             self.sim.step()
         self.sim.forward()
 
-        start_pos = {obj: self._get_joint_qpos(obj + ":joint")[:2] for obj in self._objects}
+        start_pos = {
+            obj: self._get_joint_qpos(obj + ":joint")[:2] for obj in self._objects
+        }
         goal_pos = {obj: pose[:2] for obj, pose in self.goal_pose.items()}
         collision_radius = 0.07
-        obstacles = {k: CollisionSphere(p, collision_radius) for k, p in start_pos.items()}
+        obstacles = {
+            k: CollisionSphere(p, collision_radius) for k, p in start_pos.items()
+        }
         info = {}
         for k, v in start_pos.items():
             info["start_" + k] = v
@@ -246,12 +253,16 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             info["goal_" + k] = v
         imgs = []
         all_path = []
-        info["push_order"] = push_order = np.random.permutation(len(self._objects))
+        info["push_order"] = []
+        push_order = np.random.permutation(len(self._objects))
         for idx in push_order:
             obj = self._objects[idx]
             # attempt straight line push
             start_state = start_pos[obj]
             goal_state = goal_pos[obj]
+            if np.linalg.norm(start_state - goal_state) < 0.01:
+                continue
+            info["push_order"].append(idx)
             can_push_straight = True
             for name, collider in obstacles.items():
                 if obj == name:
@@ -290,7 +301,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                     step_size=0.05,
                     visualize=False,
                     goal_bias=0.3,
-                    visualize_path=f"{obj}.png"
+                    visualize_path=f"{obj}.png",
                 )
 
                 path = rrt1.build()
@@ -298,10 +309,10 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                     print("Could not build a path")
 
             info[obj + "_straight_push"] = can_push_straight
-            info[obj+"_idx"] = (len(all_path), len(all_path) + len(path))
+            info[obj + "_idx"] = (len(all_path), len(all_path) + len(path))
             all_path.extend(path)
             for p in path:
-                obj_pose = self._get_joint_qpos(obj+":joint")
+                obj_pose = self._get_joint_qpos(obj + ":joint")
                 obj_pose = np.concatenate([p, obj_pose[2:]])
                 self._set_joint_qpos(obj + ":joint", obj_pose)
                 self.sim.forward()
@@ -331,6 +342,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         return np.array([x, y])
 
     def _sample_objects(self):
+        print("sampling objects")
         # set objects in radius around spawn
         center = self.sim.data.get_site_xpos("spawn")[:2]
         spawn_id = self.sim.model.site_name2id("spawn")
@@ -339,9 +351,13 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         sampled_points = []
         for obj in self._objects:
             # reject sample if it overlaps with previous objects
-            for i in range(100):
+            # reject sample if it's too close to the spawn point where the robot is
+            for i in range(1000):
                 no_overlap = True
                 xy = self._sample_from_circle(center, radius)
+                if np.linalg.norm(xy - center) < 0.09:
+                    continue
+
                 for other_xy in sampled_points:
                     if np.linalg.norm(xy - other_xy) < 0.07:
                         no_overlap = False
@@ -367,23 +383,26 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                     obj_pose[2] = 0.43
                     self.sim.data.set_joint_qpos(k, obj_pose)
 
-    def set_goal(self, frame, goal_state):
+    def set_goal(self, goal_info):
         """
         Assume goal is image, and reward type is either L2, inpaint, inpaint-blur
         """
-        self.goal_pose["object"][:2] = goal_state
-        goal = self._unblurred_goal = frame
-        if self.reward_type == "inpaint-blur":
-            # https://stackoverflow.com/questions/25216382/gaussian-filter-in-scipy
-            s = self._sigma
-            w = self._blur_width
-            t = (((w - 1) / 2) - 0.5) / s
-            self._unblurred_goal = goal
-            goal = np.uint8(
-                255
-                * gaussian(goal, sigma=s, truncate=t, mode="nearest", multichannel=True)
-            )
-        return goal
+        # self.goal_pose contains goal poses of all objects
+        # self.current_goal_obj is the string of the current object to push
+
+        # self.goal_pose[obj][:2] = goal_state
+        # goal = self._unblurred_goal = img
+        # if self.reward_type == "inpaint-blur":
+        #     # https://stackoverflow.com/questions/25216382/gaussian-filter-in-scipy
+        #     s = self._sigma
+        #     w = self._blur_width
+        #     t = (((w - 1) / 2) - 0.5) / s
+        #     self._unblurred_goal = goal
+        #     goal = np.uint8(
+        #         255
+        #         * gaussian(goal, sigma=s, truncate=t, mode="nearest", multichannel=True)
+        #     )
+        # return goal
 
     def _sample_goal(self):
         """
@@ -420,7 +439,10 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         for obj in self._objects:  # add spawn points to consider for overlap
             spawn_xy = self._get_joint_qpos(obj + ":joint")[:2]
             sampled_points.append(spawn_xy)
-        for obj in self._objects:
+
+        goal_order = np.random.permutation(self._objects)
+        # only choose 1 object to push for easy task
+        for obj in goal_order[:1]:
             # reject sample if it overlaps with previous objects
             for i in range(1000):
                 no_overlap = True
@@ -523,6 +545,11 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         if remove_robot:
             img = self.render()
             seg_mask = self.get_robot_mask()
+            # update background img to most recent unoccluded pixels.
+            # this is not useful for the current timestep, but will be useful
+            # for future inpaintings
+            # ipdb.set_trace()
+            # self._background_img[~seg_mask] = img[~seg_mask].copy()
             # inpaint the img
             img[seg_mask] = self._background_img[seg_mask]
             return img
@@ -556,15 +583,18 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         current_pose = {
             obj: self._get_joint_qpos(obj + ":joint")[:2] for obj in self._objects
         }
-        for k, v in current_pose.items():
-            dist = np.linalg.norm(v - self.goal_pose[k])
+        obj_successes = []
+        for k, v in self.goal_pose.items():
+            dist = np.linalg.norm(current_pose[k] - v[:2])
             info[f"{k}_dist"] = dist
             succ = dist < self._distance_threshold[k]
             info[f"{k}_success"] = float(succ)
-        if self._robot_goal_distribution == "random":
-            return info["object_success"]
-        elif self._robot_goal_distribution == "behind_block":
-            return float(info["object_success"] and info["gripper_success"])
+            obj_successes.append(succ)
+        return all(obj_successes)
+        # if self._robot_goal_distribution == "random":
+        #     return info["object_success"]
+        # elif self._robot_goal_distribution == "behind_block":
+        #     return float(info["object_success"] and info["gripper_success"])
 
     def weighted_cost(self, achieved_goal, goal, info):
         """
@@ -658,15 +688,10 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         Returns an image (H, W, C)
         """
         init_state = self.get_state()
-        # move block to out of scene
-        obj_pose = [100, 0, 0, 1, 0, 0, 0]
-        self.sim.data.set_joint_qpos("object0:joint", obj_pose)
         reset_mocap_welds(self.sim)
         self.sim.forward()
-        # move robot gripper up
-        robot_pos = self.sim.data.get_site_xpos("robot0:grip").copy()
-        robot_noise = np.array([-1, 0, 0.5])
-        gripper_target = robot_pos + robot_noise
+        # move robot gripper to above spawn
+        gripper_target = self.sim.data.get_site_xpos("spawn") + np.array([0, 0, 0.5])
 
         gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
         self.sim.data.set_mocap_pos("robot0:mocap", gripper_target)
@@ -699,10 +724,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 )
                 self.sim.model.geom_contype[geom_id] = 0
                 self.sim.model.geom_conaffinity[geom_id] = 0
-
-        gripper_target = np.array(
-            [-0.75, 0.005, -0.445 + self.gripper_extra_height]
-        ) + self.sim.data.get_site_xpos("robot0:grip")
+        gripper_target = np.array([0, 0, 0.05]) + self.sim.data.get_site_xpos("spawn")
         gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
         self.sim.data.set_mocap_pos("robot0:mocap", gripper_target)
         self.sim.data.set_mocap_quat("robot0:mocap", gripper_rotation)
@@ -1315,6 +1337,8 @@ def collect_object_demos():
         push_path, imgs, info = env.make_push_object_demo()
         name = ""
         for obj in env._objects:
+            if obj + "_straight_push" not in info:
+                continue
             if info[obj + "_straight_push"]:
                 name += "e"
             else:
@@ -1340,6 +1364,7 @@ def collect_object_demos():
         f.writelines([easy_stats])
     print(easy_stats)
 
+
 if __name__ == "__main__":
     from collections import defaultdict
     from copy import deepcopy
@@ -1357,16 +1382,21 @@ if __name__ == "__main__":
     # collect_trajectories()
     # collect_multiview_trajectories()
     # collect_cem_goals()
-    collect_object_demos()
-    # config, _ = argparser()
-    # env = ClutterPushEnv(config)
-    # for i in range(10):
-    #     env.reset()
+    # collect_object_demos()
+    config, _ = argparser()
+    env = ClutterPushEnv(config)
+    env.reset()
+    while True:
+        img = env.render("rgb_array")
+        imageio.imwrite("init.png", img)
+        imageio.imwrite("goal.png", env._unblurred_goal)
+        break
+        env.reset()
     #     frames, imgs, info = env.make_push_object_demo()
     #     imageio.mimwrite(f"demo{i}.gif", imgs)
-        # env.render("human")
-        # time.sleep(1)
-        # imageio.imwrite(f"goal{i}.png", goal)
+    # env.render("human")
+    # time.sleep(1)
+    # imageio.imwrite(f"goal{i}.png", goal)
     # imgs = []
     # for i in range(20):
     #     push = (1, 0, 0)
@@ -1382,9 +1412,6 @@ if __name__ == "__main__":
     #     break
     #     tensor = ToTensor()(img)
     #     print(tensor.shape)
-    #     import ipdb
-
-    #     ipdb.set_trace()
 
     # img_width = 256
     # s = 5

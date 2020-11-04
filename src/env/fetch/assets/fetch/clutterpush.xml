@@ -192,7 +192,7 @@
                 <inertial diaginertia="0.3865 0.3394 0.1009" mass="13.2775" pos="-0.0722 0.0057 0.2656" quat="0.9995 0.0249 0.0177 0.011"></inertial>
                 <geom mesh="robot0:torso_fixed_link" name="robot0:torso_fixed_link" class="robot0:blue"></geom>
             </body>
-            <body name="robot0:external_camera_body_0" pos="1.1 0 0.8">
+            <body name="robot0:external_camera_body_0" pos="1.1 0 0.65">
                 <camera mode="targetbody" fovy="43.3" name="external_camera_0" target="arenacenter" ></camera>
             </body>
         </body>
@@ -233,7 +233,7 @@
 
 		<light directional="true" ambient="0.2 0.2 0.2" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" castshadow="false" pos="0 0 4" dir="0 0 -1" name="light0"></light>
 
-		<camera mode="targetbody" euler="0 0 1.57" fovy="43.3" name="object_sidecamera" pos="1.14 0.4 1" target="arenacenter"></camera>
+		<camera mode="targetbody" fovy="43.3" name="object_sidecamera" pos="1.06 0.4 0.65" target="arenacenter"></camera>
 
 	</worldbody>
 	
