@@ -1,4 +1,16 @@
 # Robot aware cost and dynamics
+This project investigates how we can use our knowledge of the robot in the scene to improve pixel cost functions and pixel dynamics prediction.
+
+# Codebase structure
+The codebase is structured as follows:
+* `scripts` contains all SLURM scripts for running jobs on cluster
+* `src` contains all source code.
+    * `config` contains all hyperparameter and configuration variables for algorithms, environments, etc.
+    * `env` contains all environments. We mainly use the `fetch` environment, which features a Fetch 7DOF robot with EEF positional control on a tabletop workspace.
+    * `mbrl` contains all model based control methods.
+    * `prediction` contains all predictive model training code. The model is a SVG video prediction model.
+    * `utils` contains some plotting and visualization code.
+
 
 # Installation
 
@@ -27,7 +39,8 @@ $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia-418
 ```
 
 ## Python Installation
-1. Install python dependencies
+1. Install python dependencies. This requirements file is out of date, so you'll probably
+run into import errors and have to install the missing packages. Sorry!
 ```bash
 # Run the rest for both Ubuntu and macOS
 $ pip install -r requirements.txt
