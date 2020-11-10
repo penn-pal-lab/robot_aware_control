@@ -47,6 +47,8 @@ def add_method_arguments(parser: ArgumentParser):
         default="weighted",
         choices=["weighted", "dense", "inpaint", "sparse" "blackrobot", "inpaint-blur"],
     )
+    # for use with inpaint blur
+    parser.add_argument("--most_recent_background", type=str2bool, default=False)
     parser.add_argument("--robot_pixel_weight", type=float, default=0)
     # inpaint-blur
     parser.add_argument("--blur_sigma", type=float, default=10)
@@ -199,7 +201,7 @@ def add_dataset_arguments(parser):
     parser.add_argument("--train_val_split", type=float, default=0.8)
 
 
-# Algo Hyperparameters
+# CEM Hyperparameters
 def add_cem_arguments(parser):
     parser.add_argument("--horizon", type=int, default=3)
     parser.add_argument("--opt_iter", type=int, default=10)
@@ -211,7 +213,8 @@ def add_cem_arguments(parser):
     parser.add_argument("--debug_trajectory_path", type=str, default=None)
     parser.add_argument("--debug_cem", type=str2bool, default=False)
     parser.add_argument("--object_demo_dir", type=str, default=None)
-    parser.add_argument("--demo_difficulty", type=str, default="hard", choices=["easy", "hard"])
+    parser.add_argument("--subgoal_threshold", type=float, default=4000)
+    parser.add_argument("--action_repeat", type=int, default=1)
 
 
 def argparser():

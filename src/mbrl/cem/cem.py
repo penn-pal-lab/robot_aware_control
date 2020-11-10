@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import wandb
 from src.env.fetch.fetch_push import FetchPushEnv
-from src.env.fetch.clutter_push import ClutterPushEnv
+# from src.env.fetch.clutter_push import ClutterPushEnv
 from src.prediction.losses import InpaintBlurCost, mse_criterion
 from src.prediction.models.dynamics import DynamicsModel
 from src.utils.plot import save_gif
@@ -85,7 +85,6 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
                     rew = cost(curr_img[j], goal, blur)
                 elif config.reward_type == "inpaint":
                     rew = -1 * cost(curr_img[j], goal).cpu().item()
-                # rew = -1 * mse_criterion(goal, curr_img[j]).cpu().item()
                 ret_preds[j] += rew
 
         # Select top K action sequences based on cumulative rewards
@@ -142,7 +141,7 @@ def cem_env_planner(env, config):
             for l in range(L):
                 action = act_seq[j, l].numpy()
                 env._use_unblur = l >= L - config.unblur_timestep
-                _, rew, _, _ = env.step(action)  # Take one step
+                _, rew, _, _ = env.step(action, compute_reward=False)  # Take one step
                 ret_preds[j] += rew  # accumulate rewards
                 env._use_unblur = False
             env.set_state(env_state)  # reset env to before rollout
@@ -168,7 +167,7 @@ def run_cem_episodes(config):
     num_episodes = config.num_episodes
     model = None
     use_env = config.use_env_dynamics
-    env = ClutterPushEnv(config)
+    env = FetchPushEnv(config)
     if not use_env:
         model = DynamicsModel(config)
         model.load_model(config.dynamics_model_ckpt)
@@ -189,6 +188,7 @@ def run_cem_episodes(config):
             env,
             path=os.path.join(config.video_dir, f"test_{i}.mp4"),
             enabled=i % config.record_video_interval == 0,
+            store_goal=True
         )
         vr.capture_frame()
         terminate_ep = False
@@ -231,7 +231,6 @@ def run_cem_episodes(config):
                     if "dist" in k and v > 0.01:
                         dist_str += f"{k}: {v} "
                 logger.info(dist_str)
-                succ = info["is_success"]
                 # don't care about success as early termination
                 if done or s > config.max_episode_length:
                     imageio.mimwrite("inpaintobs.gif", gif)
@@ -240,7 +239,7 @@ def run_cem_episodes(config):
                     if config.record_trajectory and (
                         i % config.record_trajectory_interval == 0
                     ):
-                        path = os.path.join(config.trajectory_dir, f"ep_s{succ}_{i}.pkl")
+                        path = os.path.join(config.trajectory_dir, f"ep_{i}.pkl")
                         with open(path, "wb") as f:
                             pickle.dump(trajectory, f)
                     # log the last step's information

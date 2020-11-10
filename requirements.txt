@@ -41,3 +41,4 @@ torch==1.6.0
 tqdm==4.48.2
 traitlets==4.3.3
 wcwidth==0.2.5
+wandb

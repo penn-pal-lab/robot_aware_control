@@ -28,7 +28,7 @@ class VideoRecorder(object):
         base_path (Optional[str]): Alternatively, path to the video file without extension, which will be added.
         metadata (Optional[dict]): Contents to save to the metadata file.
         enabled (bool): Whether to actually record video, or just no-op (for convenience)
-        store_frame (bool): whether to store intermediate frame
+        store_goal (bool): whether to concat goal image
     """
 
     def __init__(
@@ -38,11 +38,12 @@ class VideoRecorder(object):
         metadata=None,
         enabled=True,
         base_path=None,
-        store_frame=False,
+        store_goal=False
     ):
         modes = env.metadata.get("render.modes", [])
         self._async = env.metadata.get("semantics.async")
         self.enabled = enabled
+        self.store_goal = store_goal
 
         # Don't bother setting anything else if not enabled
         if not self.enabled:
@@ -129,8 +130,9 @@ class VideoRecorder(object):
 
         render_mode = "ansi" if self.ansi_mode else "rgb_array"
         frame = self.env.render(mode=render_mode)
-        goal = self.env._unblurred_goal
-        frame = np.concatenate([frame, goal], axis=1)
+        if self.store_goal:
+            goal = self.env._unblurred_goal
+            frame = np.concatenate([frame, goal], axis=1)
 
         if frame is None:
             if self._async:

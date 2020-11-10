@@ -51,14 +51,21 @@ class RobotEnv(gym.GoalEnv):
         self.goal = self._sample_goal()
         obs = self._get_obs()
         self.action_space = spaces.Box(-1.0, 1.0, shape=(n_actions,), dtype="float32")
+        # self.observation_space = spaces.Dict(
+        #     dict(
+        #         desired_goal=spaces.Box(
+        #             -np.inf, np.inf, shape=obs["achieved_goal"].shape, dtype="float32"
+        #         ),
+        #         achieved_goal=spaces.Box(
+        #             -np.inf, np.inf, shape=obs["achieved_goal"].shape, dtype="float32"
+        #         ),
+        #         observation=spaces.Box(
+        #             -np.inf, np.inf, shape=obs["observation"].shape, dtype="float32"
+        #         ),
+        #     )
+        # )
         self.observation_space = spaces.Dict(
             dict(
-                desired_goal=spaces.Box(
-                    -np.inf, np.inf, shape=obs["achieved_goal"].shape, dtype="float32"
-                ),
-                achieved_goal=spaces.Box(
-                    -np.inf, np.inf, shape=obs["achieved_goal"].shape, dtype="float32"
-                ),
                 observation=spaces.Box(
                     -np.inf, np.inf, shape=obs["observation"].shape, dtype="float32"
                 ),
@@ -85,7 +92,7 @@ class RobotEnv(gym.GoalEnv):
 
         done = False
         info = {}
-        info["is_success"] = self._is_success(obs["achieved_goal"], self.goal, info)
+        # info["is_success"] = self._is_success(obs["achieved_goal"], self.goal, info)
         reward = 0
         if compute_reward:
             reward = self.compute_reward(obs["achieved_goal"], self.goal, info)
@@ -193,6 +200,13 @@ class RobotEnv(gym.GoalEnv):
         to enforce additional constraints on the simulation state.
         """
         pass
+
+    def get_flattened_state(self):
+        return self.sim.get_state().flatten()
+
+    def set_flattened_state(self, state):
+        self.sim.set_state_from_flattened(state)
+        self.sim.forward()
 
     def get_state(self):
         return self.sim.get_state()
