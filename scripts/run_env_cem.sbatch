@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task 4
 #SBATCH --gpus=1
 #SBATCH --time=20:00:00
 #SBATCH --partition=dinesh-compute
 #SBATCH --qos=dinesh-high
-#SBATCH --job-name=collectoptimalactions
-#SBATCH -o ./collectoptimalactions.out
-#SBATCH -e ./collectoptimalactions.out
+#SBATCH --job-name=democem
 
-python -m src.mbrl.cem.cem --wandb False --jobname collectoptimalactions --multiview True --img_dim 64 --reward_type inpaint --record_trajectory True --action_candidates 30 --opt_iter 10 --horizon 5 --push_dist 0.1 --max_episode_length 5 --large_block True --norobot_pixels_ob True --use_env_dynamics True --record_trajectory_interval 5
+# baseline with robot pixels
+ python -m src.mbrl.cem.demo_cem --wandb False --jobname robot_democem --multiview True --img_dim 64 --reward_type inpaint  --action_candidates 200 --topk 10  --opt_iter 2 --horizon 2  --max_episode_length 100  --norobot_pixels_ob False  --use_env_dynamics True --num_episodes 2 --most_recent_background False --action_repeat 1 --subgoal_threshold 10000 --sequential_subgoal True --demo_cost True --subgoal_start 1 --demo_timescale 2 --camera_ids 0,1 --object_demo_dir demos/straight_push >inpaint_push.out 2>&1  &
+
+# static inpaint
+ python -m src.mbrl.cem.demo_cem --wandb False --jobname inpaint_democem --multiview True --img_dim 64 --reward_type inpaint  --action_candidates 200 --topk 10  --opt_iter 2 --horizon 2  --max_episode_length 100  --norobot_pixels_ob True  --use_env_dynamics True --num_episodes 2 --most_recent_background False --action_repeat 1 --subgoal_threshold 5000 --sequential_subgoal True --demo_cost True --subgoal_start 1 --demo_timescale 2 --camera_ids 0,1 --object_demo_dir demos/straight_push >inpaint_push.out 2>&1  &
+wait

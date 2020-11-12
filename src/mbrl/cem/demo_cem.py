@@ -1,3 +1,4 @@
+from functools import partial
 import logging
 import os
 import pickle
@@ -20,8 +21,82 @@ from src.utils.video_recorder import VideoRecorder
 from torch import cat
 from torch.distributions.normal import Normal
 from torchvision.transforms import ToTensor
-from src.mbrl.cem.cem import cem_model_planner, cem_env_planner
 from torchvision.datasets.folder import has_file_allowed_extension
+import cv2
+
+
+def cem_env_planner(env, goal, cost, config):
+    """
+    Use actual gym environment to test cem algorithm
+    Goal is a normalized image with ToTensor
+    """
+    # Hyperparameters
+    L = config.horizon  # Prediction window size
+    I = config.opt_iter  # Number of optimization iterations
+    J = config.action_candidates  # Number of candidate action sequences
+    K = (
+        config.topk
+    )  # Number of top K candidate action sequences to select for optimization
+
+    # Infer action size
+    A = env.action_space.shape[0]
+
+    # Initialize action sequence belief as standard normal, of shape (L, A)
+    mean = torch.zeros(L, A)
+    std = torch.ones(L, A)
+    ret_topks = []  # for debugging
+    # Optimization loop
+    for i in range(I):  # Use tqdm to track progress
+        # Sample J candidate action sequence
+        m = Normal(mean, std)
+        act_seq = m.sample((J,))  # of shape (J, L, A)
+
+        # Generate J rollouts
+        ret_preds = torch.zeros(J)
+        bg_img = env._background_img.copy()
+        env_state = env.get_flattened_state()
+        goal_img = goal
+        for j in range(J):
+            opt_reward = 0
+            for l in range(L):
+                if config.demo_cost:  # assume goal is the full demo
+                    # debug
+                    optimal_traj = config.optimal_traj
+                    if l < len(goal):
+                        opt_img = optimal_traj[l]
+                        goal_img = goal[l]
+                    else:
+                        opt_img = optimal_traj[-1]
+                        goal_img = goal[-1]
+                action = act_seq[j, l].numpy()
+                ob, _, _, _ = env.step(action, compute_reward=False)  # Take one step
+                img = ob["observation"]
+                if config.reward_type == "inpaint-blur":
+                    blur = l < L - config.unblur_timestep
+                    rew = cost(img, goal_img, blur)
+                elif config.reward_type == "inpaint":
+                    rew = -np.linalg.norm(img - goal_img)
+                    if config.demo_cost:
+                        opt_reward += -np.linalg.norm(opt_img - goal_img)
+                ret_preds[j] += rew
+            env.set_flattened_state(env_state.copy())  # reset env to before rollout
+            env._background_img = bg_img.copy()
+
+        # Select top K action sequences based on cumulative rewards
+        ret_topk, idx = ret_preds.topk(K)
+        top_act_seq = torch.index_select(
+            act_seq, dim=0, index=idx
+        )  # of shape (K, L, A)
+        ret_topks.append("%.3f" % ret_topk.mean())  # Record mean of top returns
+
+        # Update parameters for normal distribution
+        std, mean = torch.std_mean(top_act_seq, dim=0)
+
+    # Print means of top returns, for debugging
+    print("\tMeans of top returns: ", ret_topks, " Opt return: ", opt_reward)
+    # save gifs of top trajectories for debugging
+    # Return first action mean, of shape (A)
+    return mean[0, :]
 
 
 def load_demo_dataset(config):
@@ -29,131 +104,166 @@ def load_demo_dataset(config):
     files = []
     for d in os.scandir(config.object_demo_dir):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            files.append(d.path)
-    assert config.num_episodes <= len(files), f"need at least {config.num_episodes} demos"
-    return files[:config.num_episodes]
+            files.append((d.name, d.path))
+    assert config.num_episodes <= len(
+        files
+    ), f"need at least {config.num_episodes} demos"
+    return files[: config.num_episodes]
 
-def load_demo(path):
+
+def load_object_demo(path):
+    # contains the object only image sequence, and poses of each object
+    demo = {}
     with h5py.File(path, "r") as hf:
-        frames = hf["frames"][:]
-        states = hf["states"][:]
-        info = {}
-        for k,v in hf.attrs.items():
-            info[k] = v
-    return frames, states, info
+        demo["pushed_obj"] = hf.attrs["pushed_obj"]
+        demo["states"] = hf["states"][:]
+        # demo["robot_demo"] = hf["robot_demo"][:]
+        for k, v in hf.items():
+            if "object" in k:
+                demo[k] = v[:]
+    return demo
 
 
 def run_cem_episodes(config):
-    demos = load_demo_dataset(config)
     logger = colorlog.getLogger("file/console")
+    files = load_demo_dataset(config)
     num_episodes = config.num_episodes
     model = None
     use_env = config.use_env_dynamics
+    timescale = config.demo_timescale
     env = ClutterPushEnv(config)
     if not use_env:
         model = DynamicsModel(config)
         model.load_model(config.dynamics_model_ckpt)
-        if config.reward_type == "inpaint":
-            cost = mse_criterion
-        elif config.reward_type == "inpaint-blur":
-            cost = InpaintBlurCost(config)
+    if config.reward_type == "inpaint-blur":
+        cost = InpaintBlurCost(config)
+    else:
+        cost = lambda a, b: -np.linalg.norm(a - b)
     # Do rollouts of CEM control
     all_episode_stats = defaultdict(list)
     for i in range(num_episodes):  # this can be parallelized
-        frames, demo_states, demo_info = load_demo(demos[i])
-        trajectory = defaultdict(list)
-        subtask_idx = 0
-        goal_idx = 1 # start at 2nd goal since 1st is trivial
-        goal_state = demo_states[goal_idx]
-        goal_obj = f"object{demo_info['push_order'][subtask_idx]}"
-        goal_img = frames[goal_idx]
-        obs = env.reset(goal_obj, goal_img, goal_state, demo_info)
+        # TODO: generate all object only demos
+        demo_name, demo_path = files[i]
+        demo = load_object_demo(demo_path)
+        # use for debugging
+        optimal_traj = demo["object_inpaint_demo"][::timescale]
+        goal_imgs = demo["object_only_demo"][::timescale]
+        pushed_obj = demo["pushed_obj"] + ":joint"
+        goal_obj_poses = demo[pushed_obj][::timescale]
+        push_length = np.linalg.norm(goal_obj_poses[-1][:2] - goal_obj_poses[0][:2])
+        subgoal_idx = config.subgoal_start
+        goal = goal_imgs[subgoal_idx]
 
-        goal = (ToTensor()(env._unblurred_goal)).to(config.device)
+        trajectory = defaultdict(list)
+        init_state = demo["states"][0]
+        obs = env.reset(init_state)
         if config.record_trajectory:
             trajectory["obs"].append(obs)
             trajectory["state"].append(env.get_state())
-        # vr = VideoRecorder(
-        #     env,
-        #     path=os.path.join(config.video_dir, f"test_{i}.mp4"),
-        #     enabled=i % config.record_video_interval == 0,
-        # )
+
         record = i % config.record_video_interval == 0
+        s = 0  # Step count
         if record:
             gif = []
-            env_ob = env.render("rgb_array") # no inpainting
-            ob = obs["observation"] # inpainting
-            goal = env._unblurred_goal
+            env_ob = env.render("rgb_array")  # no inpainting
+            ob = obs["observation"]  # inpainting
             gif_img = np.concatenate([env_ob, ob, goal], axis=1)
+            rew = cost(ob, goal)
+            goal_str = f"{subgoal_idx}/{len(goal_imgs)-1}"
+            time_str = f"{s}/{config.max_episode_length}"
+            gif_img = create_gif_img(env_ob, ob, goal, time_str, rew, goal_str)
             gif.append(gif_img)
 
-        s = 0  # Step count
-        logger.info("\n=== Episode %d ===\n" % (i))
+        logger.info(f"=== Episode {i}, {demo_name} ===")
+        logger.info(f"Pushing {demo['pushed_obj']} for {(push_length * 100):.1f} cm\n")
         while True:
-            logger.info("\tStep {}".format(s))
+            logger.info(f"\tStep {s}")
             if use_env:
-                action = cem_env_planner(env, config).numpy()
-            else:
-                sim_state = env.get_state()
-                robot = obs["robot"].astype(np.float32)
-                img = obs["observation"]
-                start = (sim_state, robot, img)
-                action, info = cem_model_planner(model, env, start, goal, cost, config)
-                if config.debug_cem:
-                    # (L, K, C, W, H)
-                    cem_preds = info["top_preds"]
-                    # create (L, 1, C, W, H) goal tensor
-                    L = cem_preds.shape[0]
-                    goal_ep = goal.cpu().unsqueeze(0)
-                    goal_ep = goal_ep.expand(L, -1, -1, -1, -1)
-                    cem_eps = cat([goal_ep, cem_preds], dim=1)
-                    debug_path = os.path.join(config.plot_dir, f"ep{i}_step{s}_cem.gif")
-                    save_gif(debug_path, cem_eps)
+                goal_img = goal
+                if config.demo_cost:
+                    goal_img = goal_imgs[subgoal_idx:]
+                    config.optimal_traj = optimal_traj[subgoal_idx:]
+                    if subgoal_idx == len(goal_imgs) - 1:
+                        goal_img = [goal]
+                        config.optimal_traj = [optimal_traj[-1]]
+                action = cem_env_planner(env, goal_img, cost, config).numpy()
 
-            obs, _, done, info = env.step(action, compute_reward=False)
+            obs, _, _, _ = env.step(action, compute_reward=False)
+            curr_img = obs["observation"]
+            rew = cost(curr_img, goal)
+            curr_obj_pos = obs[pushed_obj][:2]
+            goal_obj_pos = goal_obj_poses[subgoal_idx][:2]
+            final_goal_obj_pos = goal_obj_poses[-1][:2]
+            obj_dist = np.linalg.norm(curr_obj_pos - goal_obj_pos)
+            final_obj_dist = np.linalg.norm(curr_obj_pos - final_goal_obj_pos)
+            print(
+                f"Current goal: {subgoal_idx}/{len(goal_imgs)-1}, dist to goal: {obj_dist}, dist to last goal: { final_obj_dist}"
+            )
+            print("Reward:", rew)
             if config.record_trajectory:
                 trajectory["obs"].append(obs)
                 trajectory["ac"].append(action)
                 trajectory["state"].append(env.get_state())
             s += 1
             if record:
-                env_ob = env.render("rgb_array") # no inpainting
-                ob = obs["observation"] # inpainting
-                goal = env._unblurred_goal
-                gif_img = np.concatenate([env_ob, ob, goal], axis=1)
+                env_ob = env.render("rgb_array")  # no inpainting
+                ob = obs["observation"]  # inpainting
+                goal_str = f"{subgoal_idx}/{len(goal_imgs)-1}"
+                time_str = f"{s}/{config.max_episode_length}"
+                gif_img = create_gif_img(env_ob, ob, goal, time_str, rew, goal_str)
                 gif.append(gif_img)
 
-            logger.info(f"\t{goal_obj} dist: {info[goal_obj+'_dist']}")
-            succ = info["is_success"]
-            # subgoal checking
-            if succ:
-                # TODO: update subtask idx to next object in multiple object pushing
-                goal_idx += 1
-                if goal_idx >= len(frames):
-                    print("Done with all goals")
-                    done = True
-                else:
-                    goal_obj = f"object{demo_info['push_order'][subtask_idx]}"
-                    goal_state = demo_states[goal_idx]
-                    goal_img = frames[goal_idx]
-                    env.set_goal(goal_obj, goal_img, goal_state)
-            # check if we switch to next obj
-            # don't care about success as early termination
-            if done or s > config.max_episode_length:
+            # set the most future subgoal that is still <= threshold, and start from there
+            finish_demo = False
+            if config.sequential_subgoal:
+                if np.linalg.norm(curr_img - goal) < config.subgoal_threshold:
+                    subgoal_idx += 1
+                    if subgoal_idx >= len(goal_imgs):
+                        finish_demo = True
+                    else:
+                        goal = goal_imgs[subgoal_idx]
+            else:
+                all_goal_diffs = curr_img - goal_imgs[subgoal_idx:]
+                min_idx = 0
+                new_subgoal = False
+                for j, goal_diff in enumerate(all_goal_diffs):
+                    goal_cost = np.linalg.norm(goal_diff)
+                    if goal_cost <= config.subgoal_threshold:
+                        new_subgoal = True
+                        min_idx = j
+                subgoal_idx += min_idx
+                if new_subgoal:
+                    subgoal_idx += 1
+                    if subgoal_idx >= len(goal_imgs):
+                        finish_demo = True
+                    else:
+                        goal = goal_imgs[subgoal_idx]
+
+            if finish_demo or s >= config.max_episode_length - 1:
                 logger.info("=" * 10 + f"Episode {i}" + "=" * 10)
                 if config.record_trajectory and (
                     i % config.record_trajectory_interval == 0
                 ):
-                    path = os.path.join(config.trajectory_dir, f"ep_s{succ}_{i}.pkl")
+                    path = os.path.join(
+                        config.trajectory_dir, f"ep_s{subgoal_idx}_{i}.pkl"
+                    )
                     with open(path, "wb") as f:
                         pickle.dump(trajectory, f)
-                # log the last step's information
-                for k, v in info.items():
-                    logger.info(f"{k}: {v}")
-                    all_episode_stats[k].append(v)
+                # log distance to last frame
+                # current progress ((subgoal_idx - start) / (total subgoals - start))
+                # cost
+                subgoal_progress = (subgoal_idx - config.subgoal_start) / (
+                    len(goal_imgs) - config.subgoal_start
+                )
+                all_episode_stats["subgoal_progress"].append(subgoal_progress)
+                push_progress = (push_length - final_obj_dist) / push_length
+                all_episode_stats["push_progress"].append(push_progress)
+                all_episode_stats["final_obj_dist"].append(final_obj_dist)
                 break
         if record:
-            gif_path = os.path.join(config.video_dir, f"ep_{i}.gif")
+            gif_path = os.path.join(
+                config.video_dir, f"ep_{i}_{'s' if finish_demo else 'f'}.gif"
+            )
             imageio.mimwrite(gif_path, gif)
 
     # Close video recorder
@@ -161,7 +271,7 @@ def run_cem_episodes(config):
 
     # Summary
     logger.info("\n\n### Summary ###")
-    histograms = {"reward", "object_dist", "gripper_dist"}
+    # histograms = {"reward", "object_dist", "gripper_dist"}
     # upload table to wandb
     table = wandb.Table(columns=list(all_episode_stats.keys()))
     table_rows = []
@@ -172,17 +282,44 @@ def run_cem_episodes(config):
         table_rows.append(f"{mean} \u00B1 {sigma}")
         # log = {f"mean/{k}": mean, f"std/{k}": sigma}
         # wandb.log(log, step=0)
-        if k in histograms:  # save histogram to wandb and image
-            plt.hist(v)
-            plt.xlabel(k)
-            plt.ylabel("Count")
-            wandb.log({f"hist/{k}": wandb.Image(plt)}, step=0)
-            fpath = os.path.join(config.plot_dir, f"{k}_hist.png")
-            plt.savefig(fpath)
-            plt.close("all")
+        # if k in histograms:  # save histogram to wandb and image
+        #     plt.hist(v)
+        #     plt.xlabel(k)
+        #     plt.ylabel("Count")
+        #     wandb.log({f"hist/{k}": wandb.Image(plt)}, step=0)
+        #     fpath = os.path.join(config.plot_dir, f"{k}_hist.png")
+        #     plt.savefig(fpath)
+        #     plt.close("all")
 
     table.add_data(*table_rows)
     wandb.log({"Results": table}, step=0)
+
+
+def create_gif_img(env_ob, ob, goal, time_str, cost, goal_str):
+    font_size = 0.3
+    thickness = 1
+    env_ob = env_ob.copy()
+    putText = partial(
+        cv2.putText,
+        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+        fontScale=font_size,
+        color=(0, 0, 0),
+        thickness=thickness,
+        lineType=cv2.LINE_AA,
+    )
+    putText(env_ob, f"REAL", (0, 8))
+    putText(env_ob, time_str, (0, 126))
+
+    ob = ob.copy()
+    putText(ob, f"INPAINT", (0, 8))
+    putText(ob, f"{cost:.0f}", (0, 126))
+
+    goal = goal.copy()
+    putText(goal, f"GOAL", (0, 8))
+    putText(goal, goal_str, (24, 126))
+
+    img = np.concatenate([env_ob, ob, goal], axis=1)
+    return img
 
 
 def setup_loggers(config):

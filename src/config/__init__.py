@@ -214,6 +214,10 @@ def add_cem_arguments(parser):
     parser.add_argument("--debug_cem", type=str2bool, default=False)
     parser.add_argument("--object_demo_dir", type=str, default=None)
     parser.add_argument("--subgoal_threshold", type=float, default=4000)
+    parser.add_argument("--subgoal_start", type=int, default=0)
+    parser.add_argument("--sequential_subgoal", type=str2bool, default=True)
+    parser.add_argument("--demo_cost", type=str2bool, default=False)
+    parser.add_argument("--demo_timescale", type=int, default=1)
     parser.add_argument("--action_repeat", type=int, default=1)
 
 
