@@ -1,3 +1,4 @@
+from functools import partial
 import os
 from collections import defaultdict
 from copy import deepcopy
@@ -68,53 +69,23 @@ def collect_trajectory(rank, config, behavior, record, num_trajectories, ep_len)
             robot_demo.append(robot_img)
             if record:
                 # concat with the demo's inpainted image and background img
-                font_size = 0.3
-                thickness = 1
+                putText = partial(
+                    cv2.putText,
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale=0.3,
+                    color=(0, 0, 0),
+                    thickness=1,
+                    lineType=cv2.LINE_AA,
+                )
                 gif_robot_img = robot_img.copy()
-                cv2.putText(
-                    gif_robot_img,
-                    f"REAL",
-                    (10, 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    font_size,
-                    (0, 0, 0),
-                    thickness,
-                    cv2.LINE_AA,
-                )
-                cv2.putText(
-                    gif_robot_img,
-                    f"{t}",
-                    (0, 126),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    font_size,
-                    (0, 0, 0),
-                    thickness,
-                    cv2.LINE_AA,
-                )
+                putText(gif_robot_img, f"REAL", (10, 10))
+                putText(gif_robot_img, f"{t}", (0, 126))
 
                 gif_inpaint_img = object_inpaint_demo[t].copy()
-                cv2.putText(
-                    gif_inpaint_img,
-                    f"INPAINT",
-                    (10, 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    font_size,
-                    (0, 0, 0),
-                    thickness,
-                    cv2.LINE_AA,
-                )
+                putText(gif_inpaint_img, f"INPAINT", (10, 10))
 
                 gif_object_only_img = object_only_img.copy()
-                cv2.putText(
-                    gif_object_only_img,
-                    f"GOAL",
-                    (10, 10),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    font_size,
-                    (0, 0, 0),
-                    thickness,
-                    cv2.LINE_AA,
-                )
+                putText(gif_object_only_img, f"NO-ROBOT", (10, 10))
 
                 img = np.concatenate(
                     [gif_robot_img, gif_inpaint_img, gif_object_only_img], axis=1
@@ -279,183 +250,6 @@ def collect_multiview_trajectories():
 
         for p in ps:
             p.join()
-
-
-def collect_cem_goals():
-    """Collect goal images for testing CEM planning"""
-    config, _ = argparser()
-    config.large_block = True
-    config.demo_dir = "demos/cem_goals"
-    config.multiview = True
-    config.norobot_pixels_ob = True
-    config.reward_type = "inpaint"
-    config.img_dim = 64
-    config.push_dist = 0.135  # with noise, (0.07, 0.2)
-    os.makedirs(config.demo_dir, exist_ok=True)
-    env = ClutterPushEnv(config)
-    for i in range(200):
-        img = env.reset()
-        img_path = os.path.join(config.demo_dir, f"{i}.png")
-        imageio.imwrite(img_path, img)
-
-
-def collect_object_demos():
-    """Collect object only demonstrations"""
-    config, _ = argparser()
-    config.demo_dir = "demos/object_demos"
-    config.multiview = True
-    config.img_dim = 64
-    config.push_dist = 0.25
-    num_demos = 10
-    record_gif = True
-
-    os.makedirs(config.demo_dir, exist_ok=True)
-    if record_gif:
-        gif_dir = os.path.join(config.demo_dir, "gif")
-        os.makedirs(gif_dir, exist_ok=True)
-    env = ClutterPushEnv(config)
-    stats_dict = defaultdict(list)
-    for i in trange(num_demos, desc="Object Only Demos"):
-        env.reset()
-        push_path, imgs, info = env.make_push_object_demo()
-        name = ""
-        for obj in env._objects:
-            if obj + "_straight_push" not in info:
-                continue
-            if info[obj + "_straight_push"]:
-                name += "e"
-            else:
-                name += "h"
-
-        stats_dict["len"].append(len(push_path))
-        name = f"{name}_{i}"
-        if record_gif:
-            gif_path = os.path.join(gif_dir, f"{name}.gif")
-            imageio.mimwrite(gif_path, imgs)
-        path = os.path.join(config.demo_dir, f"{name}.hdf5")
-        with h5py.File(path, "w") as hf:
-            for k, v in info.items():
-                hf.attrs[k] = v
-            hf.create_dataset("frames", data=imgs, compression="gzip")
-            hf.create_dataset("states", data=push_path, compression="gzip")
-
-    # print out stats
-    stats_path = os.path.join(config.demo_dir, "stats.txt")
-    easy_len = stats_dict["len"]
-    easy_stats = f"count: {len(easy_len)}, min len: {np.min(easy_len)}, max len: {np.max(easy_len)}, avg len: {np.mean(easy_len)}\n"
-    with open(stats_path, "w") as f:
-        f.writelines([easy_stats])
-    print(easy_stats)
-
-
-def create_object_demos(config, push_demo_path, gif_path=None, heatmap_path=None):
-    """
-    Given a robot pushing demo, we now move the robot up, and set the
-    object pose for each timestep in the demo
-    """
-
-    env = ClutterPushEnv(config)
-    env.reset()
-    # first move robot out of view
-    robot_pos = env.sim.data.get_site_xpos("robot0:grip").copy()
-    gripper_target = robot_pos + np.array([-1, 0, 0.5])
-    gripper_rotation = np.array([1.0, 0.0, 1.0, 0.0])
-    env.sim.data.set_mocap_pos("robot0:mocap", gripper_target)
-    env.sim.data.set_mocap_quat("robot0:mocap", gripper_rotation)
-    for _ in range(10):
-        env.sim.step()
-    env.sim.forward()
-    # save the arm overhead state for rendering object only scene
-    arm_overhead_state = env.get_flattened_state()
-    # now render the given demonstration
-    obj_poses = defaultdict(list)
-    ep_len = 0
-    demo_frames = []
-    with h5py.File(push_demo_path, "r") as hf:
-        # demo_frames = hf["frames"][:]
-        demo_states = hf["states"][:]
-        for obj in env._objects:
-            obj_poses[obj + ":joint"] = hf[obj + ":joint"][:]
-            ep_len = hf[obj + ":joint"].shape[0]
-    # for each timestep, set objects, render the image, and save
-    object_demo = []
-    demo_imgs = []
-    scene_imgs = []
-    object_imgs = []
-    for t in range(ep_len):
-        for k, v in obj_poses.items():
-            env.sim.data.set_joint_qpos(k, v[t])
-        env.sim.forward()
-        object_only_img = env.render()
-        object_imgs.append(object_only_img)
-        demo_imgs.append(object_only_img)
-        # now render the inpaint scene
-        env.set_flattened_state(demo_states[t])
-        if config.most_recent_background and t == 0:
-            # refresh the background img for most recent bg img
-            env._background_img = env._get_background_img()
-        inpaint_img = env.render(remove_robot=env._norobot_pixels_ob)
-        scene_imgs.append(inpaint_img)
-        # concat with the demo's inpainted image and background img
-        img = np.concatenate(
-            [inpaint_img, object_only_img, env._background_img], axis=1
-        )
-        object_demo.append(img)
-        env.set_flattened_state(arm_overhead_state)
-
-    if gif_path is not None:
-        imageio.mimwrite(gif_path, object_demo)
-
-    # calculate pairwise distance matrix between inpaint scene and object demo
-    if heatmap_path is None:
-        return
-    skip = 2
-    pairwise_cost = np.zeros((ep_len // skip, ep_len // skip), dtype=np.float32)
-    for i in range(0, ep_len // skip):
-        # row will be demonstration
-        for j in range(0, ep_len // skip):
-            # columns will be scene
-            inpaint_img = scene_imgs[j * skip]
-            demo_img = demo_imgs[i * skip]
-            # since it's already inpainted, we can just do l2 norm
-            pairwise_cost[i, j] = np.linalg.norm(inpaint_img - demo_img)
-    plt.figure(figsize=(6, 5))
-    ax = sns.heatmap(
-        pairwise_cost,
-        linewidth=0.5,
-        fmt="6.0f",
-        annot=True,
-        annot_kws={"fontsize": 10},
-        square=True,
-    )
-    plt.ylabel("demo idx")
-    plt.xlabel("scene idx")
-    plt.title(heatmap_path.split(".")[0])
-    plt.savefig(heatmap_path, dpi=200)
-
-
-def create_heatmap():
-    # first create settings
-    config, _ = argparser()
-    config.multiview = True
-    config.img_dim = 64
-    config.norobot_pixels_ob = True
-    # rewards = ["dontcare", "l2", "inpaint", "mr_inpaint"]
-    rewards = ["mr_inpaint"]
-    demos = ["demos/straight_push/straight_push_0_8.hdf5"]
-    for r in rewards:
-        cfg = deepcopy(config)
-        if r == "noinpaint":
-            cfg.norobot_pixels_ob = False
-        elif r == "inpaint":
-            cfg.reward_type = "inpaint"
-        elif r == "mr_inpaint":
-            cfg.reward_type = "inpaint"
-            cfg.most_recent_background = True
-        for i, d in enumerate(demos):
-            gif_path = f"{r}_demo{i}.gif"
-            heatmap_path = f"{r}_{i}_heatmap.png"
-            create_object_demos(cfg, d, gif_path, heatmap_path)
 
 
 if __name__ == "__main__":
