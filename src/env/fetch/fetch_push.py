@@ -1,7 +1,7 @@
 import os
 import h5py
+import ipdb
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 import numpy as np
 from gym import spaces, utils
 from mujoco_py.generated import const
@@ -11,6 +11,9 @@ from src.env.fetch.fetch_env import FetchEnv
 from src.env.fetch.rotations import mat2euler
 from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
 import pickle
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
+import matplotlib.pyplot as plt
 
 MODEL_XML_PATH = os.path.join("fetch", "push.xml")
 LARGE_MODEL_XML_PATH = os.path.join("fetch", "large_push.xml")
@@ -329,7 +332,8 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
                         camera_name=camera_name,
                         depth=True,
                     )
-                    img, depth = img[::-1, :, :], depth[::-1, :]
+                    # img, depth = img[::-1, :, :], depth[::-1, :]
+                    # import ipdb; ipdb.set_trace()
                     extent = self.sim.model.stat.extent
                     near_ = self.sim.model.vis.map.znear * extent
                     far_ = self.sim.model.vis.map.zfar * extent
@@ -1069,7 +1073,7 @@ def collect_multiview_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 2  # per worker
+    num_trajectories = 100  # per worker
     num_workers = 1
     record = False
     behavior = "push"
@@ -1126,7 +1130,6 @@ def collect_cem_goals():
         img_path = os.path.join(config.demo_dir, f"{i}.png")
         imageio.imwrite(img_path, img)
 
-
 if __name__ == "__main__":
     from collections import defaultdict
     from copy import deepcopy
@@ -1137,17 +1140,34 @@ if __name__ == "__main__":
     from torchvision.transforms import ToTensor
     import pickle
 
-    # plot_behaviors_per_cost()
-    # plot_costs_per_behavior()
-    # collect_trajectories()
     collect_multiview_trajectories()
-    # collect_cem_goals()
-    # with open("demos/tckn_data/100push.pkl", "rb") as f:
-    #     data = pickle.load(f)
-    #     import ipdb; ipdb.set_trace()
+
     # config, _ = argparser()
+    # config.large_block = True
+    # config.demo_dir = "demos/tckn_data"
+    # config.multiview = True
+    # config.norobot_pixels_ob = False
+    # config.reward_type = "dense"
+    # config.img_dim = 128
+    # config.depth_ob = True
+
+
     # env = FetchPushEnv(config)
-    # env.reset()
+    # obs = env.reset()
+    # # image is 256, 128 (multiview)
+    # frame = obs["observation"][:128]
+    # world_coord = obs["world_coord"][:, :128]
+
+    # imageio.imwrite("frame.png", frame)
+
+    # frame_flat = frame.reshape((128 * 128, 3)) / 255 # normalize rgb to 0, 1 range
+    # wc_flat = world_coord.reshape((3, 128*128))
+    # fig = plt.figure()
+    # ax = fig.gca(projection='3d')
+    # scat = ax.scatter(wc_flat[0, :], wc_flat[1, :], wc_flat[2, :], marker="o", c=frame_flat)
+    # set_axes_equal(ax)
+    # plt.show()
+
     # while True:
     #     env.step(env.action_space.sample())
     #     img = env.render("rgb_array").copy()
