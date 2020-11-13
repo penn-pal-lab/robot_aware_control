@@ -4,6 +4,7 @@ demos
 logs
 data
 *.out
+inpaintobs.gif
 
 # IDE
 *.swp
