@@ -104,7 +104,7 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
         info["top_preds"] = torch.index_select(debug_preds, dim=1, index=idx).cpu()
     env.set_state(original_env_state)
     # Return first action mean, of shape (A)
-    return mean[0, :].cpu().numpy(), info
+    return mean[:config.replan_every, :].cpu().numpy(), info
 
 
 def cem_env_planner(env, config):
@@ -141,7 +141,7 @@ def cem_env_planner(env, config):
             for l in range(L):
                 action = act_seq[j, l].numpy()
                 env._use_unblur = l >= L - config.unblur_timestep
-                _, rew, _, _ = env.step(action, compute_reward=False)  # Take one step
+                _, rew, _, _ = env.step(action, compute_reward=True)  # Take one step
                 ret_preds[j] += rew  # accumulate rewards
                 env._use_unblur = False
             env.set_state(env_state)  # reset env to before rollout
@@ -158,8 +158,7 @@ def cem_env_planner(env, config):
 
     # Print means of top returns, for debugging
     # print("\tMeans of top returns: ", ret_topks)
-    # Return first action mean, of shape (A)
-    return mean[0, :]
+    return mean[:config.replan_every, :]
 
 
 def run_cem_episodes(config):
@@ -215,7 +214,6 @@ def run_cem_episodes(config):
                     cem_eps = cat([goal_ep, cem_preds], dim=1)
                     debug_path = os.path.join(config.plot_dir, f"ep{i}_step{s}_cem.gif")
                     save_gif(debug_path, cem_eps)
-
 
             for action in action_seq:
                 obs, _, done, info = env.step(action, compute_reward=False)

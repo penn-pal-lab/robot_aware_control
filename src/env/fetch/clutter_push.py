@@ -237,7 +237,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         self._use_unblur = False
         return obs
 
-    def step(self, action, compute_reward=True):
+    def step(self, action):
         action = np.clip(action, self.action_space.low, self.action_space.high)
         for _ in range(self._action_repeat):
             self._set_action(action)
@@ -247,8 +247,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         done = False
         info = {}
         reward = 0
-        if compute_reward:
-            reward = self.compute_reward(obs["achieved_goal"], self.goal, info)
         info["reward"] = reward
         return obs, reward, done, info
 
@@ -820,7 +818,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 d += np.random.uniform(-0.05, 0.05, size=2)
             ac = d[:2] * speed
             history["ac"].append(ac)
-            obs, _, _, info = self.step(ac, compute_reward=False)
+            obs, _, _, info = self.step(ac)
             history["obs"].append(obs)
             for k, v in info.items():
                 history[k].append(v)
