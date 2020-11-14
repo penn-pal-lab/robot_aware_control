@@ -109,7 +109,7 @@ class FetchEnv(RobotEnv):
         action = np.concatenate([pos_ctrl, rot_ctrl, gripper_ctrl])
 
         # Apply action to simulation.
-        utils.ctrl_set_action(self.sim, action) # doesn't do anything if mocap
+        utils.ctrl_set_action(self.sim, action)  # doesn't do anything if mocap
         utils.mocap_set_action(self.sim, action)
 
     def _get_obs(self):

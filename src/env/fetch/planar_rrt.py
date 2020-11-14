@@ -1,5 +1,6 @@
 import matplotlib
-matplotlib.use('agg')
+
+matplotlib.use("agg")
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,7 +13,15 @@ class PlanarRRT(RRT):
     """
     Implementation of Rapidly-Exploring Random Trees (RRT) for 2D search spaces.
     """
-    def __init__(self, visualize=True, visualize_every=5, visualize_path="test.png", *args, **kwargs):
+
+    def __init__(
+        self,
+        visualize=True,
+        visualize_every=5,
+        visualize_path="test.png",
+        *args,
+        **kwargs
+    ):
         """
         :param visualize: boolean flag for whether to visualize RRT as it
             builds.
@@ -46,7 +55,7 @@ class PlanarRRT(RRT):
         for k in range(self.max_iter):
             r = self._get_random_sample()
             neighbor = self._get_nearest_neighbor(r)
-            new_node = self._extend_sample(r,neighbor)
+            new_node = self._extend_sample(r, neighbor)
             if new_node and self._check_for_completion(new_node):
                 self.goal.parent = new_node
                 new_node.children.append(self.goal)
@@ -56,8 +65,11 @@ class PlanarRRT(RRT):
             elif k % self.visualize_every == 0:
                 self._visualize()
 
-        print("Failed to find path from {0} to {1} after {2} iterations!".format(
-            self.start.state, self.goal.state, self.max_iter))
+        print(
+            "Failed to find path from {0} to {1} after {2} iterations!".format(
+                self.start.state, self.goal.state, self.max_iter
+            )
+        )
         return None
 
     def _visualize(self, path=None, hold=False):
@@ -71,7 +83,8 @@ class PlanarRRT(RRT):
                 plt.plot(
                     (node.state[0], node.parent.state[0]),
                     (node.state[1], node.parent.state[1]),
-                    '-b')
+                    "-b",
+                )
 
         for obs in self.obstacles:
             if isinstance(obs, CollisionBox):
@@ -79,35 +92,35 @@ class PlanarRRT(RRT):
                     obs.location - obs.half_lengths,
                     obs.half_lengths[0] * 2,
                     obs.half_lengths[1] * 2,
-                    color='k')
+                    color="k",
+                )
             elif isinstance(obs, CollisionSphere):
-                p = patches.Circle(obs.location, obs.radius, color='k')
+                p = patches.Circle(obs.location, obs.radius, color="k")
             ax.add_patch(p)
 
-        plt.plot(self.start.state[0], self.start.state[1], '*g')
-        plt.plot(self.goal.state[0], self.goal.state[1], '*r')
+        plt.plot(self.start.state[0], self.start.state[1], "*g")
+        plt.plot(self.goal.state[0], self.goal.state[1], "*r")
         ax.set_xlim(self.dim_ranges[0])
         ax.set_ylim(self.dim_ranges[1])
 
         if path is not None:
             for i in range(1, len(path)):
                 plt.plot(
-                    (path[i][0], path[i-1][0]),
-                    (path[i][1], path[i-1][1]),
-                    '-r')
+                    (path[i][0], path[i - 1][0]), (path[i][1], path[i - 1][1]), "-r"
+                )
 
-        #if hold:
+        # if hold:
         #    plt.show()
-        #else:
+        # else:
         #    plt.pause(0.01)
         if hold:
-            plt.axes().set_aspect('equal')
+            plt.axes().set_aspect("equal")
             plt.savefig(self.visualize_path)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     rrt = PlanarRRT(
-        start_state=[0.2, 0.2],
-        goal_state=[0.7, 0.7],
-        dim_ranges=[(0, 1), (0, 1)])
+        start_state=[0.2, 0.2], goal_state=[0.7, 0.7], dim_ranges=[(0, 1), (0, 1)]
+    )
     path = rrt.build()
     print(path)

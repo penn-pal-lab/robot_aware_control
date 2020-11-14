@@ -7,6 +7,7 @@ class CollisionObject(ABC):
     """
     Abstract class for a parametrically defined collision object.
     """
+
     @abstractmethod
     def in_collision(self, target):
         """
@@ -22,6 +23,7 @@ class CollisionBox(CollisionObject):
     """
     N-dimensional box collision object.
     """
+
     def __init__(self, location, half_lengths):
         """
         :params location: coordinates of the center
@@ -35,7 +37,7 @@ class CollisionBox(CollisionObject):
         # the point must be within all dimensions of the rectangle
         for t, x, half in zip(target, self.location, self.half_lengths):
             low = x - half
-            high = x +  half
+            high = x + half
             if not (low <= t <= high):
                 return False
         return True
@@ -45,6 +47,7 @@ class CollisionSphere(CollisionObject):
     """
     N-dimensional sphere collision object.
     """
+
     def __init__(self, location, radius):
         """
         :params location: coordinates of the center
@@ -65,6 +68,5 @@ class CollisionSphere(CollisionObject):
         """
         c = self.location
         r = self.radius
-        delta = (np.dot(u, (o - c)))**2 - (np.linalg.norm(o-c)**2 - r**2)
+        delta = (np.dot(u, (o - c))) ** 2 - (np.linalg.norm(o - c) ** 2 - r ** 2)
         return delta >= 0
-

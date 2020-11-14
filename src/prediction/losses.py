@@ -19,6 +19,7 @@ def kl_criterion(mu1, logvar1, mu2, logvar2, bs):
     assert kld.shape[0] == bs
     return kld.sum() / bs
 
+
 class InpaintBlurCost:
     def __init__(self, config) -> None:
         self.blur_width = config.img_dim * 2

@@ -150,7 +150,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 # "desired_goal": self.goal.copy(),
                 "robot": robot.copy(),
                 "state": self.get_flattened_state(),
-                "mask": self._seg_mask
+                "mask": self._seg_mask,
             }
             for obj in self._objects:
                 obs[obj + ":joint"] = self.sim.data.get_joint_qpos(

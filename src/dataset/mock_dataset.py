@@ -9,6 +9,7 @@ import multiprocessing as mp
 import ctypes
 from tqdm import tqdm
 
+
 class VideoDataset(data.Dataset):
     def __init__(self, files, config):
         self._files = files
@@ -23,7 +24,7 @@ class VideoDataset(data.Dataset):
         # try loading everything
         for path in tqdm(files, desc="loading data into ram"):
             with h5py.File(path, "r") as hf:
-                 # first check how long video is
+                # first check how long video is
                 ep_len = hf["frames"].shape[0]
                 assert ep_len >= self._horizon, f"{ep_len}, {path}"
                 # if video is longer than horizon, sample a starting point
@@ -71,14 +72,14 @@ class VideoDataset(data.Dataset):
         #     # add to cache
         #     self._cache.put(path, (frames, robot, actions))
         # else:
-            # frames, robot, actions = item
-            # ep_len = frames.shape[0]
-            # assert ep_len >= self._horizon, f"{ep_len}, {path}"
-            # start = 0
-            # end = self._horizon
-            # frames_shape = list(frames.shape)
-            # robot_shape = list(robot.shape)
-            # actions_shape = list(actions.shape)
+        # frames, robot, actions = item
+        # ep_len = frames.shape[0]
+        # assert ep_len >= self._horizon, f"{ep_len}, {path}"
+        # start = 0
+        # end = self._horizon
+        # frames_shape = list(frames.shape)
+        # robot_shape = list(robot.shape)
+        # actions_shape = list(actions.shape)
         frames, robot, actions = self._data[index]
         ep_len = frames.shape[0]
         assert ep_len >= self._horizon, f"{ep_len}, {path}"

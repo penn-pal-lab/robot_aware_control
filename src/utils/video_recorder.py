@@ -38,7 +38,7 @@ class VideoRecorder(object):
         metadata=None,
         enabled=True,
         base_path=None,
-        store_goal=False
+        store_goal=False,
     ):
         modes = env.metadata.get("render.modes", [])
         self._async = env.metadata.get("semantics.async")

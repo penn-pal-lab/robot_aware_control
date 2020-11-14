@@ -63,7 +63,7 @@ def cem_env_planner(env, goal_imgs, cost, cfg):
     )
     # save gifs of top trajectories for debugging
     # Return first action mean, of shape (A)
-    return mean[:cfg.replan_every, :]
+    return mean[: cfg.replan_every, :]
 
 
 def load_demo_dataset(config):
@@ -176,7 +176,9 @@ def run_cem_episodes(config):
                     ob = obs["observation"]  # inpainting
                     goal_str = f"{subgoal_idx}/{len(demo_goal_imgs)-1}"
                     time_str = f"{s}/{config.max_episode_length}"
-                    gif_img = create_gif_img(env_ob, ob, goal_img, time_str, rew, goal_str)
+                    gif_img = create_gif_img(
+                        env_ob, ob, goal_img, time_str, rew, goal_str
+                    )
                     gif.append(gif_img)
 
                 # set the most future subgoal that is still <= threshold, and start from there

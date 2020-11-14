@@ -22,8 +22,8 @@ def env_rollout_runner(
     N = len(action_sequences)  # Number of candidate action sequences
     T = len(action_sequences[0])
     sum_cost = torch.zeros(N)
-    all_obs = [] # N x T x obs
-    all_step_cost = [] # N x T x 1
+    all_obs = []  # N x T x obs
+    all_step_cost = []  # N x T x 1
 
     bg_img = env._background_img.copy()
     env_state = env.get_flattened_state()
@@ -34,7 +34,7 @@ def env_rollout_runner(
         for t in range(T):
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
-            if cfg.demo_cost: # for debug comparison
+            if cfg.demo_cost:  # for debug comparison
                 opt_img = cfg.optimal_traj[goal_idx]
 
             action = action_sequences[ep_num, t].numpy()

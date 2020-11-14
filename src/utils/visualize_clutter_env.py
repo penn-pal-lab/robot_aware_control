@@ -234,9 +234,7 @@ def collect_inpaint_trajectory(
                 "object_inpaint_demo", data=object_inpaint_demo, compression="gzip"
             )
             # masks
-            hf.create_dataset(
-                "masks", data=masks, compression="gzip"
-            )
+            hf.create_dataset("masks", data=masks, compression="gzip")
 
     # print out stats about the dataset
     stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}"
@@ -269,7 +267,9 @@ def collect_inpaint_trajectories():
 
     os.makedirs(config.demo_dir, exist_ok=True)
     if num_workers == 1:
-        collect_inpaint_trajectory(0, config, behavior, record, num_trajectories, ep_len)
+        collect_inpaint_trajectory(
+            0, config, behavior, record, num_trajectories, ep_len
+        )
     else:
         ps = []
         for i in range(num_workers):
