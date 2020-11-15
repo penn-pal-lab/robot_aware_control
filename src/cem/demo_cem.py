@@ -16,13 +16,12 @@ import wandb
 from src.env.fetch.clutter_push import ClutterPushEnv
 from src.prediction.losses import InpaintBlurCost
 from src.prediction.models.dynamics import DynamicsModel
-from src.cem.trajectory_sampler import generate_env_rollouts, generate_env_rollouts_parallel,
+from src.cem.trajectory_sampler import generate_env_rollouts, generate_env_rollouts_parallel
 from torch import cat
 from torch.distributions.normal import Normal
 from torchvision.transforms import ToTensor
 from torchvision.datasets.folder import has_file_allowed_extension
 import cv2
-import time as timer
 
 
 def cem_env_planner(env, goal_imgs, cost, cfg):
@@ -49,6 +48,7 @@ def cem_env_planner(env, goal_imgs, cost, cfg):
         act_seq = m.sample((J,))  # of shape (J, L, A)
         # Generate J rollouts
         rollouts = generate_env_rollouts(cfg, env, act_seq, goal_imgs)
+        # parallel only works on mac osx for some reason
         # rollouts = generate_env_rollouts_parallel(cfg, env, act_seq, goal_imgs)
 
         # Select top K action sequences based on cumulative cost
@@ -361,7 +361,7 @@ def setup_loggers(config):
 if __name__ == "__main__":
     from src.config import argparser
     import multiprocessing as mp
-    mp.set_start_method("fork")
+    # mp.set_start_method("fork")
 
     config, _ = argparser()
     setup_loggers(config)

@@ -8,7 +8,7 @@ from copy import deepcopy
 
 
 def generate_env_rollouts(
-    cfg, env, action_sequences, goal_imgs, ret_obs=False, ret_step_cost=False
+    cfg, env, action_sequences, goal_imgs, ret_obs=False, ret_step_cost=False, suppress_print=True
 ):
     """
     Executes the action sequences on the environment. Used by the ground truth
@@ -32,6 +32,9 @@ def generate_env_rollouts(
 
     bg_img = env._background_img.copy()
     env_state = env.get_flattened_state()
+    if not suppress_print:
+        start_time = timer.time()
+        print("####### Gathering Samples #######")
     for ep_num in range(N):
         ep_obs = []
         ep_cost = []
@@ -61,6 +64,11 @@ def generate_env_rollouts(
         all_step_cost.append(ep_cost)
         env.set_flattened_state(env_state.copy())  # reset env to before rollout
         env._background_img = bg_img.copy()
+    if not suppress_print:
+        print(
+            "======= Samples Gathered  ======= | >>>> Time taken = %f "
+            % (timer.time() - start_time)
+        )
 
     rollouts = defaultdict(float)
     rollouts["sum_cost"] = sum_cost
@@ -70,7 +78,6 @@ def generate_env_rollouts(
         rollouts["obs"] = np.asarray(all_obs)
     if ret_step_cost:
         rollouts["step_cost"] = np.asarray(all_step_cost)
-    print("DONE!", rollouts)
     return rollouts
 
 
@@ -83,7 +90,7 @@ def generate_env_rollouts_parallel(
     ret_step_cost=False,
     max_process_time=500,
     max_timeouts=1,
-    suppress_print=False,
+    suppress_print=True
 ):
 
     num_cpu = mp.cpu_count()
@@ -93,11 +100,10 @@ def generate_env_rollouts_parallel(
     for i in range(num_cpu):
         start = i * actions_per_cpu
         end = (i + 1) * actions_per_cpu if i < num_cpu - 1 else N
-        print(start, end)
         cpu_action_sequences = action_sequences[start:end]
         args_list_cpu = (
             cfg,
-            deepcopy(env),
+            env,
             cpu_action_sequences,
             goal_imgs,
             ret_obs,
@@ -113,10 +119,12 @@ def generate_env_rollouts_parallel(
     results = _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts)
 
     # result is paths type, and results is list of paths
-    paths = []
+    rollouts = defaultdict(float)
     for result in results:
-        for path in result:
-            paths.append(path)
+        rollouts["sum_cost"] = result["sum_cost"]
+        rollouts["optimal_sum_cost"] = result["optimal_sum_cost"]
+        rollouts["obs"] = result["obs"]
+        rollouts["step_cost"] = result["step_cost"]
 
     if not suppress_print:
         print(
@@ -124,7 +132,7 @@ def generate_env_rollouts_parallel(
             % (timer.time() - start_time)
         )
 
-    return paths
+    return rollouts
 
 
 def _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts):
@@ -137,28 +145,18 @@ def _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts):
     parallel_runs = [
         pool.apply_async(generate_env_rollouts, args=args_list[i]) for i in range(num_cpu)
     ]
-    results = [p.get(timeout=max_process_time) for p in parallel_runs]
 
-    # try:
-    # except Exception as e:
-    #     print(str(e))
-    #     print("Timeout Error raised... Trying again")
-    #     pool.close()
-    #     pool.terminate()
-    #     pool.join()
-    #     return _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts - 1)
+    try:
+        results = [p.get(timeout=max_process_time) for p in parallel_runs]
+    except Exception as e:
+        print(str(e))
+        print("Timeout Error raised... Trying again")
+        pool.close()
+        pool.terminate()
+        pool.join()
+        return _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts - 1)
 
     pool.close()
     pool.terminate()
     pool.join()
-    return results
-
-def worker(i,env):
-    return i
-def multiprocess_test(env):
-    pool = mp.Pool(processes=4, maxtasksperchild=1)
-    parallel_runs = [
-        pool.apply_async(worker, args=(i,env)) for i in range(3)
-    ]
-    results = [p.get(timeout=10) for p in parallel_runs]
     return results
