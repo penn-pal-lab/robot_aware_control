@@ -183,7 +183,7 @@ def collect_svg_data():
     Collect 7k noisy pushing, 3k truly random demonstrations
     Each demo is around 7-14 steps long, and the dataset will be around 100k images total
     """
-    num_workers = 4
+    num_workers = 10
     num_push = 7000 // num_workers
     num_rand = 3000 // num_workers
     record = False
