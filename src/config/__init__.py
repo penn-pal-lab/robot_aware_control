@@ -171,8 +171,8 @@ def add_prediction_arguments(parser):
         default=128,
         help="dimensionality of encoder output vector and decoder input vector",
     )
-    parser.add_argument("--action_dim", type=int, default=3)
-    parser.add_argument("--action_enc_dim", type=int, default=3)
+    parser.add_argument("--action_dim", type=int, default=2)
+    parser.add_argument("--action_enc_dim", type=int, default=2)
 
     parser.add_argument("--robot_dim", type=int, default=6)
     parser.add_argument("--robot_enc_dim", type=int, default=6)
