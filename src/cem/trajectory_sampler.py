@@ -1,16 +1,21 @@
 from collections import defaultdict
 
+import time as timer
+import multiprocessing as mp
 import numpy as np
 import torch
+from copy import deepcopy
 
 
-def env_rollout_runner(
-    cfg, env, action_sequences, cost, goal_imgs, ret_obs=False, ret_step_cost=False
+def generate_env_rollouts(
+    cfg, env, action_sequences, goal_imgs, ret_obs=False, ret_step_cost=False
 ):
     """
     Executes the action sequences on the environment. Used by the ground truth
     dynamics CEM to generate trajectories for action selection.
 
+    cfg: configuration dictionary
+    env: environment instance
     action_sequences: list of action candidates to evaluate
     cost: cost function for comparing observation and goal
     goal: list of goal images for comparison
@@ -41,10 +46,7 @@ def env_rollout_runner(
             ob, _, _, _ = env.step(action)
 
             img = ob["observation"]
-            if cfg.reward_type == "inpaint-blur":
-                blur = t < T - cfg.unblur_timestep
-                rew = cost(img, goal_img, blur)
-            elif cfg.reward_type == "inpaint":
+            if cfg.reward_type == "inpaint":
                 rew = -np.linalg.norm(img - goal_img)
                 if cfg.demo_cost:
                     optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
@@ -68,4 +70,95 @@ def env_rollout_runner(
         rollouts["obs"] = np.asarray(all_obs)
     if ret_step_cost:
         rollouts["step_cost"] = np.asarray(all_step_cost)
+    print("DONE!", rollouts)
     return rollouts
+
+
+def generate_env_rollouts_parallel(
+    cfg,
+    env,
+    action_sequences,
+    goal_imgs,
+    ret_obs=False,
+    ret_step_cost=False,
+    max_process_time=500,
+    max_timeouts=1,
+    suppress_print=False,
+):
+
+    num_cpu = mp.cpu_count()
+    N = len(action_sequences)
+    actions_per_cpu = N // num_cpu
+    args_list = []
+    for i in range(num_cpu):
+        start = i * actions_per_cpu
+        end = (i + 1) * actions_per_cpu if i < num_cpu - 1 else N
+        print(start, end)
+        cpu_action_sequences = action_sequences[start:end]
+        args_list_cpu = (
+            cfg,
+            deepcopy(env),
+            cpu_action_sequences,
+            goal_imgs,
+            ret_obs,
+            ret_step_cost
+        )
+        args_list.append(args_list_cpu)
+
+    # Do multiprocessing
+    if not suppress_print:
+        start_time = timer.time()
+        print("####### Gathering Samples #######")
+
+    results = _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts)
+
+    # result is paths type, and results is list of paths
+    paths = []
+    for result in results:
+        for path in result:
+            paths.append(path)
+
+    if not suppress_print:
+        print(
+            "======= Samples Gathered  ======= | >>>> Time taken = %f "
+            % (timer.time() - start_time)
+        )
+
+    return paths
+
+
+def _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts):
+
+    # Base case
+    if max_timeouts == 0:
+        return None
+
+    pool = mp.Pool(processes=num_cpu, maxtasksperchild=1)
+    parallel_runs = [
+        pool.apply_async(generate_env_rollouts, args=args_list[i]) for i in range(num_cpu)
+    ]
+    results = [p.get(timeout=max_process_time) for p in parallel_runs]
+
+    # try:
+    # except Exception as e:
+    #     print(str(e))
+    #     print("Timeout Error raised... Trying again")
+    #     pool.close()
+    #     pool.terminate()
+    #     pool.join()
+    #     return _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts - 1)
+
+    pool.close()
+    pool.terminate()
+    pool.join()
+    return results
+
+def worker(i,env):
+    return i
+def multiprocess_test(env):
+    pool = mp.Pool(processes=4, maxtasksperchild=1)
+    parallel_runs = [
+        pool.apply_async(worker, args=(i,env)) for i in range(3)
+    ]
+    results = [p.get(timeout=10) for p in parallel_runs]
+    return results

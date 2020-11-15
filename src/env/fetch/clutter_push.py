@@ -3,12 +3,12 @@ from collections import defaultdict
 from copy import deepcopy
 
 import imageio
-import ipdb
+# import ipdb
 import matplotlib.pyplot as plt
 import numpy as np
 from gym import spaces, utils
 from mujoco_py.generated import const
-from skimage.filters import gaussian
+# from skimage.filters import gaussian
 from src.env.fetch.collision import CollisionSphere
 from src.env.fetch.fetch_env import FetchEnv
 from src.env.fetch.planar_rrt import PlanarRRT
@@ -74,7 +74,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             reward_type=reward_type,
             seed=config.seed,
         )
-        utils.EzPickle.__init__(self)
+        utils.EzPickle.__init__(self, config)
         self.action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype="float32")
         obs = self._get_obs()
         if self._pixels_ob:
