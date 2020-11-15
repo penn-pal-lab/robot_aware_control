@@ -150,12 +150,13 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 # "desired_goal": self.goal.copy(),
                 "robot": robot.copy(),
                 "state": self.get_flattened_state(),
-                "mask": self._seg_mask
             }
             for obj in self._objects:
                 obs[obj + ":joint"] = self.sim.data.get_joint_qpos(
                     obj + ":joint"
                 ).copy()
+            if self._norobot_pixels_ob:
+                obs["mask"] = self._seg_mask
             return obs
         # change to a scalar if the gripper is made symmetric
         if self.has_object:
