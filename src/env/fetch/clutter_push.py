@@ -3,11 +3,13 @@ from collections import defaultdict
 from copy import deepcopy
 
 import imageio
+
 # import ipdb
 import matplotlib.pyplot as plt
 import numpy as np
 from gym import spaces, utils
 from mujoco_py.generated import const
+
 # from skimage.filters import gaussian
 from src.env.fetch.collision import CollisionSphere
 from src.env.fetch.fetch_env import FetchEnv
@@ -377,7 +379,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         return np.array([x, y])
 
     def _sample_objects(self):
-        print("sampling objects")
         # set objects in radius around spawn
         center = self.sim.data.get_site_xpos("spawn")[:2]
         spawn_id = self.sim.model.site_name2id("spawn")
@@ -803,7 +804,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         max_time=100,
         threshold=0.01,
         speed=10,
-        noise=False,
+        noise=0
     ):
         if target_type == "gripper":
             gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
@@ -814,8 +815,8 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         step = 0
         while np.linalg.norm(d) > threshold and step < max_time:
             # add some random noise to ac
-            if noise:
-                d += np.random.uniform(-0.05, 0.05, size=2)
+            if noise > 0:
+                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
             ac = d[:2] * speed
             history["ac"].append(ac)
             obs, _, _, info = self.step(ac)
@@ -890,7 +891,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             threshold=0.003,
         )
 
-    def straight_push(self, history, object="object1"):
+    def straight_push(self, history, object="object1", noise=0):
         # move gripper behind the block and oriented for a goal push
         block_xpos = self.sim.data.get_site_xpos(object).copy()
         spawn_xpos = self.sim.data.get_site_xpos("spawn").copy()
@@ -906,6 +907,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             speed=5,
             threshold=0.025,
             max_time=10,
+            noise=noise
         )
 
     def only_robot(self, history):
@@ -930,7 +932,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 history[k].append(v)
 
     def generate_demo(
-        self, behavior, record=False, save_goal=False, record_path=None, ep_len=None
+        self, behavior, record=False, save_goal=False, record_path=None, ep_len=None, noise=0
     ):
         """
         Behaviors: occlude, occlude_all, push, only robot move to goal
@@ -1019,7 +1021,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         elif behavior == "straight_push":
             obj = np.random.choice(self._objects)
             history["pushed_obj"] = obj
-            self.straight_push(history, object=obj)
+            self.straight_push(history, object=obj, noise=noise)
         self._vr.close()
         return history
 

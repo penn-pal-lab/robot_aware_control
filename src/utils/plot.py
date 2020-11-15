@@ -6,6 +6,17 @@ import scipy.misc
 import torch
 from torch.autograd import Variable
 from PIL import Image
+import cv2
+from functools import partial
+
+putText = partial(
+    cv2.putText,
+    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+    fontScale=0.3,
+    color=(0, 0, 0),
+    thickness=1,
+    lineType=cv2.LINE_AA,
+)
 
 
 def is_sequence(arg):

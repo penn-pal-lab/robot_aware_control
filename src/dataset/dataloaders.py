@@ -1,7 +1,7 @@
 import os
 import random
 
-from src.dataset.mock_dataset import VideoDataset
+from src.dataset.video_dataset import VideoDataset
 from torchvision.datasets.folder import has_file_allowed_extension
 from torch.utils.data import DataLoader
 

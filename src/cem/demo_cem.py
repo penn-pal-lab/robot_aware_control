@@ -1,4 +1,3 @@
-from functools import partial
 import logging
 import os
 import pickle
@@ -9,19 +8,18 @@ import h5py
 import imageio
 import ipdb
 import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import wandb
 from src.env.fetch.clutter_push import ClutterPushEnv
 from src.prediction.losses import InpaintBlurCost
 from src.prediction.models.dynamics import DynamicsModel
-from src.cem.trajectory_sampler import generate_env_rollouts, generate_env_rollouts_parallel
+from src.cem.trajectory_sampler import generate_env_rollouts
+from src.utils.plot import putText
 from torch import cat
 from torch.distributions.normal import Normal
 from torchvision.transforms import ToTensor
 from torchvision.datasets.folder import has_file_allowed_extension
-import cv2
 
 
 def cem_env_planner(env, goal_imgs, cost, cfg):
@@ -261,17 +259,7 @@ def run_cem_episodes(config):
 
 
 def create_gif_img(env_ob, ob, goal, time_str, cost, goal_str):
-    font_size = 0.3
-    thickness = 1
     env_ob = env_ob.copy()
-    putText = partial(
-        cv2.putText,
-        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-        fontScale=font_size,
-        color=(0, 0, 0),
-        thickness=thickness,
-        lineType=cv2.LINE_AA,
-    )
     putText(env_ob, f"REAL", (0, 8))
     putText(env_ob, time_str, (0, 126))
 
@@ -361,6 +349,7 @@ def setup_loggers(config):
 if __name__ == "__main__":
     from src.config import argparser
     import multiprocessing as mp
+
     # mp.set_start_method("fork")
 
     config, _ = argparser()

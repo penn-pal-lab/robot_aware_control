@@ -8,7 +8,13 @@ from copy import deepcopy
 
 
 def generate_env_rollouts(
-    cfg, env, action_sequences, goal_imgs, ret_obs=False, ret_step_cost=False, suppress_print=True
+    cfg,
+    env,
+    action_sequences,
+    goal_imgs,
+    ret_obs=False,
+    ret_step_cost=False,
+    suppress_print=True,
 ):
     """
     Executes the action sequences on the environment. Used by the ground truth
@@ -90,7 +96,7 @@ def generate_env_rollouts_parallel(
     ret_step_cost=False,
     max_process_time=500,
     max_timeouts=1,
-    suppress_print=True
+    suppress_print=True,
 ):
 
     num_cpu = mp.cpu_count()
@@ -107,7 +113,7 @@ def generate_env_rollouts_parallel(
             cpu_action_sequences,
             goal_imgs,
             ret_obs,
-            ret_step_cost
+            ret_step_cost,
         )
         args_list.append(args_list_cpu)
 
@@ -143,7 +149,8 @@ def _try_multiprocess(args_list, num_cpu, max_process_time, max_timeouts):
 
     pool = mp.Pool(processes=num_cpu, maxtasksperchild=1)
     parallel_runs = [
-        pool.apply_async(generate_env_rollouts, args=args_list[i]) for i in range(num_cpu)
+        pool.apply_async(generate_env_rollouts, args=args_list[i])
+        for i in range(num_cpu)
     ]
 
     try:

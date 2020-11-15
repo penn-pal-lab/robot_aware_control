@@ -1,8 +1,8 @@
+from functools import partial
 import os
 from collections import defaultdict
-from functools import partial
+from src.utils.plot import putText
 
-import cv2
 import h5py
 import imageio
 import numpy as np
@@ -11,7 +11,7 @@ from src.env.fetch.clutter_push import ClutterPushEnv
 from tqdm import tqdm
 
 
-def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
+def generate_demos(rank, config, behavior, record, num_trajectories, ep_len, noise=0):
     """
     This generates demos, like random moving or block pushing.
 
@@ -29,6 +29,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
     record: whether to record the gif or not
     num_trajectories: number of demos to generate
     ep_len: max length of the demo. only used by some behaviors.
+    noise: action noise in behavior. only used by some behaviors
     """
     config.seed = rank
     env = ClutterPushEnv(config)
@@ -40,7 +41,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
         record = rank == 0 and record
         name = f"{behavior}_{rank}_{i}.hdf5"
         path = os.path.join(config.demo_dir, name)
-        history = env.generate_demo(behavior, ep_len=ep_len)
+        history = env.generate_demo(behavior, ep_len=ep_len, noise=noise)
         record_path = f"videos/{behavior}_{config.seed}_{i}.gif"
         obs = history["obs"]  # array of observation dictionaries
         len_stats.append(len(obs))
@@ -48,7 +49,9 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
         robot = []
         obj_poses = defaultdict(list)
         states = []
+        robot_states = []
         for ob in obs:
+            robot_states.append(ob["robot"])
             object_inpaint_demo.append(ob["observation"])
             states.append(ob["state"])
             for obj in env._objects:
@@ -81,15 +84,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
             robot_img = env.render(remove_robot=False)
             robot_demo.append(robot_img)
             if record:
-                # concat with the demo's inpainted image and background img
-                putText = partial(
-                    cv2.putText,
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.3,
-                    color=(0, 0, 0),
-                    thickness=1,
-                    lineType=cv2.LINE_AA,
-                )
+                # concat with the inpainted image and background img
                 gif_robot_img = robot_img.copy()
                 putText(gif_robot_img, f"REAL", (10, 10))
                 putText(gif_robot_img, f"{t}", (0, 126))
@@ -111,23 +106,19 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
         if record:
             imageio.mimwrite(record_path, gif)
         with h5py.File(path, "w") as hf:
+            create_dataset = partial(hf.create_dataset, compression="gzip")
             hf.attrs["pushed_obj"] = str(history["pushed_obj"])
-            hf.create_dataset("states", data=states, compression="gzip")
-            hf.create_dataset("actions", data=actions, compression="gzip")
+            create_dataset("states", data=states)
+            create_dataset("actions", data=actions)
+            create_dataset("robot_state", data=robot_states)
             # ground truth object demo
-            hf.create_dataset(
-                "object_only_demo", data=object_only_demo, compression="gzip"
-            )
+            create_dataset("object_only_demo", data=object_only_demo)
             # inpainted object demo
-            hf.create_dataset(
-                "object_inpaint_demo", data=object_inpaint_demo, compression="gzip"
-            )
-            # with robot demo
-            hf.create_dataset("robot_demo", data=robot_demo, compression="gzip")
+            create_dataset("object_inpaint_demo", data=object_inpaint_demo)
+            #  noinpaint demo
+            create_dataset("robot_demo", data=robot_demo)
             for obj in env._objects:
-                hf.create_dataset(
-                    obj + ":joint", data=obj_poses[obj + ":joint"], compression="gzip"
-                )
+                create_dataset(obj + ":joint", data=obj_poses[obj + ":joint"])
 
     # print out stats about the dataset
     stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}"
@@ -137,16 +128,41 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
         f.write(stats_str)
 
 
-def create_demo_dataset():
+def create_demo_dataset(
+    config, num_demo, num_workers, record, behavior, ep_len, noise=0
+):
     """
     Collect all demonstrations and save into demo_dir
     You can use multiple workers if generating 1000s of demonstrations
     """
     from multiprocessing import Process
 
-    num_trajectories = 100  # per worker
-    num_workers = 1
-    record = True
+    os.makedirs(config.demo_dir, exist_ok=True)
+    if num_workers == 1:
+        generate_demos(0, config, behavior, record, num_demo, ep_len, noise)
+    else:
+        ps = []
+        for i in range(num_workers):
+            p = Process(
+                target=generate_demos,
+                args=(i, config, behavior, record, num_demo, ep_len, noise),
+            )
+            ps.append(p)
+
+        for p in ps:
+            p.start()
+
+        for p in ps:
+            p.join()
+
+
+def collect_demo_cem_data():
+    """
+    Used for collecting the demo dataset for demo CEM
+    """
+    num_demo = 50  # per worker
+    num_workers = 2
+    record = False
     behavior = "straight_push"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
 
@@ -158,25 +174,38 @@ def create_demo_dataset():
     config.multiview = True
     config.img_dim = 64
     config.camera_ids = [0, 1]
+    create_demo_dataset(config, num_demo, num_workers, record, behavior, ep_len)
 
-    os.makedirs(config.demo_dir, exist_ok=True)
-    if num_workers == 1:
-        generate_demos(0, config, behavior, record, num_trajectories, ep_len)
-    else:
-        ps = []
-        for i in range(num_workers):
-            p = Process(
-                target=generate_demos,
-                args=(i, config, behavior, record, num_trajectories, ep_len),
-            )
-            ps.append(p)
 
-        for p in ps:
-            p.start()
+def collect_svg_data():
+    """
+    Generate video dataset for SVG model training
+    Collect 7k noisy pushing, 3k truly random demonstrations
+    Each demo is around 7-14 steps long, and the dataset will be around 100k images total
+    """
+    num_workers = 4
+    num_push = 7000 // num_workers
+    num_rand = 3000 // num_workers
+    record = False
+    ep_len = 12  # gonna be off by 1 because of reset but whatever
+    noise = 0.2
 
-        for p in ps:
-            p.join()
+    config, _ = argparser()
+    config.norobot_pixels_ob = True
+    config.reward_type = "inpaint"
+    config.demo_dir = "demos/svg_data"
+    config.most_recent_background = False
+    config.multiview = True
+    config.img_dim = 64
+    config.camera_ids = [0, 1]
+    create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len, noise)
+    create_demo_dataset(config, num_rand, num_workers, record, "random_robot", ep_len, noise)
+
 
 
 if __name__ == "__main__":
-    create_demo_dataset()
+    """
+    Use this to collect demonstrations for svg / demo cem experiments
+    """
+    collect_svg_data()
+    # collect_demo_cem_data()
