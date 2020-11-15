@@ -58,7 +58,7 @@ class Encoder(nn.Module):
             self.c6_multiview = nn.Sequential(
                 nn.Conv2d(512, 512, 4, 1, 0),
                 nn.BatchNorm2d(512),
-                nn.LeakyReLU(0.2, inplace=True), # 5x1
+                nn.LeakyReLU(0.2, inplace=True),  # 5x1
                 nn.Conv2d(512, dim, (5, 1), 1),
                 nn.BatchNorm2d(dim),
                 nn.Tanh(),
@@ -83,16 +83,20 @@ class Encoder(nn.Module):
             h6 = self.c6(self.mp(h5))  # 4 -> 1
         return h6.view(-1, self.dim), [h1, h2, h3, h4, h5]
 
+
 # split the input into 2 images, upsample them, and then recombine
 up = nn.UpsamplingNearest2d(scale_factor=2)
+
+
 def multiview_upsample(x):
     H = x.shape[-2]
-    x1, x2 = x[:,:, :H//2], x[:,:, H//2:]
+    x1, x2 = x[:, :, : H // 2], x[:, :, H // 2 :]
     x1_ = up(x1)
     x2_ = up(x2)
     final_img = torch.cat([x1_, x2_], dim=-2)
     assert final_img.shape[-2] == 2 * H, final_img.shape
     return final_img
+
 
 class Decoder(nn.Module):
     def __init__(self, dim, nc=1, multiview=False):
@@ -136,8 +140,6 @@ class Decoder(nn.Module):
         else:
             self.up = nn.UpsamplingNearest2d(scale_factor=2)
 
-
-
     def forward(self, input):
         vec, skip = input
         d1 = self.upc1(vec.view(-1, self.dim, 1, 1))  # 1 -> 4
@@ -153,9 +155,11 @@ class Decoder(nn.Module):
         output = self.upc6(torch.cat([up5, skip[0]], 1))  # 128 x 128 or 256 x 128
         return output
 
+
 def encoder_test():
     import numpy as np
     from torchvision.transforms import ToTensor
+
     # Singleview Test
     print("Single view Test:")
     img = np.random.normal(size=(2, 128, 128, 3)).astype(np.float32)
@@ -174,9 +178,11 @@ def encoder_test():
     out = enc(tensor)
     print(out[0].shape)
 
+
 def decoder_test():
     import numpy as np
     from torchvision.transforms import ToTensor
+
     print("Single view Test:")
     img = np.random.normal(size=(2, 128, 128, 3)).astype(np.float32)
     tensor = torch.stack([ToTensor()(i) for i in img])
@@ -194,6 +200,7 @@ def decoder_test():
     dec = Decoder(dim=128, nc=3, multiview=True)
     out = dec(out)
     print(out.shape)
+
 
 if __name__ == "__main__":
     decoder_test()

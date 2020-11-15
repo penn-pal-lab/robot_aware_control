@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import wandb
 from src.env.fetch.fetch_push import FetchPushEnv
+
 # from src.env.fetch.clutter_push import ClutterPushEnv
 from src.prediction.losses import InpaintBlurCost, mse_criterion
 from src.prediction.models.dynamics import DynamicsModel
@@ -104,7 +105,7 @@ def cem_model_planner(model: DynamicsModel, env, start, goal, cost, config):
         info["top_preds"] = torch.index_select(debug_preds, dim=1, index=idx).cpu()
     env.set_state(original_env_state)
     # Return first action mean, of shape (A)
-    return mean[0, :].cpu().numpy(), info
+    return mean[: config.replan_every, :].cpu().numpy(), info
 
 
 def cem_env_planner(env, config):
@@ -141,7 +142,7 @@ def cem_env_planner(env, config):
             for l in range(L):
                 action = act_seq[j, l].numpy()
                 env._use_unblur = l >= L - config.unblur_timestep
-                _, rew, _, _ = env.step(action, compute_reward=False)  # Take one step
+                _, rew, _, _ = env.step(action, compute_reward=True)  # Take one step
                 ret_preds[j] += rew  # accumulate rewards
                 env._use_unblur = False
             env.set_state(env_state)  # reset env to before rollout
@@ -158,8 +159,7 @@ def cem_env_planner(env, config):
 
     # Print means of top returns, for debugging
     # print("\tMeans of top returns: ", ret_topks)
-    # Return first action mean, of shape (A)
-    return mean[0, :]
+    return mean[: config.replan_every, :]
 
 
 def run_cem_episodes(config):
@@ -188,7 +188,7 @@ def run_cem_episodes(config):
             env,
             path=os.path.join(config.video_dir, f"test_{i}.mp4"),
             enabled=i % config.record_video_interval == 0,
-            store_goal=True
+            store_goal=True,
         )
         vr.capture_frame()
         terminate_ep = False
@@ -204,7 +204,9 @@ def run_cem_episodes(config):
                 robot = obs["robot"].astype(np.float32)
                 img = obs["observation"]
                 start = (sim_state, robot, img)
-                action_seq, info = cem_model_planner(model, env, start, goal, cost, config)
+                action_seq, info = cem_model_planner(
+                    model, env, start, goal, cost, config
+                )
                 if config.debug_cem:
                     # (L, K, C, W, H)
                     cem_preds = info["top_preds"]
@@ -215,7 +217,6 @@ def run_cem_episodes(config):
                     cem_eps = cat([goal_ep, cem_preds], dim=1)
                     debug_path = os.path.join(config.plot_dir, f"ep{i}_step{s}_cem.gif")
                     save_gif(debug_path, cem_eps)
-
 
             for action in action_seq:
                 obs, _, done, info = env.step(action, compute_reward=False)

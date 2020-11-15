@@ -7,7 +7,7 @@ The codebase is structured as follows:
 * `src` contains all source code.
     * `config` contains all hyperparameter and configuration variables for algorithms, environments, etc.
     * `env` contains all environments. We mainly use the `fetch` environment, which features a Fetch 7DOF robot with EEF positional control on a tabletop workspace.
-    * `mbrl` contains all model based control methods.
+    * `cem` contains the cem controller
     * `prediction` contains all predictive model training code. The model is a SVG video prediction model.
     * `utils` contains some plotting and visualization code.
 
@@ -46,12 +46,22 @@ run into import errors and have to install the missing packages. Sorry!
 $ pip install -r requirements.txt
 ```
 
-## Testing the codebase
-Try running this command.
-```py
- python -m src.mbrl.cem.cem --wandb False --jobname modelcem --multiview True --img_dim 64 --reward_type inpaint --record_trajectory False --action_candidates 100 --opt_iter 3 --horizon 4 --push_dist 0.1 --max_episode_length 10  --large_block True --norobot_pixels_ob True   --debug_cem False --topk 3 --blur_sigma 2 --use_env_dynamics True
+## Running the Code
+Here, we will generate some demonstrations, and then run CEM to follow the demonstrations.
+
+### Generating demonstrations
+For the clutter environment, we will generate block pushing demonstrations.
 ```
-It should start running the CEM policy on a block pushing environment. Check your `logs/modelcem/video` folder to see each episode's mp4 output.
+python -m src.utils.collect_clutter_data
+```
+This will generate 100 block pushing demonstrations saved into `demos/straight_push`. You can change the number of demonstrations, inpainting type, etc. in the file
+
+### Running Demo CEM
+```
+python -m src.cem.demo_cem --wandb False --jobname democem --multiview True --img_dim 64 --reward_type inpaint  --action_candidates 200 --topk 10  --opt_iter 2 --horizon 2  --max_episode_length 10  --norobot_pixels_ob True  --use_env_dynamics True --num_episodes 2 --most_recent_background False --action_repeat 1 --subgoal_threshold 5000 --sequential_subgoal True --demo_cost True --subgoal_start 1 --demo_timescale 2 --camera_ids 0,1 --object_demo_dir demos/straight_push
+```
+Once we have the demonstrations, we can load them and run CEM to make the robot follow each demonstration.
+
 
 
 ## Troubleshooting

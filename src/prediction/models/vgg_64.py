@@ -58,7 +58,7 @@ class Encoder(nn.Module):
             # 4 x 4
             self.c5 = nn.Sequential(
                 nn.Conv2d(512, dim, 4, 1, 0), nn.BatchNorm2d(dim), nn.Tanh()
-        )
+            )
         self.mp = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
     def forward(self, input):
@@ -72,16 +72,20 @@ class Encoder(nn.Module):
             h5 = self.c5(self.mp(h4))  # 4 -> 1
         return h5.view(-1, self.dim), [h1, h2, h3, h4]
 
+
 # split the input into 2 images, upsample them, and then recombine
 up = nn.UpsamplingNearest2d(scale_factor=2)
+
+
 def multiview_upsample(x):
     H = x.shape[-2]
-    x1, x2 = x[:,:, :H//2], x[:,:, H//2:]
+    x1, x2 = x[:, :, : H // 2], x[:, :, H // 2 :]
     x1_ = up(x1)
     x2_ = up(x2)
     final_img = torch.cat([x1_, x2_], dim=-2)
     assert final_img.shape[-2] == 2 * H, final_img.shape
     return final_img
+
 
 class Decoder(nn.Module):
     def __init__(self, dim, nc=1, multiview=False):
@@ -131,9 +135,11 @@ class Decoder(nn.Module):
         output = self.upc5(torch.cat([up4, skip[0]], 1))  # 64 x 64
         return output
 
+
 def encoder_test():
     import numpy as np
     from torchvision.transforms import ToTensor
+
     print("Encoder Tests")
     # Singleview Test
     print("Single view Test:")
@@ -153,9 +159,11 @@ def encoder_test():
     out = enc(tensor)
     print(out[0].shape)
 
+
 def decoder_test():
     import numpy as np
     from torchvision.transforms import ToTensor
+
     print("Decoder Tests")
     print("Single view Test:")
     img = np.random.normal(size=(2, 64, 64, 3)).astype(np.float32)
@@ -174,6 +182,7 @@ def decoder_test():
     dec = Decoder(dim=128, nc=3, multiview=True)
     out = dec(out)
     print(out.shape)
+
 
 if __name__ == "__main__":
     encoder_test()

@@ -1,7 +1,7 @@
 import os
 import random
 
-from src.dataset.mock_dataset import VideoDataset
+from src.dataset.video_dataset import VideoDataset
 from torchvision.datasets.folder import has_file_allowed_extension
 from torch.utils.data import DataLoader
 
@@ -20,6 +20,7 @@ def create_split(config):
     Dset = VideoDataset
     train, val = Dset(train_files, config), Dset(val_files, config)
     return train, val
+
 
 def create_loaders(config):
     train_data, test_data = create_split(config)
@@ -42,15 +43,17 @@ def create_loaders(config):
     )
     return train_loader, test_loader
 
+
 def get_batch(loader, device):
     while True:
         for sequence in loader:
             # transpose from (B, L, C, W, H) to (L, B, C, W, H)
             frames, robots, actions = sequence
-            frames = frames.transpose_(1,0).to(device)
-            robots = robots.transpose_(1,0).to(device)
-            actions = actions.transpose_(1,0).to(device)
+            frames = frames.transpose_(1, 0).to(device)
+            robots = robots.transpose_(1, 0).to(device)
+            actions = actions.transpose_(1, 0).to(device)
             yield frames, robots, actions
+
 
 if __name__ == "__main__":
     import numpy as np
@@ -63,9 +66,9 @@ if __name__ == "__main__":
     ep_len = 10
     for i in range(20):
         # video frames of length 10
-        frames = np.ones((ep_len, 128, 128, 3), dtype=np.uint8) * 255 *  i // 20
+        frames = np.ones((ep_len, 128, 128, 3), dtype=np.uint8) * 255 * i // 20
         robot_state = np.ones((ep_len, 3)) * i
-        actions = np.ones((ep_len - 1,3)) * i
+        actions = np.ones((ep_len - 1, 3)) * i
         # create a mock dataset hdf5 file
         filename = os.path.join(dataset_path, f"mock_{i}.hdf5")
         with h5py.File(filename, "w") as hf:

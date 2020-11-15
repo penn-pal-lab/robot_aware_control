@@ -32,8 +32,8 @@ def debug_cem(config):
     # state = states[start]
     for i in range(start + 1, len(obs)):
         # TODO: check env generated next robot state with trajectory next robot state
-        ac = torch.from_numpy(acs[i-1]).unsqueeze(0)
-        robot = torch.from_numpy(obs[i-1]["robot"].astype(np.float32)).unsqueeze(0)
+        ac = torch.from_numpy(acs[i - 1]).unsqueeze(0)
+        robot = torch.from_numpy(obs[i - 1]["robot"].astype(np.float32)).unsqueeze(0)
         pred_img = model.next_img(ob, robot, ac, i == (start + 1))
         # robot, state = env.robot_kinematics(state, acs[i-1])
         # robot = torch.from_numpy(robot.astype(np.float32)).unsqueeze(0)
@@ -44,9 +44,8 @@ def debug_cem(config):
     save_gif(f"{start}.gif", all_imgs)
 
 
-
-
 if __name__ == "__main__":
     from src.config import argparser
+
     config, _ = argparser()
     debug_cem(config)

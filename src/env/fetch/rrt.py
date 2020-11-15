@@ -1,14 +1,16 @@
 import numpy as np
 
 
-class RRT():
+class RRT:
     """
     Simple implementation of Rapidly-Exploring Random Trees (RRT)
     """
-    class Node():
+
+    class Node:
         """
         A node for a doubly-linked tree structure.
         """
+
         def __init__(self, state, parent):
             """
             :param state: np.array of a state in the search space.
@@ -29,8 +31,7 @@ class RRT():
                 yield node
 
         def __repr__(self):
-            return 'Node({})'.format(', '.join(map(str, self.state)))
-
+            return "Node({})".format(", ".join(map(str, self.state)))
 
         def add_child(self, state):
             """
@@ -43,15 +44,16 @@ class RRT():
             self.children.append(child)
             return child
 
-
-    def __init__(self,
-                 start_state,
-                 goal_state,
-                 dim_ranges,
-                 obstacles=[],
-                 step_size=0.05,
-                 max_iter=1000,
-                 goal_bias=0):
+    def __init__(
+        self,
+        start_state,
+        goal_state,
+        dim_ranges,
+        obstacles=[],
+        step_size=0.05,
+        max_iter=1000,
+        goal_bias=0,
+    ):
         """
         :param start_state: Array-like representing the start state.
         :param goal_state: Array-like representing the goal state.
@@ -71,7 +73,7 @@ class RRT():
         self.max_iter = max_iter
         self.goal_bias = goal_bias
 
-        if (self.start.state.shape != self.goal.state.shape):
+        if self.start.state.shape != self.goal.state.shape:
             raise AssertionError("Start and Goal states do not match dimension!")
 
     def build(self):
@@ -94,14 +96,17 @@ class RRT():
         for k in range(self.max_iter):
             r = self._get_random_sample()
             neighbor = self._get_nearest_neighbor(r)
-            new_node = self._extend_sample(r,neighbor)
+            new_node = self._extend_sample(r, neighbor)
             if new_node and self._check_for_completion(new_node):
                 self.goal.parent = new_node
                 new_node.children.append(self.goal)
                 return self._trace_path_from_start(self.goal)
 
-        print("Failed to find path from {0} to {1} after {2} iterations!".format(
-            self.start.state, self.goal.state, self.max_iter))
+        print(
+            "Failed to find path from {0} to {1} after {2} iterations!".format(
+                self.start.state, self.goal.state, self.max_iter
+            )
+        )
         return None
 
     def _get_random_sample(self):
@@ -150,8 +155,6 @@ class RRT():
         if self._check_for_collision(state):
             return None
         return neighbor.add_child(state)
-
-
 
     def _check_for_completion(self, node):
         """

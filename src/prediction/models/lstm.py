@@ -5,10 +5,12 @@ from torch.autograd import Variable
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
+
 class LSTM(nn.Module):
     """
     Vanilla LSTM with embedding layer and output
     """
+
     def __init__(self, input_size, output_size, hidden_size, n_layers, batch_size):
         super(LSTM, self).__init__()
         self.input_size = input_size
@@ -55,6 +57,7 @@ class GaussianLSTM(nn.Module):
     """
     Outputs latent mean and std P(z | x)
     """
+
     def __init__(self, input_size, output_size, hidden_size, n_layers, batch_size):
         super(GaussianLSTM, self).__init__()
         self.input_size = input_size
@@ -98,6 +101,7 @@ class GaussianLSTM(nn.Module):
         logvar = self.logvar_net(h_in)
         z = self.reparameterize(mu, logvar)
         return z, mu, logvar
+
 
 if __name__ == "__main__":
     glstm = GaussianLSTM(10, 10, 32, 2, 64)

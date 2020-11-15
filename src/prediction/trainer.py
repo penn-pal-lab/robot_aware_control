@@ -182,9 +182,9 @@ class PredictionTrainer(object):
         for sequence in self.test_loader:
             # transpose from (B, L, C, W, H) to (L, B, C, W, H)
             frames, robots, actions = sequence
-            frames = frames.transpose_(1,0).to(self._device)
-            robots = robots.transpose_(1,0).to(self._device)
-            actions = actions.transpose_(1,0).to(self._device)
+            frames = frames.transpose_(1, 0).to(self._device)
+            robots = robots.transpose_(1, 0).to(self._device)
+            actions = actions.transpose_(1, 0).to(self._device)
             data = (frames, robots, actions)
             mse, kld = self._eval_step(data)
             epoch_mse.append(mse)
@@ -395,7 +395,7 @@ class PredictionTrainer(object):
                     if cf.stoch:
                         z_t, _, _ = self.posterior(cat([r_target, h_target], 1))
                         # condition the recurrent state of prior
-                        self.prior(cat([a, r, h,], 1))
+                        self.prior(cat([a, r, h], 1))
                         self.frame_predictor(cat([a, r, h, z_t], 1))
                     else:
                         self.frame_predictor(cat([a, r, h], 1))

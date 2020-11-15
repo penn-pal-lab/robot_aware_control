@@ -1,6 +1,6 @@
-
 import torch
 from torch import cat
+
 
 class DynamicsModel:
     def __init__(self, config):

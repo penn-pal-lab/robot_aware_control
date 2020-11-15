@@ -271,11 +271,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         return goal
 
     def render(
-        self,
-        mode="rgb_array",
-        camera_name=None,
-        segmentation=False,
-        remove_robot=False
+        self, mode="rgb_array", camera_name=None, segmentation=False, remove_robot=False
     ):
         """
         If remove_robot, then use inpaint and mask to remove robot pixels
@@ -905,7 +901,7 @@ def collect_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 5000   # per worker
+    num_trajectories = 5000  # per worker
     num_workers = 20
     record = False
     behavior = "push"
@@ -988,7 +984,7 @@ def collect_multiview_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 5000 # per worker
+    num_trajectories = 5000  # per worker
     num_workers = 20
     record = False
     behavior = "random_robot"
@@ -1003,7 +999,9 @@ def collect_multiview_trajectories():
     os.makedirs(config.demo_dir, exist_ok=True)
 
     if num_workers == 1:
-        collect_multiview_trajectory(0, config, behavior, record, num_trajectories, ep_len)
+        collect_multiview_trajectory(
+            0, config, behavior, record, num_trajectories, ep_len
+        )
     else:
         ps = []
         for i in range(num_workers):
@@ -1023,6 +1021,7 @@ def collect_multiview_trajectories():
         for p in ps:
             p.join()
 
+
 def collect_cem_goals():
     """Collect goal images for testing CEM planning"""
     config, _ = argparser()
@@ -1032,7 +1031,7 @@ def collect_cem_goals():
     config.norobot_pixels_ob = True
     config.reward_type = "inpaint"
     config.img_dim = 64
-    config.push_dist = 0.135 # with noise, (0.07, 0.2)
+    config.push_dist = 0.135  # with noise, (0.07, 0.2)
     os.makedirs(config.demo_dir, exist_ok=True)
     env = FetchPushEnv(config)
     for i in range(200):

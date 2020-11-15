@@ -130,7 +130,11 @@ class RobotEnv(gym.GoalEnv):
         self._render_callback()
         if mode == "rgb_array":
             data = self.sim.render(
-                width, height, camera_name=camera_name, segmentation=segmentation, device_id=DEVICE_ID
+                width,
+                height,
+                camera_name=camera_name,
+                segmentation=segmentation,
+                device_id=DEVICE_ID,
             )
             # original image is upside-down, so flip it
             return data[::-1, :, :]
