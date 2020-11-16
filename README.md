@@ -54,7 +54,7 @@ Here, we will generate some demonstrations, and then run CEM to follow the demon
 ### Generating demonstrations
 For the clutter environment, we will generate block pushing demonstrations.
 ```
-python -m src.datasets.collect_clutter_data
+python -m src.dataset.collect_clutter_data
 ```
 This will generate 100 block pushing demonstrations saved into `demos/straight_push`. You can change the number of demonstrations, inpainting type, etc. in the file.
 
