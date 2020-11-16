@@ -139,7 +139,9 @@ class RobotEnv(gym.GoalEnv):
             if mode == "human":
                 self.viewer = self.mujoco_py.MjViewer(self.sim)
             elif mode == "rgb_array":
-                self.viewer = self.mujoco_py.MjRenderContextOffscreen(self.sim, device_id=-1)
+                self.viewer = self.mujoco_py.MjRenderContextOffscreen(
+                    self.sim, device_id=-1
+                )
             self._viewer_setup()
             self._viewers[mode] = self.viewer
         return self.viewer

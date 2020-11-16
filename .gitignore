@@ -5,6 +5,7 @@ logs
 data
 *.out
 inpaintobs.gif
+*.pt
 
 # IDE
 *.swp

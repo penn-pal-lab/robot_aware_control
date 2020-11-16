@@ -205,7 +205,6 @@ def add_dataset_arguments(parser):
     parser.add_argument("--action_noise", type=float, default=0)
 
 
-
 # CEM Hyperparameters
 def add_cem_arguments(parser):
     parser.add_argument("--horizon", type=int, default=3)

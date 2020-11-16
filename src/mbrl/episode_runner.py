@@ -15,6 +15,7 @@ from torchvision.datasets.folder import has_file_allowed_extension
 from src.cem.demo_cem import DemoCEMPolicy
 import wandb
 
+
 class EpisodeRunner(object):
     """
     Run the demonstration following episodes and logs the metrics
@@ -81,7 +82,9 @@ class EpisodeRunner(object):
             if config.demo_cost:
                 config.optimal_traj = optimal_traj[self._g_i :]
             # Use CEM to find the best action(s)
-            actions = self.policy.get_action(curr_img, curr_robot, curr_sim, goal_imgs, ep_num, self._step)
+            actions = self.policy.get_action(
+                curr_img, curr_robot, curr_sim, goal_imgs, ep_num, self._step
+            )
             # Execute the planned actions. Usually only 1 action
             for action in actions:
                 obs, _, _, _ = env.step(action)

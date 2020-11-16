@@ -38,7 +38,7 @@ def generate_model_rollouts(
     dev = cfg.device
     N = len(action_sequences)  # Number of candidate action sequences
     ac_per_batch = cfg.candidates_batch_size
-    B = N // ac_per_batch # number of candidate batches per GPU pass
+    B = N // ac_per_batch  # number of candidate batches per GPU pass
     T = len(action_sequences[0])
     sum_cost = np.zeros(N)
     all_obs = torch.zeros((N, T, 3, 128, 64))  # N x T x obs
@@ -53,12 +53,16 @@ def generate_model_rollouts(
 
     for b in range(B):
         start = b * ac_per_batch
-        end = (b+1) * ac_per_batch if b < B - 1 else N
+        end = (b + 1) * ac_per_batch if b < B - 1 else N
         action_batch = action_sequences[start:end]
         actions = action_batch.to(dev)
         model.reset(batch_size=ac_per_batch)
-        curr_img = to_tensor(start_img.copy()).expand(ac_per_batch, -1, -1, -1).to(dev)  # (N x |I|)
-        curr_robot = torch.from_numpy(start_robot.copy()).expand(ac_per_batch, -1).to(dev)  # N x |A|)
+        curr_img = (
+            to_tensor(start_img.copy()).expand(ac_per_batch, -1, -1, -1).to(dev)
+        )  # (N x |I|)
+        curr_robot = (
+            torch.from_numpy(start_robot.copy()).expand(ac_per_batch, -1).to(dev)
+        )  # N x |A|)
         curr_sim = [start_sim] * ac_per_batch  # (N x D)
         for t in range(T):
             ac = actions[:, t]  # (J, |A|)
@@ -79,10 +83,18 @@ def generate_model_rollouts(
 
             if cfg.reward_type == "inpaint":
                 rew = (
-                    -(torch.sum((255*(next_img - goal_img))** 2, (1, 2, 3))).sqrt().cpu().numpy()
+                    -(torch.sum((255 * (next_img - goal_img)) ** 2, (1, 2, 3)))
+                    .sqrt()
+                    .cpu()
+                    .numpy()
                 )  # N x 1
                 if cfg.demo_cost and b == 0:
-                    optimal_sum_cost += -(torch.sum((255*(opt_img - goal_img)) ** 2)).sqrt().cpu().numpy()
+                    optimal_sum_cost += (
+                        -(torch.sum((255 * (opt_img - goal_img)) ** 2))
+                        .sqrt()
+                        .cpu()
+                        .numpy()
+                    )
 
             sum_cost[start:end] += rew
             if ret_obs:
@@ -104,7 +116,7 @@ def generate_model_rollouts(
         rollouts["optimal_sum_cost"] = optimal_sum_cost
     # just return the top K trajectories
     if ret_obs:
-        topk_idx = np.argsort(sum_cost)[:cfg.topk]
+        topk_idx = np.argsort(sum_cost)[: cfg.topk]
         topk_obs = all_obs[topk_idx]
         rollouts["obs"] = topk_obs.cpu().numpy()
     if ret_step_cost:
