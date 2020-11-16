@@ -167,10 +167,11 @@ def collect_demo_cem_data():
     ep_len = 12  # gonna be off by -1 because of reset but whatever
 
     config, _ = argparser()
-    config.norobot_pixels_ob = True
+    config.norobot_pixels_ob = True  # whether to inpaint the robot pixels in the observation
+
     config.reward_type = "inpaint"
     config.demo_dir = "demos/straight_push"
-    config.most_recent_background = False
+    config.most_recent_background = False # use static or mr background for inpaint
     config.multiview = True
     config.img_dim = 64
     config.camera_ids = [0, 1]
