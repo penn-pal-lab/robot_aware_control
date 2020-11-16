@@ -208,5 +208,5 @@ if __name__ == "__main__":
     """
     Use this to collect demonstrations for svg / demo cem experiments
     """
-    collect_svg_data()
-    # collect_demo_cem_data()
+    # collect_svg_data()
+    collect_demo_cem_data()

@@ -7,7 +7,9 @@ The codebase is structured as follows:
 * `src` contains all source code.
     * `config` contains all hyperparameter and configuration variables for algorithms, environments, etc.
     * `env` contains all environments. We mainly use the `fetch` environment, which features a Fetch 7DOF robot with EEF positional control on a tabletop workspace.
-    * `cem` contains the cem controller
+    * `datasets` contains the dataloading and data generation code.
+    * `cem` contains the CEM policy for generating actions with a model
+    * `mbrl` contains the policy evaluation code.
     * `prediction` contains all predictive model training code. The model is a SVG video prediction model.
     * `utils` contains some plotting and visualization code.
 
@@ -52,15 +54,15 @@ Here, we will generate some demonstrations, and then run CEM to follow the demon
 ### Generating demonstrations
 For the clutter environment, we will generate block pushing demonstrations.
 ```
-python -m src.utils.collect_clutter_data
+python -m src.datasets.collect_clutter_data
 ```
-This will generate 100 block pushing demonstrations saved into `demos/straight_push`. You can change the number of demonstrations, inpainting type, etc. in the file
+This will generate 100 block pushing demonstrations saved into `demos/straight_push`. You can change the number of demonstrations, inpainting type, etc. in the file.
 
-### Running Demo CEM
+### Running Demonstration Following Episodes
 ```
-python -m src.cem.demo_cem --wandb False --jobname democem --multiview True --img_dim 64 --reward_type inpaint  --action_candidates 200 --topk 10  --opt_iter 2 --horizon 2  --max_episode_length 10  --norobot_pixels_ob True  --use_env_dynamics True --num_episodes 2 --most_recent_background False --action_repeat 1 --subgoal_threshold 5000 --sequential_subgoal True --demo_cost True --subgoal_start 1 --demo_timescale 2 --camera_ids 0,1 --object_demo_dir demos/straight_push
+python -m src.mbrl.episode_runner --wandb False --jobname democem --multiview True --img_dim 64 --reward_type inpaint  --action_candidates 200 --topk 10  --opt_iter 2 --horizon 2  --max_episode_length 10  --norobot_pixels_ob True  --use_env_dynamics True --num_episodes 2 --most_recent_background False --action_repeat 1 --subgoal_threshold 5000 --sequential_subgoal True --demo_cost True --subgoal_start 1 --demo_timescale 2 --camera_ids 0,1 --object_demo_dir demos/straight_push
 ```
-Once we have the demonstrations, we can load them and run CEM to make the robot follow each demonstration.
+Once we have the demonstrations, we can load them and have the CEM policy attempt to follow them.
 
 
 
