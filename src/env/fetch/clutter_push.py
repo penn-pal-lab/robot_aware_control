@@ -991,6 +991,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             self.straight_push(history, object=obj, noise=noise)
         return history
 
+
 if __name__ == "__main__":
     from src.config import argparser
 

@@ -5,6 +5,23 @@ import torch.multiprocessing as mp
 import numpy as np
 from copy import deepcopy
 
+def generate_model_rollouts(
+    cfg, model, action_sequences, goal_imgs, ret_obs=False, ret_step_cost=False, suppress_print=True
+):
+    """
+    Executes the action sequences on the learned model.
+
+    cfg: configuration dictionary
+    env: environment instance
+    action_sequences: list of action candidates to evaluate
+    cost: cost function for comparing observation and goal
+    goal: list of goal images for comparison
+    ret_obs: return the observations
+    ret_step_cost: return per step cost
+
+    Returns a dictionary containing the cost per trajectory by default.
+    """
+    raise NotImplementedError()
 
 def generate_env_rollouts(
     cfg, env, action_sequences, goal_imgs, ret_obs=False, ret_step_cost=False, suppress_print=True

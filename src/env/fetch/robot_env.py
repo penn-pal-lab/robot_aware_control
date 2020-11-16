@@ -24,7 +24,7 @@ class RobotEnv(gym.GoalEnv):
             fullpath = os.path.join(os.path.dirname(__file__), "assets", model_path)
         if not os.path.exists(fullpath):
             raise IOError("File {} does not exist".format(fullpath))
-        mujoco_py = get_mujoco_py()
+        mujoco_py = self.mujoco_py = get_mujoco_py()
         model = mujoco_py.load_model_from_path(fullpath)
         self.mj_const = mujoco_py.const
         self.sim = mujoco_py.MjSim(model, nsubsteps=n_substeps)
@@ -137,9 +137,9 @@ class RobotEnv(gym.GoalEnv):
         self.viewer = self._viewers.get(mode)
         if self.viewer is None:
             if mode == "human":
-                self.viewer = mujoco_py.MjViewer(self.sim)
+                self.viewer = self.mujoco_py.MjViewer(self.sim)
             elif mode == "rgb_array":
-                self.viewer = mujoco_py.MjRenderContextOffscreen(self.sim, device_id=-1)
+                self.viewer = self.mujoco_py.MjRenderContextOffscreen(self.sim, device_id=-1)
             self._viewer_setup()
             self._viewers[mode] = self.viewer
         return self.viewer
