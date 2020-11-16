@@ -8,7 +8,6 @@ import h5py
 import imageio
 import numpy as np
 import torch
-import wandb
 from src.env.fetch.clutter_push import ClutterPushEnv
 from src.prediction.losses import InpaintBlurCost
 from src.utils.plot import putText
@@ -54,8 +53,8 @@ class EpisodeRunner(object):
         goal_obj_poses = demo[pushed_obj][:: self._timescale]
         push_length = np.linalg.norm(goal_obj_poses[-1][:2] - goal_obj_poses[0][:2])
 
-        self._g_i = config.subgoal_start # goal index
-        goal_imgs = self.demo_goal_imgs[self._g_i:]
+        self._g_i = config.subgoal_start  # goal index
+        goal_imgs = self.demo_goal_imgs[self._g_i :]
         goal_img = goal_imgs[0]
 
         trajectory = defaultdict(list)
@@ -73,15 +72,14 @@ class EpisodeRunner(object):
         gif = []
         self._add_img_to_gif(gif, curr_img, goal_img)
 
-
         logger.info(f"=== Episode {ep_num}, {demo_name} ===")
         logger.info(f"Pushing {demo['pushed_obj']} for {(push_length * 100):.1f} cm\n")
         while True:
             logger.info(f"\tStep {self._step + 1}")
-            goal_imgs = self.demo_goal_imgs[self._g_i:]
+            goal_imgs = self.demo_goal_imgs[self._g_i :]
             goal_img = goal_imgs[0]
             if config.demo_cost:
-                config.optimal_traj = optimal_traj[self._g_i:]
+                config.optimal_traj = optimal_traj[self._g_i :]
             # Use CEM to find the best action(s)
             actions = self.policy.get_action(curr_img, curr_robot, curr_sim, goal_imgs)
             # Execute the planned actions. Usually only 1 action
@@ -117,7 +115,7 @@ class EpisodeRunner(object):
                         finish_demo = self._g_i >= num_goals
                 else:
                     # skip to most future goal that is still <= threshold, and start from there
-                    all_goal_diffs = curr_img - self.demo_goal_imgs[self._g_i:]
+                    all_goal_diffs = curr_img - self.demo_goal_imgs[self._g_i :]
                     min_idx = 0
                     new_goal = False
                     for j, goal_diff in enumerate(all_goal_diffs):
@@ -276,13 +274,16 @@ class EpisodeRunner(object):
             os.environ["WANDB_MODE"] = "dryrun"
         os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
         exclude = ["device"]
-        wandb.init(
-            resume=config.jobname,
-            project=config.wandb_project,
-            config={k: v for k, v in config.__dict__.items() if k not in exclude},
-            dir=config.log_dir,
-            entity=config.wandb_entity,
-        )
+        if config.wandb:
+            import wandb
+            wandb.init(
+                resume=config.jobname,
+                project=config.wandb_project,
+                config={k: v for k, v in config.__dict__.items() if k not in exclude},
+                dir=config.log_dir,
+                entity=config.wandb_entity,
+            )
+
     def _add_img_to_gif(self, gif, curr_img, goal_img):
         if self._record:
             env_ob = self._env.render("rgb_array")  # no inpainting
@@ -309,7 +310,6 @@ class EpisodeRunner(object):
 
         img = np.concatenate([env_ob, ob, goal], axis=1)
         return img
-
 
 
 if __name__ == "__main__":

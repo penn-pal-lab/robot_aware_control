@@ -116,15 +116,15 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         sim_state: mujoco state
         action: end effector control
         """
-        self.set_state(sim_state)
+        self.set_flattened_state(sim_state)
         action = np.clip(action, self.action_space.low, self.action_space.high)
         for _ in range(self._action_repeat):
             self._set_action(action)
             self.sim.step()
             self._step_callback()
         next_robot = self.get_robot_state()
-        next_sim_state = self.get_state()
-        self.set_state(sim_state)
+        next_sim_state = self.get_flattened_state()
+        self.set_flattened_state(sim_state)
         return next_robot, next_sim_state
 
     def get_robot_state(self):
@@ -150,7 +150,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 "observation": img.copy(),
                 # "achieved_goal": img.copy(),
                 # "desired_goal": self.goal.copy(),
-                "robot": robot.copy(),
+                "robot": robot.copy().astype(np.float32),
                 "state": self.get_flattened_state(),
             }
             for obj in self._objects:
