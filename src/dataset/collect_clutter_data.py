@@ -185,7 +185,7 @@ def collect_svg_data():
     num_workers = 10
     num_push = 7000 // num_workers
     num_rand = 3000 // num_workers
-    record = True
+    record = False
     ep_len = 12  # gonna be off by 1 because of reset but whatever
 
     config, _ = argparser()
@@ -198,7 +198,7 @@ def collect_svg_data():
     config.camera_ids = [0, 1]
     config.temporal_beta = 0.3  # control random policy's temporal correlation
     config.action_noise = 0.5
-    create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)
+    #create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)
     create_demo_dataset(
         config, num_rand, num_workers, record, "temporal_random_robot", ep_len
     )
@@ -208,5 +208,5 @@ if __name__ == "__main__":
     """
     Use this to collect demonstrations for svg / demo cem experiments
     """
-    # collect_svg_data()
-    collect_demo_cem_data()
+    collect_svg_data()
+    #collect_demo_cem_data()
