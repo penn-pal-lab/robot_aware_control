@@ -191,7 +191,7 @@ def collect_svg_data():
     config, _ = argparser()
     config.norobot_pixels_ob = True
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/temporal_rand_data"
+    config.demo_dir = "demos/svg_mr_inpaint"
     config.most_recent_background = True
     config.multiview = True
     config.img_dim = 64
