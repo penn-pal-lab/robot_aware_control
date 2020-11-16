@@ -46,11 +46,9 @@ def cem_env_planner(env, goal_imgs, cost, cfg):
         act_seq = m.sample((J,))  # of shape (J, L, A)
         # Generate J rollouts
         rollouts = generate_env_rollouts(cfg, env, act_seq, goal_imgs)
-        # parallel only works on mac osx for some reason
-        # rollouts = generate_env_rollouts_parallel(cfg, env, act_seq, goal_imgs)
 
         # Select top K action sequences based on cumulative cost
-        costs = rollouts["sum_cost"]
+        costs = torch.from_numpy(rollouts["sum_cost"])
         top_costs, top_idx = costs.topk(K)
         top_act_seq = torch.index_select(act_seq, dim=0, index=top_idx)
         mean_top_costs.append(f"{top_costs.mean():.3f}")
@@ -348,9 +346,8 @@ def setup_loggers(config):
 
 if __name__ == "__main__":
     from src.config import argparser
-    import multiprocessing as mp
-
-    # mp.set_start_method("fork")
+    import torch.multiprocessing as mp
+    mp.set_start_method("spawn")
 
     config, _ = argparser()
     setup_loggers(config)

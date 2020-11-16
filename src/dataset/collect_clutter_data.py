@@ -11,7 +11,7 @@ from src.env.fetch.clutter_push import ClutterPushEnv
 from tqdm import tqdm
 
 
-def generate_demos(rank, config, behavior, record, num_trajectories, ep_len, noise=0):
+def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
     """
     This generates demos, like random moving or block pushing.
 
@@ -41,7 +41,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len, noi
         record = rank == 0 and record
         name = f"{behavior}_{rank}_{i}.hdf5"
         path = os.path.join(config.demo_dir, name)
-        history = env.generate_demo(behavior, ep_len=ep_len, noise=noise)
+        history = env.generate_demo(behavior)
         record_path = f"videos/{behavior}_{config.seed}_{i}.gif"
         obs = history["obs"]  # array of observation dictionaries
         len_stats.append(len(obs))
@@ -129,7 +129,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len, noi
 
 
 def create_demo_dataset(
-    config, num_demo, num_workers, record, behavior, ep_len, noise=0
+    config, num_demo, num_workers, record, behavior, ep_len
 ):
     """
     Collect all demonstrations and save into demo_dir
@@ -139,13 +139,13 @@ def create_demo_dataset(
 
     os.makedirs(config.demo_dir, exist_ok=True)
     if num_workers == 1:
-        generate_demos(0, config, behavior, record, num_demo, ep_len, noise)
+        generate_demos(0, config, behavior, record, num_demo, ep_len)
     else:
         ps = []
         for i in range(num_workers):
             p = Process(
                 target=generate_demos,
-                args=(i, config, behavior, record, num_demo, ep_len, noise),
+                args=(i, config, behavior, record, num_demo, ep_len),
             )
             ps.append(p)
 
@@ -183,23 +183,24 @@ def collect_svg_data():
     Collect 7k noisy pushing, 3k truly random demonstrations
     Each demo is around 7-14 steps long, and the dataset will be around 100k images total
     """
-    num_workers = 10
+    num_workers = 1
     num_push = 7000 // num_workers
-    num_rand = 3000 // num_workers
-    record = False
+    num_rand = 100 // num_workers
+    record = True
     ep_len = 12  # gonna be off by 1 because of reset but whatever
-    noise = 0.2
 
     config, _ = argparser()
     config.norobot_pixels_ob = True
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/svg_data"
-    config.most_recent_background = False
+    config.demo_dir = "demos/temporal_rand_data"
+    config.most_recent_background = True
     config.multiview = True
     config.img_dim = 64
     config.camera_ids = [0, 1]
-    create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len, noise)
-    create_demo_dataset(config, num_rand, num_workers, record, "random_robot", ep_len, noise)
+    config.temporal_beta = 0.3 # control random policy's temporal correlation
+    config.action_noise = 0.5
+    # create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)
+    create_demo_dataset(config, num_rand, num_workers, record, "temporal_random_robot", ep_len)
 
 
 

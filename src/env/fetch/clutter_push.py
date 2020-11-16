@@ -8,9 +8,8 @@ import imageio
 import matplotlib.pyplot as plt
 import numpy as np
 from gym import spaces, utils
-from mujoco_py.generated import const
 
-# from skimage.filters import gaussian
+from skimage.filters import gaussian
 from src.env.fetch.collision import CollisionSphere
 from src.env.fetch.fetch_env import FetchEnv
 from src.env.fetch.planar_rrt import PlanarRRT
@@ -60,6 +59,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         self._unblur_cost_scale = config.unblur_cost_scale
         self._most_recent_background = config.most_recent_background
         self._action_repeat = config.action_repeat
+        self._config = config
         FetchEnv.__init__(
             self,
             xml_path,
@@ -706,7 +706,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         seg = self.render(segmentation=True)
         types = seg[:, :, 0]
         ids = seg[:, :, 1]
-        geoms = types == const.OBJ_GEOM
+        geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
         mask_dim = [self._img_dim, self._img_dim]
         if self._multiview:
@@ -805,7 +805,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         max_time=100,
         threshold=0.01,
         speed=10,
-        noise=0
+        noise=0,
     ):
         if target_type == "gripper":
             gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
@@ -824,9 +824,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             history["obs"].append(obs)
             for k, v in info.items():
                 history[k].append(v)
-            self._vr.capture_frame()
-            if self._record:
-                history["frame"].append(self._vr.last_frame)
             if target_type == "gripper":
                 gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
                 d = target - gripper_xpos
@@ -908,21 +905,21 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             speed=5,
             threshold=0.025,
             max_time=10,
-            noise=noise
+            noise=noise,
         )
 
     def only_robot(self, history):
         # move gripper above cube
         gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
         gripper_target = gripper_xpos + [0, 0, 0.07]
-        self._move(gripper_target, self._history)
+        self._move(gripper_target, history)
         # move gripper to target robot pos
         gripper_xpos = self.sim.data.get_site_xpos("robot0:grip")
         gripper_target = self.goal_pose["gripper"]
-        self._move(gripper_target, self._history, speed=10, threshold=0.025)
+        self._move(gripper_target, history, speed=10, threshold=0.025)
 
     def random_robot(self, history, ep_len):
-        # randomly move the robot around
+        """Performs IID action sequence """
         for i in range(ep_len):
             ac = self.action_space.sample()
             history["ac"].append(ac)
@@ -932,83 +929,50 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             for k, v in info.items():
                 history[k].append(v)
 
-    def generate_demo(
-        self, behavior, record=False, save_goal=False, record_path=None, ep_len=None, noise=0
-    ):
+    def temporal_random_robot(self, history, ep_len, beta=1):
         """
-        Behaviors: occlude, occlude_all, push, only robot move to goal
+        first moves robot near a random object, then
+        generate temporally correlated actions
         """
-        from collections import defaultdict
+        obj = np.random.choice(self._objects)
+        history["pushed_obj"] = obj
+        # move gripper behind the block and oriented for a goal push
+        block_xpos = self.sim.data.get_site_xpos(obj).copy()
+        spawn_xpos = self.sim.data.get_site_xpos("spawn").copy()
+        goal_dir = (block_xpos - spawn_xpos) / np.linalg.norm(block_xpos - spawn_xpos)
+        gripper_target = block_xpos - 0.05 * goal_dir
+        self._move(gripper_target, history, speed=100, max_time=3)
+        past_acs = len(history["ac"])
+        # generate temporally corellated noise
+        u = np.zeros((ep_len, *self.action_space.shape))
+        actions = np.zeros_like(u)
+        actions[:past_acs] = history["ac"]
+        for i in range(past_acs, ep_len):
+            u[i] = self.action_space.sample()
+            actions[i] = beta * u[i] + (1 - beta) * actions[i - 1]
+        history["ac"] = actions
 
-        from src.utils.video_recorder import VideoRecorder
+        for i in range(past_acs, ep_len):
+            obs, _, _, info = self.step(actions[i])
+            self._vr.capture_frame()
+            history["obs"].append(obs)
+            for k, v in info.items():
+                history[k].append(v)
 
-        title_dict = {
-            "weighted": f"Don't Care a={self._robot_pixel_weight}",
-            "dense": "L2",
-            "inpaint": "inpaint",
-            "inpaint-blur": f"inpaint-blur_sig{self._sigma}",
-            "blackrobot": "blackrobot",
-        }
-        size = "small"
-        vp = "multi" if self._multiview else "single"
-        if record_path is None:
-            record_path = f"{size}_{behavior}_{vp}_view.mp4"
-        self._vr = vr = VideoRecorder(self, path=record_path, enabled=record)
-        self._record = record
+    def generate_demo(self, behavior):
+        """
+        Runs a hard coded behavior and stores the episode
+        Returns a dictionary with observation, action
+        """
         self._behavior = behavior
         obs = self.reset()
         # self.render("human")
-        self._history = history = defaultdict(list)
+        history = defaultdict(list)
         history["obs"].append(obs)
-        vr.capture_frame()
-        if record:
-            history["frame"].append(vr.last_frame)
         history["goal"] = self.goal.copy()
-        if save_goal:
-            imageio.imwrite(
-                f"{size}_{title_dict[self.reward_type]}_goal.png", history["goal"]
-            )
-
-        def rollout(history, path):
-            frames = history["frame"]
-            rewards = history["reward"]
-            fig = plt.figure()
-            rewards = -1 * np.array([0] + rewards)
-            cols = len(frames)
-            for n, (image, reward) in enumerate(zip(frames, rewards)):
-                a = fig.add_subplot(2, cols, n + 1)
-                imagegoal = np.concatenate([image, history["goal"]], axis=1)
-                a.imshow(imagegoal)
-                a.set_aspect("equal")
-                # round reward to 2 decimals
-                rew = f"{reward:0.2f}" if n > 0 else "Cost:"
-                a.set_title(rew, fontsize=50)
-                a.set_xticklabels([])
-                a.set_xticks([])
-                a.set_yticklabels([])
-                a.set_yticks([])
-                a.set_xlabel(f"step {n}", fontsize=40)
-                # add goal img under every one
-                # b = fig.add_subplot(2, cols, n + len(frames) + 1)
-                # b.imshow(history["goal"])
-                # b.set_aspect("equal")
-                # obj =  f"{objd:0.3f}" if n > 0 else "Object Dist:"
-                # b.set_title(obj, fontsize=50)
-                # b.set_xticklabels([])
-                # b.set_xticks([])
-                # b.set_yticklabels([])
-                # b.set_yticks([])
-                # b.set_xlabel(f"goal", fontsize=40)
-
-            fig.set_figheight(10)
-            fig.set_figwidth(100)
-
-            title = f"{title_dict[self.reward_type]} with {behavior} behavior"
-            fig.suptitle(title, fontsize=50, fontweight="bold")
-            fig.savefig(path)
-            fig.clf()
-            plt.close("all")
-
+        ep_len = self._config.demo_length
+        noise = self._config.action_noise
+        beta = self._config.temporal_beta
         if behavior == "occlude":
             self.occlude(history)
         elif behavior == "push":
@@ -1019,178 +983,13 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             self.only_robot(history)
         elif behavior == "random_robot":
             self.random_robot(history, ep_len)
+        elif behavior == "temporal_random_robot":
+            self.temporal_random_robot(history, ep_len, beta)
         elif behavior == "straight_push":
             obj = np.random.choice(self._objects)
             history["pushed_obj"] = obj
             self.straight_push(history, object=obj, noise=noise)
-        self._vr.close()
         return history
-
-
-def plot_behaviors_per_cost():
-    """ Plots a cost function's performance over behaviors"""
-    config, _ = argparser()
-    # visualize the initialization
-    # cost_funcs = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
-    cost_funcs = ["inpaint-blur"]
-    normalize = False
-    data = {}
-    viewpoints = ["single", "multiview"]
-    behaviors = ["only_robot", "push", "occlude", "occlude_all"]
-    # behaviors = ["push"]
-    save_goal = False  # save a goal for each cost
-    for behavior in behaviors:
-        # only record once for each behavior
-        record = False
-        cost_traj = {}
-        for cost in cost_funcs:
-            cfg = deepcopy(config)
-            if cost == "dontcare":
-                cfg.reward_type = "weighted"
-                cfg.robot_pixel_weight = 0
-            elif cost == "l2":
-                cfg.reward_type = "dense"
-            elif cost == "inpaint":
-                cfg.reward_type = "inpaint"
-            elif cost == "inpaint-blur":
-                cfg.reward_type = "inpaint-blur"
-            elif cost == "blackrobot":
-                cfg.reward_type = "blackrobot"
-                cfg.robot_pixel_weight = 0
-            elif cost == "alpha":
-                # same as weighted but with alpha = 0.1
-                cfg.reward_type = "weighted"
-                cfg.robot_pixel_weight = 0.1
-
-            cost_traj[cost] = {}
-            for vp in viewpoints:
-                cfg.multiview = vp == "multiview"
-                env = ClutterPushEnv(cfg)
-                history = env.generate_demo(
-                    behavior, record=record, save_goal=save_goal
-                )
-                cost_traj[cost][vp] = history
-                env.close()
-            record = False
-
-        save_goal = False  # dont' need it for other behaviors
-        data[behavior] = cost_traj
-
-    if normalize:
-        # get the min, max of costs across behaviors
-        cost_min_dict = {vp: defaultdict(list) for vp in viewpoints}
-        cost_max_dict = {vp: defaultdict(list) for vp in viewpoints}
-        for behavior, cost_traj in data.items():
-            for cost_fn, traj in cost_traj.items():
-                for vp in viewpoints:
-                    costs = -1 * np.array(traj[vp]["reward"])
-                    cost_min_dict[vp][cost_fn].extend(costs)
-                    cost_max_dict[vp][cost_fn].extend(costs)
-
-    cmap = plt.get_cmap("Set1")
-    for cost_fn in cost_funcs:
-        for i, behavior in enumerate(behaviors):
-            cost_traj = data[behavior][cost_fn]
-            for vp in viewpoints:
-                # graph the data
-                size = "large" if cfg.large_block else "small"
-                title = cost_fn
-                if cost_fn == "inpaint-blur":
-                    title = f"{cost_fn}-{env._sigma}"
-                plt.title(f"{title} with {size} block")
-                print(f"plotting {cost_fn} cost")
-                costs = -1 * np.array(cost_traj[vp]["reward"])
-                if normalize:
-                    min = np.min(cost_min_dict[vp][cost_fn])
-                    max = np.max(cost_max_dict[vp][cost_fn])
-                    costs = (costs - min) / (max - min)
-
-                timesteps = np.arange(len(costs)) + 1
-                costs = np.array(costs)
-                color = cmap(i)
-                linestyle = "-" if vp == "multiview" else "--"
-                plt.plot(
-                    timesteps,
-                    costs,
-                    label=f"{behavior}_{vp[0]}",
-                    linestyle=linestyle,
-                    color=color,
-                )
-
-        plt.legend(loc="lower left", fontsize=9)
-        plt.savefig(f"{size}_{cost_fn}_behaviors.png")
-        plt.close("all")
-
-
-def plot_costs_per_behavior():
-    """ Plots the cost function for different behaviors"""
-    config, _ = argparser()
-    # visualize the initialization
-    rewards = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
-    normalize = True
-    data = {}
-    behaviors = ["push", "occlude", "occlude_all", "only_robot"]
-    save_goal = False  # save a goal for each cost
-    for behavior in behaviors:
-        # only record once for each behavior
-        record = False
-        cost_traj = {}
-        for r in rewards:
-            cfg = deepcopy(config)
-            if r == "dontcare":
-                cfg.reward_type = "weighted"
-                cfg.robot_pixel_weight = 0
-            elif r == "l2":
-                cfg.reward_type = "dense"
-            elif r == "inpaint":
-                cfg.reward_type = "inpaint"
-            elif r == "blackrobot":
-                cfg.reward_type = "blackrobot"
-                cfg.robot_pixel_weight = 0
-            elif r == "alpha":
-                # same as weighted but with alpha = 0.1
-                cfg.reward_type = "weighted"
-                cfg.robot_pixel_weight = 0.1
-
-            env = ClutterPushEnv(cfg)
-            history = env.generate_demo(behavior, record=record, save_goal=save_goal)
-            record = False
-            cost_traj[r] = history
-            env.close()
-
-        save_goal = False  # dont' need it for other behaviors
-        data[behavior] = cost_traj
-
-    if normalize:
-        # get the min, max of costs across behaviors
-        cost_min_dict = defaultdict(list)
-        cost_max_dict = defaultdict(list)
-        for behavior, cost_traj in data.items():
-            for cost_fn, traj in cost_traj.items():
-                costs = -1 * np.array(traj["reward"])
-                cost_min_dict[cost_fn].extend(costs)
-                cost_max_dict[cost_fn].extend(costs)
-
-    for behavior in behaviors:
-        cost_traj = data[behavior]
-        # graph the data
-        size = "large" if cfg.large_block else "small"
-        viewpoint = "multi" if cfg.multiview else "single"
-        plt.title(f"Costs with {behavior} & {size} block & {viewpoint}-view")
-        for cost_fn, traj in cost_traj.items():
-            print(f"plotting {cost_fn} cost")
-            costs = -1 * np.array(traj["reward"])
-            if normalize:
-                min = np.min(cost_min_dict[cost_fn])
-                max = np.max(cost_max_dict[cost_fn])
-                costs = (costs - min) / (max - min)
-            timesteps = np.arange(len(costs)) + 1
-            costs = np.array(costs)
-            plt.plot(timesteps, costs, label=cost_fn)
-        plt.legend(loc="upper right")
-        plt.savefig(f"{size}_{behavior}_costs.png")
-        plt.close("all")
-
 
 if __name__ == "__main__":
     from src.config import argparser

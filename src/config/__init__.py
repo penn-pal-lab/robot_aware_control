@@ -199,6 +199,11 @@ def add_dataset_arguments(parser):
     )
     parser.add_argument("--data_root", default="data", help="root directory for data")
     parser.add_argument("--train_val_split", type=float, default=0.8)
+    # data collection policy arguments
+    parser.add_argument("--temporal_beta", type=float, default=1)
+    parser.add_argument("--demo_length", type=int, default=12)
+    parser.add_argument("--action_noise", type=float, default=0)
+
 
 
 # CEM Hyperparameters

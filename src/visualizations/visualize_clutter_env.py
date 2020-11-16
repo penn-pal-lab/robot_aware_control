@@ -13,6 +13,45 @@ from src.config import argparser
 from src.env.fetch.clutter_push import ClutterPushEnv
 from tqdm import tqdm, trange
 
+def rollout(history, path):
+    frames = history["frame"]
+    rewards = history["reward"]
+    fig = plt.figure()
+    rewards = -1 * np.array([0] + rewards)
+    cols = len(frames)
+    for n, (image, reward) in enumerate(zip(frames, rewards)):
+        a = fig.add_subplot(2, cols, n + 1)
+        imagegoal = np.concatenate([image, history["goal"]], axis=1)
+        a.imshow(imagegoal)
+        a.set_aspect("equal")
+        # round reward to 2 decimals
+        rew = f"{reward:0.2f}" if n > 0 else "Cost:"
+        a.set_title(rew, fontsize=50)
+        a.set_xticklabels([])
+        a.set_xticks([])
+        a.set_yticklabels([])
+        a.set_yticks([])
+        a.set_xlabel(f"step {n}", fontsize=40)
+        # add goal img under every one
+        # b = fig.add_subplot(2, cols, n + len(frames) + 1)
+        # b.imshow(history["goal"])
+        # b.set_aspect("equal")
+        # obj =  f"{objd:0.3f}" if n > 0 else "Object Dist:"
+        # b.set_title(obj, fontsize=50)
+        # b.set_xticklabels([])
+        # b.set_xticks([])
+        # b.set_yticklabels([])
+        # b.set_yticks([])
+        # b.set_xlabel(f"goal", fontsize=40)
+
+    fig.set_figheight(10)
+    fig.set_figwidth(100)
+
+    # title = f"{title_dict[self.reward_type]} with {behavior} behavior"
+    # fig.suptitle(title, fontsize=50, fontweight="bold")
+    fig.savefig(path)
+    fig.clf()
+    plt.close("all")
 
 def collect_cem_goals():
     """Collect goal images for testing CEM planning"""

@@ -4,17 +4,8 @@ import numpy as np
 
 import gym
 from gym import error, spaces
-from gym.utils import seeding
 import os
-
-try:
-    import mujoco_py
-except ImportError as e:
-    raise error.DependencyNotInstalled(
-        "{}. (HINT: you need to install mujoco_py, and also perform the setup instructions here: https://github.com/openai/mujoco-py/.)".format(
-            e
-        )
-    )
+from src.utils.mujoco import get_mujoco_py
 
 DEFAULT_SIZE = 500
 DEVICE_ID = -1
@@ -33,8 +24,9 @@ class RobotEnv(gym.GoalEnv):
             fullpath = os.path.join(os.path.dirname(__file__), "assets", model_path)
         if not os.path.exists(fullpath):
             raise IOError("File {} does not exist".format(fullpath))
-
+        mujoco_py = get_mujoco_py()
         model = mujoco_py.load_model_from_path(fullpath)
+        self.mj_const = mujoco_py.const
         self.sim = mujoco_py.MjSim(model, nsubsteps=n_substeps)
         self.viewer = None
         self._viewers = {}
