@@ -13,7 +13,7 @@ from src.prediction.losses import InpaintBlurCost
 from src.utils.plot import putText
 from torchvision.datasets.folder import has_file_allowed_extension
 from src.cem.demo_cem import DemoCEMPolicy
-
+import wandb
 
 class EpisodeRunner(object):
     """
@@ -81,7 +81,7 @@ class EpisodeRunner(object):
             if config.demo_cost:
                 config.optimal_traj = optimal_traj[self._g_i :]
             # Use CEM to find the best action(s)
-            actions = self.policy.get_action(curr_img, curr_robot, curr_sim, goal_imgs)
+            actions = self.policy.get_action(curr_img, curr_robot, curr_sim, goal_imgs, ep_num, self._step)
             # Execute the planned actions. Usually only 1 action
             for action in actions:
                 obs, _, _, _ = env.step(action)
@@ -96,9 +96,9 @@ class EpisodeRunner(object):
                 obj_dist = np.linalg.norm(curr_obj_pos - goal_obj_pos)
                 final_obj_dist = np.linalg.norm(curr_obj_pos - final_goal_obj_pos)
                 print(
-                    f"Current goal: {self._g_i}/{num_goals-1}, dist to goal: {obj_dist}, dist to last goal: { final_obj_dist}"
+                    f"Current goal: {self._g_i}/{num_goals-1}, dist to goal: {obj_dist:.4f}, dist to last goal: {final_obj_dist:.4f}"
                 )
-                print("Reward:", rew)
+                print(f"Reward:{rew:.2f}")
                 if config.record_trajectory:
                     trajectory["obs"].append(obs)
                     trajectory["ac"].append(action)
@@ -275,7 +275,6 @@ class EpisodeRunner(object):
         os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
         exclude = ["device"]
         if config.wandb:
-            import wandb
             wandb.init(
                 resume=config.jobname,
                 project=config.wandb_project,
