@@ -26,7 +26,7 @@ class EpisodeRunner(object):
         self._use_env = config.use_env_dynamics
         self._timescale = config.demo_timescale
         self._setup_loggers(config)
-        self.logger = colorlog.getLogger("file/console")
+        self._logger = colorlog.getLogger("file/console")
         self._env = ClutterPushEnv(config)
         self.policy = self._get_policy(config, self._env)
         self.cost = lambda a, b: -np.linalg.norm(a - b)
