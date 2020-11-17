@@ -44,7 +44,7 @@ class EpisodeRunner(object):
         """
         config = self._config
         env = self._env
-        logger = self.logger
+        logger = self._logger
         demo = self._load_demo(demo_path)
         # use for debugging
         optimal_traj = demo["object_inpaint_demo"][:: self._timescale]
