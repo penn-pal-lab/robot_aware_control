@@ -26,7 +26,6 @@ class EpisodeRunner(object):
         self._use_env = config.use_env_dynamics
         self._timescale = config.demo_timescale
         self._setup_loggers(config)
-        self._logger = colorlog.getLogger("file/console")
         self._env = ClutterPushEnv(config)
         self.policy = self._get_policy(config, self._env)
         self.cost = lambda a, b: -np.linalg.norm(a - b)
@@ -263,9 +262,9 @@ class EpisodeRunner(object):
             "[%(asctime)s] %(levelname)s @l%(lineno)d: %(message)s", "%m-%d %H:%M:%S"
         )
         fh.setFormatter(formatter)
-
         filelogger.addHandler(fh)
         filelogger.addHandler(ch)
+        self._logger = colorlog.getLogger("file/console")
 
         # device
         use_cuda = torch.cuda.is_available()
