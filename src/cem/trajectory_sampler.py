@@ -37,55 +37,72 @@ def generate_model_rollouts(
     """
     dev = cfg.device
     N = len(action_sequences)  # Number of candidate action sequences
+    ac_per_batch = cfg.candidates_batch_size
+    B = N // ac_per_batch  # number of candidate batches per GPU pass
     T = len(action_sequences[0])
     sum_cost = np.zeros(N)
-    all_obs = []  # N x T x obs
-    all_step_cost = []  # N x T x 1
+    all_obs = torch.zeros((N, T, 3, 128, 64))  # N x T x obs
+    all_step_cost = np.zeros((N, T))  # N x T x 1
     goal_imgs = torch.stack([to_tensor(g) for g in goal_imgs]).to(dev)
     if cfg.demo_cost:  # for debug comparison
         optimal_traj = torch.stack([to_tensor(g) for g in cfg.optimal_traj]).to(dev)
     optimal_sum_cost = 0
-
-    model.reset(batch_size=N)
-    action_sequences = action_sequences.to(dev)
-
     if not suppress_print:
         start_time = timer.time()
         print("####### Gathering Samples #######")
-    curr_img = to_tensor(start_img.copy()).expand(N, -1, -1, -1).to(dev)  # (N x |I|)
-    curr_robot = torch.from_numpy(start_robot.copy()).expand(N, -1).to(dev)  # N x |A|)
-    curr_sim = [start_sim] * N  # (N x D)
-    for t in range(T):
-        ac = action_sequences[:, t]  # (J, |A|)
-        # compute the next img
-        next_img = model.next_img(curr_img, curr_robot, ac, t == 0)
-        # compute the future robot and sim using kinematics solver like mujoco
-        for j in range(N):
-            next_robot, next_sim = env.robot_kinematics(
-                curr_sim[j], ac[j].cpu().numpy()
-            )
-            curr_robot[j] = torch.from_numpy(next_robot).to(dev)
-            curr_sim[j] = next_sim
-        # compute the img costs
-        goal_idx = t if t < len(goal_imgs) else -1
-        goal_img = goal_imgs[goal_idx]
-        if cfg.demo_cost:  # for debug comparison
-            opt_img = optimal_traj[goal_idx]
 
-        if cfg.reward_type == "inpaint":
-            rew = (
-                -torch.sum((next_img - goal_img) ** 2, (1, 2, 3)).cpu().numpy()
-            )  # N x 1
-            if cfg.demo_cost:
-                optimal_sum_cost += -torch.sum((opt_img - goal_img) ** 2).cpu().numpy()
+    for b in range(B):
+        start = b * ac_per_batch
+        end = (b + 1) * ac_per_batch if b < B - 1 else N
+        action_batch = action_sequences[start:end]
+        actions = action_batch.to(dev)
+        model.reset(batch_size=ac_per_batch)
+        curr_img = (
+            to_tensor(start_img.copy()).expand(ac_per_batch, -1, -1, -1).to(dev)
+        )  # (N x |I|)
+        curr_robot = (
+            torch.from_numpy(start_robot.copy()).expand(ac_per_batch, -1).to(dev)
+        )  # N x |A|)
+        curr_sim = [start_sim] * ac_per_batch  # (N x D)
+        for t in range(T):
+            ac = actions[:, t]  # (J, |A|)
+            # compute the next img
+            next_img = model.next_img(curr_img, curr_robot, ac, t == 0)
+            # compute the future robot and sim using kinematics solver like mujoco
+            for j in range(ac_per_batch):
+                next_robot, next_sim = env.robot_kinematics(
+                    curr_sim[j], ac[j].cpu().numpy()
+                )
+                curr_robot[j] = torch.from_numpy(next_robot).to(dev)
+                curr_sim[j] = next_sim
+            # compute the img costs
+            goal_idx = t if t < len(goal_imgs) else -1
+            goal_img = goal_imgs[goal_idx]
+            if cfg.demo_cost:  # for debug comparison
+                opt_img = optimal_traj[goal_idx]
 
-        sum_cost += rew
-        if ret_obs:
-            all_obs.append(next_img)  # T x N x Obs
-        if ret_step_cost:
-            all_step_cost.append(rew)  # T x N x 1
+            if cfg.reward_type == "inpaint":
+                rew = (
+                    -(torch.sum((255 * (next_img - goal_img)) ** 2, (1, 2, 3)))
+                    .sqrt()
+                    .cpu()
+                    .numpy()
+                )  # N x 1
+                if cfg.demo_cost and b == 0:
+                    optimal_sum_cost += (
+                        -(torch.sum((255 * (opt_img - goal_img)) ** 2))
+                        .sqrt()
+                        .cpu()
+                        .numpy()
+                    )
 
-        curr_img = next_img
+            sum_cost[start:end] += rew
+            if ret_obs:
+                all_obs[start:end, t] = next_img.cpu()  # B x T x Obs
+            if ret_step_cost:
+                all_step_cost[start:end] = rew  # B x T x 1
+
+            curr_img = next_img
 
     if not suppress_print:
         print(
@@ -97,8 +114,11 @@ def generate_model_rollouts(
     rollouts["sum_cost"] = sum_cost
     if cfg.demo_cost:
         rollouts["optimal_sum_cost"] = optimal_sum_cost
+    # just return the top K trajectories
     if ret_obs:
-        rollouts["obs"] = torch.stack(all_obs).transpose(0, 1).cpu().numpy()
+        topk_idx = np.argsort(sum_cost)[: cfg.topk]
+        topk_obs = all_obs[topk_idx]
+        rollouts["obs"] = topk_obs.cpu().numpy()
     if ret_step_cost:
         rollouts["step_cost"] = torch.stack(all_step_cost).transpose(0, 1).cpu().numpy()
     return rollouts

@@ -13,6 +13,7 @@ from src.config import argparser
 from src.env.fetch.clutter_push import ClutterPushEnv
 from tqdm import tqdm, trange
 
+
 def rollout(history, path):
     frames = history["frame"]
     rewards = history["reward"]
@@ -52,6 +53,7 @@ def rollout(history, path):
     fig.savefig(path)
     fig.clf()
     plt.close("all")
+
 
 def collect_cem_goals():
     """Collect goal images for testing CEM planning"""

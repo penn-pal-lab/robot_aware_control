@@ -924,7 +924,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             ac = self.action_space.sample()
             history["ac"].append(ac)
             obs, _, _, info = self.step(ac)
-            self._vr.capture_frame()
             history["obs"].append(obs)
             for k, v in info.items():
                 history[k].append(v)
@@ -954,7 +953,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
 
         for i in range(past_acs, ep_len):
             obs, _, _, info = self.step(actions[i])
-            self._vr.capture_frame()
             history["obs"].append(obs)
             for k, v in info.items():
                 history[k].append(v)

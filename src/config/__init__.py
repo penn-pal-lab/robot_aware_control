@@ -205,7 +205,6 @@ def add_dataset_arguments(parser):
     parser.add_argument("--action_noise", type=float, default=0)
 
 
-
 # CEM Hyperparameters
 def add_cem_arguments(parser):
     parser.add_argument("--horizon", type=int, default=3)
@@ -214,6 +213,7 @@ def add_cem_arguments(parser):
     parser.add_argument("--topk", type=int, default=5)
     parser.add_argument("--replan_every", type=int, default=1)
     parser.add_argument("--dynamics_model_ckpt", type=str, default=None)
+    parser.add_argument("--candidates_batch_size", type=int, default=200)
     parser.add_argument("--use_env_dynamics", type=str2bool, default=False)
     parser.add_argument("--debug_trajectory_path", type=str, default=None)
     parser.add_argument("--debug_cem", type=str2bool, default=False)
