@@ -167,7 +167,7 @@ class EpisodeRunner(object):
             demo_name, demo_path = files[i]
             self.run_episode(i, demo_name, demo_path)
         self._env.close()
-        self.logger.info("\n\n### Summary ###")
+        self._logger.info("\n\n### Summary ###")
         # histograms = {"reward", "object_dist", "gripper_dist"}
         # upload table to wandb
         table = wandb.Table(columns=list(self._stats.keys()))
