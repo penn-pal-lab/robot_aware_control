@@ -191,6 +191,7 @@ def add_prediction_arguments(parser):
     parser.add_argument(
         "--stoch", type=str2bool, default=True, help="stochastic prediction"
     )
+    parser.add_argument("--reconstruction_loss", default="mse", help="mse|l1")
 
 
 def add_dataset_arguments(parser):
