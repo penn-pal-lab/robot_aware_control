@@ -842,6 +842,9 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         return self.sim.data.get_joint_qpos(joint_name).copy()
 
     def _set_joint_qpos(self, joint_name, pose):
+        """
+        Takes in 7-Dof Pose eucl pos + quaternion [x,y,z, w, rx, ry, rz]
+        """
         self.sim.data.set_joint_qpos(joint_name, pose)
 
     def occlude(self, history):

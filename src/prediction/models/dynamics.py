@@ -46,10 +46,9 @@ class DynamicsModel:
         img is (N x |S|)
         action is (N x |A|)
         """
-        h = self.encoder(img)
+        h, skip = self.encoder(img)
         r = self.robot_enc(robot)
         a = self.action_enc(action)
-        h, skip = h
         if store_skip:
             self._skip = skip
         if not self._last_frame_skip:
