@@ -50,7 +50,10 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
         obj_poses = defaultdict(list)
         states = []
         robot_states = []
+        masks = []
         for ob in obs:
+            if config.norobot_pixels_ob:
+                masks.append(ob["mask"])
             robot_states.append(ob["robot"])
             object_inpaint_demo.append(ob["observation"])
             states.append(ob["state"])
@@ -111,6 +114,8 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
             create_dataset("states", data=states)
             create_dataset("actions", data=actions)
             create_dataset("robot_state", data=robot_states)
+            if config.norobot_pixels_ob:
+                create_dataset("masks", data=masks)
             # ground truth object demo
             create_dataset("object_only_demo", data=object_only_demo)
             # inpainted object demo
