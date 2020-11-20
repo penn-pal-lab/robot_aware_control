@@ -192,6 +192,7 @@ def add_prediction_arguments(parser):
         "--stoch", type=str2bool, default=True, help="stochastic prediction"
     )
     parser.add_argument("--reconstruction_loss", default="mse", help="mse|l1")
+    parser.add_argument("--scheduled_sampling", type=str2bool, default=False)
 
 
 def add_dataset_arguments(parser):

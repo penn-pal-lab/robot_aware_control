@@ -14,7 +14,7 @@ from src.utils.plot import putText
 from torchvision.datasets.folder import has_file_allowed_extension
 from src.cem.demo_cem import DemoCEMPolicy
 
-# import wandb
+import wandb
 
 
 class EpisodeRunner(object):
@@ -182,15 +182,15 @@ class EpisodeRunner(object):
         self._logger.info("\n\n### Summary ###")
         # histograms = {"reward", "object_dist", "gripper_dist"}
         # upload table to wandb
-        # table = wandb.Table(columns=list(self._stats.keys()))
+        table = wandb.Table(columns=list(self._stats.keys()))
         table_rows = []
         for k, v in self._stats.items():
             mean = np.mean(v)
             sigma = np.std(v)
             self._logger.info(f"{k} avg: {mean} \u00B1 {sigma}")
-            # table_rows.append(f"{mean} \u00B1 {sigma}")
-            # log = {f"mean/{k}": mean, f"std/{k}": sigma}
-            # wandb.log(log, step=0)
+            table_rows.append(f"{mean} \u00B1 {sigma}")
+            log = {f"mean/{k}": mean, f"std/{k}": sigma}
+            wandb.log(log, step=0)
             # if k in histograms:  # save histogram to wandb and image
             #     plt.hist(v)
             #     plt.xlabel(k)
@@ -200,8 +200,8 @@ class EpisodeRunner(object):
             #     plt.savefig(fpath)
             #     plt.close("all")
 
-        # table.add_data(*table_rows)
-        # wandb.log({"Results": table}, step=0)
+        table.add_data(*table_rows)
+        wandb.log({"Results": table}, step=0)
 
     def _load_demo_dataset(self, config):
         file_type = "hdf5"
