@@ -36,7 +36,9 @@ class DemoCEMPolicy(object):
             self.debug_cem_dir = os.path.join(cfg.log_dir, "debug_cem")
             os.makedirs(self.debug_cem_dir, exist_ok=True)
 
-    def compare_optimal_actions(self, demo, curr_img, curr_robot, curr_sim, goal_imgs, demo_name):
+    def compare_optimal_actions(
+        self, demo, curr_img, curr_robot, curr_sim, goal_imgs, demo_name
+    ):
         """
         Run environment / model rollout on the action trajectory and compare
         the difference

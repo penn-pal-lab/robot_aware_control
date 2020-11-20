@@ -5,15 +5,12 @@ import numpy as np
 import torch
 import torch.utils.data as data
 import torchvision.transforms as tf
-import multiprocessing as mp
-import ctypes
 from tqdm import tqdm
 
 
 class VideoDataset(data.Dataset):
     def __init__(self, files, config):
         self._files = files
-        # shift [0,1] to [-1,1]
         self._img_transforms = tf.Compose([tf.Lambda(seq_to_tensor)])
         self._action_dim = config.action_dim
         # self._cache = LRUCache(100000)
@@ -32,6 +29,7 @@ class VideoDataset(data.Dataset):
                 frames_shape = list(hf["object_inpaint_demo"].shape)
                 robot_shape = list(hf["robot_state"].shape)
                 actions_shape = list(hf["actions"].shape)
+                masks_shape = list(hf["masks"].shape)
 
                 # frames should be L x C x H x W
                 frames = np.zeros(frames_shape, dtype=np.uint8)
@@ -43,7 +41,11 @@ class VideoDataset(data.Dataset):
 
                 actions = np.zeros(actions_shape, dtype=np.float32)
                 hf["actions"].read_direct(actions)
-                self._data.append((frames, robot, actions))
+
+                masks = np.zeros(masks_shape, dtype=np.bool)
+                hf["masks"].read_direct(masks)
+
+                self._data.append((frames, robot, actions, masks))
 
     def __getitem__(self, index):
         path = self._files[index]
@@ -80,7 +82,7 @@ class VideoDataset(data.Dataset):
         # frames_shape = list(frames.shape)
         # robot_shape = list(robot.shape)
         # actions_shape = list(actions.shape)
-        frames, robot, actions = self._data[index]
+        frames, robot, actions, masks = self._data[index]
         ep_len = frames.shape[0]
         assert ep_len >= self._horizon, f"{ep_len}, {path}"
         start = 0
@@ -96,6 +98,7 @@ class VideoDataset(data.Dataset):
             frames_shape[0] = robot_shape[0] = self._horizon
             actions_shape[0] = self._horizon - 1
         frames = frames[start:end]
+        masks = masks[start:end]
         robot = robot[start:end]
         actions = actions[start : end - 1]
         # double check dimensions of data
@@ -111,7 +114,7 @@ class VideoDataset(data.Dataset):
             assert frames.shape[2] == self._cf.image_width, f"{path}, {frames.shape}"
         assert actions.shape[-1] == self._cf.action_dim, f"{path}, {actions.shape}"
         assert robot.shape[-1] == self._cf.robot_dim, f"{path}, {robot.shape}"
-        return frames, robot, actions
+        return frames, robot, actions, masks
 
     def __len__(self):
         return len(self._files)

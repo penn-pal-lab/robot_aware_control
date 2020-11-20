@@ -87,7 +87,8 @@ class PredictionTrainer(object):
         elif cf.image_width == 128:
             from src.prediction.models.vgg import Decoder, Encoder
 
-        self.encoder = enc = Encoder(cf.g_dim, cf.channels, cf.multiview).to(
+        # RGB + mask channel
+        self.encoder = enc = Encoder(cf.g_dim, cf.channels + 1, cf.multiview).to(
             self._device
         )
         self.decoder = dec = Decoder(cf.g_dim, cf.channels, cf.multiview).to(
@@ -126,7 +127,7 @@ class PredictionTrainer(object):
 
     def _train_step(self, data):
         """Forward and Backward pass of models
-            Returns info dict containing loss metrics
+        Returns info dict containing loss metrics
         """
         cf = self._config
         for model in self.all_models:
@@ -138,15 +139,15 @@ class PredictionTrainer(object):
             self.posterior.hidden = self.posterior.init_hidden()
             self.prior.hidden = self.prior.init_hidden()
 
-        losses = defaultdict(float) # log loss metrics
+        losses = defaultdict(float)  # log loss metrics
         recon_loss = kld = 0
-        x, robot, ac = data
+        x, robot, ac, mask = data
 
         for i in range(1, cf.n_past + cf.n_future):
-            h = self.encoder(x[i - 1])
+            h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
             a = self.action_enc(ac[i - 1])
-            h_target = self.encoder(x[i])[0]
+            h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
             r_target = self.robot_enc(robot[i])
             # if n_past is 1, then we need to manually set skip var
             if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
@@ -160,14 +161,14 @@ class PredictionTrainer(object):
                 h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
             else:
                 h_pred = self.frame_predictor(cat([a, r, h], 1))
-            x_pred = self.decoder([h_pred, skip]) # N x C x H x W
+            x_pred = self.decoder([h_pred, skip])  # N x C x H x W
             # calculate loss per view and log it
             if cf.multiview:
                 num_views = x_pred.shape[2] // cf.image_width
                 for n in range(num_views):
-                    start, end = n * cf.image_width, (n+1) * cf.image_width
-                    view_pred = x_pred[:,:,start:end,:]
-                    view = x[i][:,:,start:end,:]
+                    start, end = n * cf.image_width, (n + 1) * cf.image_width
+                    view_pred = x_pred[:, :, start:end, :]
+                    view = x[i][:, :, start:end, :]
                     view_loss = self._recon_loss(view_pred, view)
                     recon_loss += view_loss
                     view_loss_scalar = view_loss.cpu().item()
@@ -193,7 +194,7 @@ class PredictionTrainer(object):
         self.action_encoder_optimizer.step()
         self.robot_encoder_optimizer.step()
 
-        for k,v in losses.items():
+        for k, v in losses.items():
             losses[k] = v / (cf.n_past + cf.n_future)
         return losses
 
@@ -201,19 +202,20 @@ class PredictionTrainer(object):
         losses = defaultdict(list)
         for sequence in self.test_loader:
             # transpose from (B, L, C, W, H) to (L, B, C, W, H)
-            frames, robots, actions = sequence
+            frames, robots, actions, masks = sequence
             frames = frames.transpose_(1, 0).to(self._device)
             robots = robots.transpose_(1, 0).to(self._device)
             actions = actions.transpose_(1, 0).to(self._device)
-            data = (frames, robots, actions)
+            masks = masks.transpose_(1, 0).unsqueeze_(2).to(self._device)
+            data = (frames, robots, actions, masks)
             info = self._eval_step(data)
-            for k,v in info.items():
+            for k, v in info.items():
                 losses[k].append(v)
 
-        avg_loss = {f"test/{k}": np.mean(v)for k,v in losses.items()}
-        epoch_loss = {f"test/epoch_{k}": np.sum(v) for k,v in losses.items()}
+        avg_loss = {f"test/{k}": np.mean(v) for k, v in losses.items()}
+        epoch_loss = {f"test/epoch_{k}": np.sum(v) for k, v in losses.items()}
         log_str = ""
-        for k,v in epoch_loss.items():
+        for k, v in epoch_loss.items():
             log_str += f"{k}: {v}, "
         self._logger.info(log_str)
         epoch_loss.update(avg_loss)
@@ -230,12 +232,12 @@ class PredictionTrainer(object):
 
         recon_loss = kld = 0
         losses = defaultdict(float)
-        x, robot, ac = data
+        x, robot, ac, mask = data
         for i in range(1, cf.n_past + cf.n_future):
-            h = self.encoder(x[i - 1])
+            h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
             a = self.action_enc(ac[i - 1])
-            h_target = self.encoder(x[i])[0]
+            h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
             r_target = self.robot_enc(robot[i])
             # if n_past is 1, then we need to manually set skip var
             if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
@@ -253,9 +255,9 @@ class PredictionTrainer(object):
             if cf.multiview:
                 num_views = x_pred.shape[2] // cf.image_width
                 for n in range(num_views):
-                    start, end = n * cf.image_width, (n+1) * cf.image_width
-                    view_pred = x_pred[:,:,start:end,:]
-                    view = x[i][:,:,start:end,:]
+                    start, end = n * cf.image_width, (n + 1) * cf.image_width
+                    view_pred = x_pred[:, :, start:end, :]
+                    view = x[i][:, :, start:end, :]
                     view_loss = self._recon_loss(view_pred, view)
                     recon_loss += view_loss
                     view_loss_scalar = view_loss.cpu().item()
@@ -271,7 +273,7 @@ class PredictionTrainer(object):
                 kld += kl
                 losses["kld"] += kl.cpu().item()
 
-        for k,v in losses.items():
+        for k, v in losses.items():
             losses[k] = v / (cf.n_past + cf.n_future)
         return losses
 
@@ -291,16 +293,16 @@ class PredictionTrainer(object):
             for _ in range(cf.epoch_size):
                 data = next(self.training_batch_generator)
                 info = self._train_step(data)
-                for k,v in info.items():
+                for k, v in info.items():
                     epoch_losses[f"train/epoch_{k}"] += v
                 self._step += 1
-                wandb.log({f"train/{k}":v for k,v in info.items()}, step=self._step)
+                wandb.log({f"train/{k}": v for k, v in info.items()}, step=self._step)
                 progress.update()
 
             # log epoch statistics
             wandb.log(epoch_losses, step=self._step)
             epoch_log_str = ""
-            for k,v in epoch_losses.items():
+            for k, v in epoch_losses.items():
                 epoch_log_str += f"{k}: {v}, "
             self._logger.info(epoch_log_str)
             # checkpoint
@@ -401,7 +403,7 @@ class PredictionTrainer(object):
         Plot the generation with learned prior
         """
         cf = self._config
-        x, robot, ac = data
+        x, robot, ac, mask = data
 
         nsample = 1
         gen_seq = [[] for i in range(nsample)]
@@ -415,7 +417,7 @@ class PredictionTrainer(object):
             gen_seq[s].append(x[0])
             x_in = x[0]
             for i in range(1, cf.n_eval):
-                h = self.encoder(x_in)
+                h = self.encoder(cat([x_in, mask[i - 1]], dim=1))
                 r = self.robot_enc(robot[i - 1])
                 a = self.action_enc(ac[i - 1])
                 if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
@@ -425,7 +427,7 @@ class PredictionTrainer(object):
                 h = h.detach()
                 if i < cf.n_past:
                     r_target = self.robot_enc(robot[i])
-                    h_target = self.encoder(x[i])
+                    h_target = self.encoder(cat([x[i], mask[i - 1]], dim=1))
                     h_target = h_target[0]
                     if cf.stoch:
                         z_t, _, _ = self.posterior(cat([r_target, h_target], 1))
@@ -500,18 +502,17 @@ class PredictionTrainer(object):
         Plot the 1 step reconstruction with posterior instead of learned prior
         """
         cf = self._config
-        x, robot, ac = data
+        x, robot, ac, mask = data
         self.frame_predictor.hidden = self.frame_predictor.init_hidden()
         if cf.stoch:
             self.posterior.hidden = self.posterior.init_hidden()
         gen_seq = []
         gen_seq.append(x[0])
-        x_in = x[0]
         for i in range(1, cf.n_past + cf.n_future):
-            h = self.encoder(x[i - 1])
+            h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
             a = self.action_enc(ac[i - 1])
-            h_target = self.encoder(x[i])[0]
+            h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
             r_target = self.robot_enc(robot[i])
             if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
                 h, skip = h
