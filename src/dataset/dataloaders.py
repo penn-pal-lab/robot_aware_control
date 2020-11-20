@@ -1,9 +1,12 @@
 import os
 import random
 
+import ipdb
+
 from src.dataset.video_dataset import VideoDataset
 from torchvision.datasets.folder import has_file_allowed_extension
 from torch.utils.data import DataLoader
+import torch
 
 
 def create_split(config):
@@ -48,11 +51,12 @@ def get_batch(loader, device):
     while True:
         for sequence in loader:
             # transpose from (B, L, C, W, H) to (L, B, C, W, H)
-            frames, robots, actions = sequence
+            frames, robots, actions, masks = sequence
             frames = frames.transpose_(1, 0).to(device)
             robots = robots.transpose_(1, 0).to(device)
             actions = actions.transpose_(1, 0).to(device)
-            yield frames, robots, actions
+            masks = masks.transpose_(1, 0).unsqueeze_(2).to(device)
+            yield frames, robots, actions, masks
 
 
 if __name__ == "__main__":

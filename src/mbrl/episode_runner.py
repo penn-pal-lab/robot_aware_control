@@ -13,7 +13,8 @@ from src.prediction.losses import InpaintBlurCost
 from src.utils.plot import putText
 from torchvision.datasets.folder import has_file_allowed_extension
 from src.cem.demo_cem import DemoCEMPolicy
-import wandb
+
+# import wandb
 
 
 class EpisodeRunner(object):
@@ -63,6 +64,14 @@ class EpisodeRunner(object):
         curr_img = obs["observation"]
         curr_robot = obs["robot"]
         curr_sim = obs["state"]
+
+        # Debug model CEM
+        if config.debug_cem:
+            self.policy.compare_optimal_actions(
+                demo, curr_img, curr_robot, curr_sim, goal_imgs, demo_name
+            )
+            return
+
         if config.record_trajectory:
             trajectory["obs"].append(obs)
             trajectory["state"].append(env.get_state())
@@ -80,6 +89,7 @@ class EpisodeRunner(object):
             goal_img = goal_imgs[0]
             if config.demo_cost:
                 config.optimal_traj = optimal_traj[self._g_i :]
+
             # Use CEM to find the best action(s)
             actions = self.policy.get_action(
                 curr_img, curr_robot, curr_sim, goal_imgs, ep_num, self._step
@@ -172,13 +182,13 @@ class EpisodeRunner(object):
         self._logger.info("\n\n### Summary ###")
         # histograms = {"reward", "object_dist", "gripper_dist"}
         # upload table to wandb
-        table = wandb.Table(columns=list(self._stats.keys()))
+        # table = wandb.Table(columns=list(self._stats.keys()))
         table_rows = []
         for k, v in self._stats.items():
             mean = np.mean(v)
             sigma = np.std(v)
             self._logger.info(f"{k} avg: {mean} \u00B1 {sigma}")
-            table_rows.append(f"{mean} \u00B1 {sigma}")
+            # table_rows.append(f"{mean} \u00B1 {sigma}")
             # log = {f"mean/{k}": mean, f"std/{k}": sigma}
             # wandb.log(log, step=0)
             # if k in histograms:  # save histogram to wandb and image
@@ -190,8 +200,8 @@ class EpisodeRunner(object):
             #     plt.savefig(fpath)
             #     plt.close("all")
 
-        table.add_data(*table_rows)
-        wandb.log({"Results": table}, step=0)
+        # table.add_data(*table_rows)
+        # wandb.log({"Results": table}, step=0)
 
     def _load_demo_dataset(self, config):
         file_type = "hdf5"
@@ -209,6 +219,7 @@ class EpisodeRunner(object):
         demo = {}
         with h5py.File(path, "r") as hf:
             demo["pushed_obj"] = hf.attrs["pushed_obj"]
+            demo["actions"] = hf["actions"][:]
             demo["states"] = hf["states"][:]
             # demo["robot_demo"] = hf["robot_demo"][:]
             for k, v in hf.items():

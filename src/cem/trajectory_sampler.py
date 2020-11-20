@@ -38,38 +38,38 @@ def generate_model_rollouts(
     dev = cfg.device
     N = len(action_sequences)  # Number of candidate action sequences
     ac_per_batch = cfg.candidates_batch_size
-    B = N // ac_per_batch  # number of candidate batches per GPU pass
+    B = max(N // ac_per_batch, 1)  # number of candidate batches per GPU pass
     T = len(action_sequences[0])
     sum_cost = np.zeros(N)
     all_obs = torch.zeros((N, T, 3, 128, 64))  # N x T x obs
     all_step_cost = np.zeros((N, T))  # N x T x 1
     goal_imgs = torch.stack([to_tensor(g) for g in goal_imgs]).to(dev)
-    if cfg.demo_cost:  # for debug comparison
-        optimal_traj = torch.stack([to_tensor(g) for g in cfg.optimal_traj]).to(dev)
+    # if cfg.demo_cost:  # for debug comparison
+    #     optimal_traj = torch.stack([to_tensor(g) for g in cfg.optimal_traj]).to(dev)
     optimal_sum_cost = 0
     if not suppress_print:
         start_time = timer.time()
         print("####### Gathering Samples #######")
-
     for b in range(B):
         start = b * ac_per_batch
         end = (b + 1) * ac_per_batch if b < B - 1 else N
+        num_batch = end - start
         action_batch = action_sequences[start:end]
         actions = action_batch.to(dev)
-        model.reset(batch_size=ac_per_batch)
+        model.reset(batch_size=num_batch)
         curr_img = (
-            to_tensor(start_img.copy()).expand(ac_per_batch, -1, -1, -1).to(dev)
+            to_tensor(start_img.copy()).expand(num_batch, -1, -1, -1).to(dev)
         )  # (N x |I|)
         curr_robot = (
-            torch.from_numpy(start_robot.copy()).expand(ac_per_batch, -1).to(dev)
+            torch.from_numpy(start_robot.copy()).expand(num_batch, -1).to(dev)
         )  # N x |A|)
-        curr_sim = [start_sim] * ac_per_batch  # (N x D)
+        curr_sim = [start_sim] * num_batch  # (N x D)
         for t in range(T):
             ac = actions[:, t]  # (J, |A|)
             # compute the next img
             next_img = model.next_img(curr_img, curr_robot, ac, t == 0)
             # compute the future robot and sim using kinematics solver like mujoco
-            for j in range(ac_per_batch):
+            for j in range(num_batch):
                 next_robot, next_sim = env.robot_kinematics(
                     curr_sim[j], ac[j].cpu().numpy()
                 )
@@ -78,8 +78,8 @@ def generate_model_rollouts(
             # compute the img costs
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
-            if cfg.demo_cost:  # for debug comparison
-                opt_img = optimal_traj[goal_idx]
+            # if cfg.demo_cost:  # for debug comparison
+            #     opt_img = optimal_traj[goal_idx]
 
             if cfg.reward_type == "inpaint":
                 rew = (
@@ -88,13 +88,13 @@ def generate_model_rollouts(
                     .cpu()
                     .numpy()
                 )  # N x 1
-                if cfg.demo_cost and b == 0:
-                    optimal_sum_cost += (
-                        -(torch.sum((255 * (opt_img - goal_img)) ** 2))
-                        .sqrt()
-                        .cpu()
-                        .numpy()
-                    )
+                # if cfg.demo_cost and b == 0:
+                #     optimal_sum_cost += (
+                #         -(torch.sum((255 * (opt_img - goal_img)) ** 2))
+                #         .sqrt()
+                #         .cpu()
+                #         .numpy()
+                #     )
 
             sum_cost[start:end] += rew
             if ret_obs:
@@ -165,17 +165,16 @@ def generate_env_rollouts(
         for t in range(T):
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
-            if cfg.demo_cost:  # for debug comparison
-                opt_img = cfg.optimal_traj[goal_idx]
-
+            # if cfg.demo_cost:  # for debug comparison
+            #     opt_img = cfg.optimal_traj[goal_idx]
             action = action_sequences[ep_num, t].numpy()
             ob, _, _, _ = env.step(action)
 
             img = ob["observation"]
             if cfg.reward_type == "inpaint":
                 rew = -np.linalg.norm(img - goal_img)
-                if cfg.demo_cost:
-                    optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
+                # if cfg.demo_cost:
+                #     optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
 
             sum_cost[ep_num] += rew
             if ret_obs:

@@ -50,7 +50,10 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
         obj_poses = defaultdict(list)
         states = []
         robot_states = []
+        masks = []
         for ob in obs:
+            if config.norobot_pixels_ob:
+                masks.append(ob["mask"])
             robot_states.append(ob["robot"])
             object_inpaint_demo.append(ob["observation"])
             states.append(ob["state"])
@@ -111,6 +114,8 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
             create_dataset("states", data=states)
             create_dataset("actions", data=actions)
             create_dataset("robot_state", data=robot_states)
+            if config.norobot_pixels_ob:
+                create_dataset("masks", data=masks)
             # ground truth object demo
             create_dataset("object_only_demo", data=object_only_demo)
             # inpainted object demo
@@ -183,7 +188,7 @@ def collect_svg_data():
     Each demo is around 7-14 steps long, and the dataset will be around 100k images total
     """
     num_workers = 10
-    num_push = 7000 // num_workers
+    num_push = 10000 // num_workers
     num_rand = 3000 // num_workers
     record = False
     ep_len = 12  # gonna be off by 1 because of reset but whatever
@@ -191,17 +196,17 @@ def collect_svg_data():
     config, _ = argparser()
     config.norobot_pixels_ob = True
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/svg_mr_inpaint"
-    config.most_recent_background = True
+    config.demo_dir = "demos/svg_inpaint_straight_push_only"
+    config.most_recent_background = False
     config.multiview = True
     config.img_dim = 64
     config.camera_ids = [0, 1]
     config.temporal_beta = 0.3  # control random policy's temporal correlation
     config.action_noise = 0.5
     create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)
-    create_demo_dataset(
-        config, num_rand, num_workers, record, "temporal_random_robot", ep_len
-    )
+    #create_demo_dataset(
+    #    config, num_rand, num_workers, record, "temporal_random_robot", ep_len
+    #)
 
 
 if __name__ == "__main__":

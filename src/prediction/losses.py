@@ -6,6 +6,7 @@ from skimage.filters import gaussian
 from torchvision.transforms import ToTensor
 
 mse_criterion = nn.MSELoss()
+l1_criterion = nn.L1Loss()
 
 
 def kl_criterion(mu1, logvar1, mu2, logvar2, bs):

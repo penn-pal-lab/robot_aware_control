@@ -1,3 +1,4 @@
+from src.env.fetch.clutter_push import ClutterPushEnv
 import imageio
 import numpy as np
 import torch
@@ -24,7 +25,7 @@ class DemoCEMPolicy(object):
 
         # Infer action size
         self.A = env.action_space.shape[0]
-        self.env = env
+        self.env: ClutterPushEnv = env
         self.cfg = cfg
         self.use_env_dynamics = cfg.use_env_dynamics
         if not self.use_env_dynamics:  # use learned model
@@ -34,6 +35,52 @@ class DemoCEMPolicy(object):
         if self.plot_rollouts:
             self.debug_cem_dir = os.path.join(cfg.log_dir, "debug_cem")
             os.makedirs(self.debug_cem_dir, exist_ok=True)
+
+    def compare_optimal_actions(
+        self, demo, curr_img, curr_robot, curr_sim, goal_imgs, demo_name
+    ):
+        """
+        Run environment / model rollout on the action trajectory and compare
+        the difference
+        """
+        old_state = self.env.get_flattened_state()
+        actions = torch.from_numpy(demo["actions"]).type(torch.float).unsqueeze(0)
+        demo_start_state = demo["states"][0]
+        # import ipdb; ipdb.set_trace()
+        self.env.set_flattened_state(demo_start_state)
+        env_rollout = generate_env_rollouts(
+            self.cfg, self.env, actions, goal_imgs, ret_obs=True
+        )["obs"][0]
+
+        model_rollout = np.uint8(
+            generate_model_rollouts(
+                self.cfg,
+                self.env,
+                self.model,
+                actions,
+                curr_img,
+                curr_robot,
+                curr_sim,
+                goal_imgs,
+                ret_obs=True,
+            )["obs"][0]
+            * 255
+        ).transpose((0, 2, 3, 1))
+
+        curr_img = curr_img.copy()
+        putText(curr_img, "START", (0, 8))
+        img = np.concatenate([curr_img, curr_img], axis=1)
+        gif = [img] * 5
+        for t, (env_ob, model_ob) in enumerate(zip(env_rollout, model_rollout)):
+            img = np.concatenate([env_ob, model_ob], axis=1)
+            putText(img, "ENV", (0, 8))
+            putText(img, "SVG", (64, 8))
+            putText(img, f"{t+1}/{len(env_rollout)}", (0, 124))
+            putText(img, f"{t+1}/{len(env_rollout)}", (64, 124))
+            gif.append(img)
+        gif_path = os.path.join(self.debug_cem_dir, f"{demo_name}.gif")
+        imageio.mimwrite(gif_path, gif)
+        self.env.set_flattened_state(old_state)
 
     def get_action(self, curr_img, curr_robot, curr_sim, goal_imgs, ep_num, step):
         """
