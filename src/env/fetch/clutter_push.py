@@ -192,6 +192,69 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             "desired_goal": self.goal.copy(),
         }
 
+    def _get_auto_moving_obj_obs(self, moving_object="object1", moving_dist=np.zeros(3)):
+        # gripper positions
+        grip_pos = self.sim.data.get_site_xpos("robot0:grip")
+        dt = self.sim.nsubsteps * self.sim.model.opt.timestep
+        grip_velp = self.sim.data.get_site_xvelp("robot0:grip") * dt
+        grip_velr = self.sim.data.get_site_xvelr("robot0:grip") * dt
+        robot_qpos, robot_qvel = robot_get_obs(self.sim)
+        gripper_state = robot_qpos[-2:]
+        gripper_vel = robot_qvel[-2:] * dt
+
+        obj_pos = self.sim.data.get_joint_qpos(moving_object + ':joint')
+        obj_pos[0:3] += moving_dist
+        self.sim.data.set_joint_qpos(moving_object + ':joint', obj_pos)
+
+        if self._pixels_ob:
+            img = self.render("rgb_array", remove_robot=self._norobot_pixels_ob)
+            robot = np.concatenate([grip_pos, grip_velp])
+            obs = {
+                "observation": img.copy(),
+                # "achieved_goal": img.copy(),
+                # "desired_goal": self.goal.copy(),
+                "robot": robot.copy().astype(np.float32),
+                "state": self.get_flattened_state(),
+            }
+            for obj in self._objects:
+                obs[obj + ":joint"] = self.sim.data.get_joint_qpos(
+                    obj + ":joint"
+                ).copy()
+            if self._norobot_pixels_ob:
+                obs["mask"] = self._seg_mask
+            return obs
+        # change to a scalar if the gripper is made symmetric
+        if self.has_object:
+            object_pos = self.sim.data.get_site_xpos("object0")
+            # rotations
+            object_rot = mat2euler(self.sim.data.get_site_xmat("object0"))
+            # velocities
+            object_velp = self.sim.data.get_site_xvelp("object0") * dt
+            object_velr = self.sim.data.get_site_xvelr("object0") * dt
+            # gripper state
+            object_rel_pos = object_pos - grip_pos
+            object_velp -= grip_velp
+
+        achieved_goal = np.concatenate([object_pos, grip_pos])
+        obs = np.concatenate(
+            [
+                grip_pos,
+                object_pos.ravel(),
+                object_rel_pos.ravel(),
+                gripper_state,
+                object_rot.ravel(),
+                object_velp.ravel(),
+                object_velr.ravel(),
+                grip_velp,
+                gripper_vel,
+            ]
+        )
+        return {
+            "observation": obs.copy(),
+            "achieved_goal": achieved_goal.copy(),
+            "desired_goal": self.goal.copy(),
+        }
+
     def _reset_sim(self, spawn_info=None):
         """
         Gets called by goal env's reset right before sampling new goal.
@@ -247,6 +310,19 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             self.sim.step()
             self._step_callback()
         obs = self._get_obs()
+        done = False
+        info = {}
+        reward = 0
+        info["reward"] = reward
+        return obs, reward, done, info
+
+    def step_auto_moving_obj(self, action, moving_object="object1", moving_dist=np.zeros(3)):
+        action = np.clip(action, self.action_space.low, self.action_space.high)
+        for _ in range(self._action_repeat):
+            self._set_action(action)
+            self.sim.step()
+            self._step_callback()
+        obs = self._get_auto_moving_obj_obs(moving_object=moving_object, moving_dist=moving_dist)
         done = False
         info = {}
         reward = 0
@@ -957,6 +1033,21 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             for k, v in info.items():
                 history[k].append(v)
 
+    def random_robot_moving_object(self, history, ep_len, object="object1", noise=0):
+        block_xpos = self.sim.data.get_site_xpos(object).copy()
+        spawn_xpos = self.sim.data.get_site_xpos("spawn").copy()
+        goal_dir = (block_xpos - spawn_xpos) / np.linalg.norm(block_xpos - spawn_xpos)
+        moving_dist = 0.01 * goal_dir
+
+        """Performs IID action sequence """
+        for i in range(ep_len):
+            ac = self.action_space.sample()
+            history["ac"].append(ac)
+            obs, _, _, info = self.step_auto_moving_obj(ac, moving_object=object, moving_dist=moving_dist)
+            history["obs"].append(obs)
+            for k, v in info.items():
+                history[k].append(v)
+
     def generate_demo(self, behavior):
         """
         Runs a hard coded behavior and stores the episode
@@ -983,6 +1074,10 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             self.random_robot(history, ep_len)
         elif behavior == "temporal_random_robot":
             self.temporal_random_robot(history, ep_len, beta)
+        elif behavior == "random_robot_moving_object":
+            obj = np.random.choice(self._objects)
+            history["pushed_obj"] = obj
+            self.random_robot_moving_object(history, ep_len, object=obj)
         elif behavior == "straight_push":
             obj = np.random.choice(self._objects)
             history["pushed_obj"] = obj
