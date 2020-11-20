@@ -234,10 +234,10 @@ class PredictionTrainer(object):
         losses = defaultdict(float)
         x, robot, ac, mask = data
         for i in range(1, cf.n_past + cf.n_future):
-            h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=2))
+            h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
             a = self.action_enc(ac[i - 1])
-            h_target = self.encoder(cat([x[i], mask[i]], dim=2))[0]
+            h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
             r_target = self.robot_enc(robot[i])
             # if n_past is 1, then we need to manually set skip var
             if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
