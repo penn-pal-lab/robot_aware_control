@@ -48,7 +48,7 @@ class EpisodeRunner(object):
         demo = self._load_demo(demo_path)
         # use for debugging
         optimal_traj = demo["object_inpaint_demo"][:: self._timescale]
-        self.demo_goal_imgs = demo["object_only_demo"][:: self._timescale]
+        self.demo_goal_imgs = demo["object_inpaint_demo"][:: self._timescale]
         num_goals = len(self.demo_goal_imgs)
         pushed_obj = demo["pushed_obj"] + ":joint"
         goal_obj_poses = demo[pushed_obj][:: self._timescale]
@@ -124,6 +124,8 @@ class EpisodeRunner(object):
                 finish_demo = False
                 if config.sequential_subgoal:
                     # just choose the next goal
+                    print("img distance =", np.linalg.norm(curr_img - goal_img))
+                    # config.subgoal_threshold = 5000 is too small, so that for some experiments, goal_img is not updated
                     if np.linalg.norm(curr_img - goal_img) < config.subgoal_threshold:
                         self._g_i += 1
                         finish_demo = self._g_i >= num_goals
