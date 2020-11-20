@@ -109,7 +109,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 )
             )
 
-    def robot_kinematics(self, sim_state, action):
+    def robot_kinematics(self, sim_state, action, ret_mask=False):
         """
         Calculates the forward kinematics of the robot state.
         Does not actually affect the mujoco env.
@@ -123,8 +123,12 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             self.sim.step()
             self._step_callback()
         next_robot = self.get_robot_state()
+        if ret_mask:
+            next_mask = self.get_robot_mask()
         next_sim_state = self.get_flattened_state()
         self.set_flattened_state(sim_state)
+        if ret_mask:
+            return next_robot, next_mask, next_sim_state
         return next_robot, next_sim_state
 
     def get_robot_state(self):

@@ -64,11 +64,12 @@ class EpisodeRunner(object):
         curr_img = obs["observation"]
         curr_robot = obs["robot"]
         curr_sim = obs["state"]
+        curr_mask = obs["mask"]
 
         # Debug model CEM
         if config.debug_cem:
             self.policy.compare_optimal_actions(
-                demo, curr_img, curr_robot, curr_sim, goal_imgs, demo_name
+                demo, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, demo_name
             )
             return
 
@@ -92,7 +93,7 @@ class EpisodeRunner(object):
 
             # Use CEM to find the best action(s)
             actions = self.policy.get_action(
-                curr_img, curr_robot, curr_sim, goal_imgs, ep_num, self._step
+                curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, ep_num, self._step
             )
             # Execute the planned actions. Usually only 1 action
             for action in actions:
@@ -100,6 +101,7 @@ class EpisodeRunner(object):
                 curr_img = obs["observation"]
                 curr_robot = obs["robot"]
                 curr_sim = obs["state"]
+                curr_mask = obs["mask"]
                 # Log the cost, change in object pose, change in goal
                 rew = self.cost(curr_img, goal_img)
                 curr_obj_pos = obs[pushed_obj][:2]
