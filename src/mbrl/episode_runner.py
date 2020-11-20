@@ -48,7 +48,7 @@ class EpisodeRunner(object):
         demo = self._load_demo(demo_path)
         # use for debugging
         optimal_traj = demo["object_inpaint_demo"][:: self._timescale]
-        self.demo_goal_imgs = demo["object_inpaint_demo"][:: self._timescale]
+        self.demo_goal_imgs = demo["object_object_demo"][:: self._timescale]
         num_goals = len(self.demo_goal_imgs)
         pushed_obj = demo["pushed_obj"] + ":joint"
         goal_obj_poses = demo[pushed_obj][:: self._timescale]
