@@ -204,9 +204,9 @@ def collect_svg_data():
     config.temporal_beta = 0.3  # control random policy's temporal correlation
     config.action_noise = 0.5
     create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)
-    #create_demo_dataset(
+    # create_demo_dataset(
     #    config, num_rand, num_workers, record, "temporal_random_robot", ep_len
-    #)
+    # )
 
 
 if __name__ == "__main__":
@@ -214,4 +214,4 @@ if __name__ == "__main__":
     Use this to collect demonstrations for svg / demo cem experiments
     """
     collect_svg_data()
-    #collect_demo_cem_data()
+    # collect_demo_cem_data()

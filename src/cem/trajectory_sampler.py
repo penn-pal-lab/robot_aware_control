@@ -61,12 +61,14 @@ def generate_model_rollouts(
         actions = action_batch.to(dev)
         model.reset(batch_size=num_batch)
         curr_img = cat([to_tensor(start_img.copy()), start_mask], dim=0)
-        curr_img = curr_img.expand(num_batch, -1,-1,-1).to(dev) # (N x |I|)
+        curr_img = curr_img.expand(num_batch, -1, -1, -1).to(dev)  # (N x |I|)
         curr_robot = (
             torch.from_numpy(start_robot.copy()).expand(num_batch, -1).to(dev)
         )  # N x |A|)
         curr_sim = [start_sim] * num_batch  # (N x D)
-        curr_mask = torch.zeros((num_batch, 1, 128, 64), dtype=torch.bool).to(dev) # (N x 1 x H x W)
+        curr_mask = torch.zeros((num_batch, 1, 128, 64), dtype=torch.bool).to(
+            dev
+        )  # (N x 1 x H x W)
         for t in range(T):
             ac = actions[:, t]  # (J, |A|)
             # compute the next img

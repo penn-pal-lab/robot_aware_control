@@ -83,7 +83,9 @@ class DemoCEMPolicy(object):
         imageio.mimwrite(gif_path, gif)
         self.env.set_flattened_state(old_state)
 
-    def get_action(self, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, ep_num, step):
+    def get_action(
+        self, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, ep_num, step
+    ):
         """
         curr_img: used by learned model, not needed for ground truth model
         curr_robot: robot eef pos, used by learned model, not needed for ground truth model
@@ -124,7 +126,9 @@ class DemoCEMPolicy(object):
         # Return first R actions, where R is number of actions to take before replanning
         return mean[: self.R, :].numpy()
 
-    def _get_rollouts(self, act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs):
+    def _get_rollouts(
+        self, act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs
+    ):
         """
         Return the rollouts either from simulator or learned model
         """

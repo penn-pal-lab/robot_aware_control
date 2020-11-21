@@ -128,7 +128,7 @@ class PredictionTrainer(object):
 
     def _schedule_prob(self):
         """Returns probability of using ground truth"""
-         # assume 400k max training steps
+        # assume 400k max training steps
         k = 10000
         use_truth = k / (k + np.exp(self._step / 18000))
         use_model = 1 - use_truth
