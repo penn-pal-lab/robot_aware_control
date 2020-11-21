@@ -291,14 +291,13 @@ class EpisodeRunner(object):
             os.environ["WANDB_MODE"] = "dryrun"
         os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
         exclude = ["device"]
-        if config.wandb:
-            wandb.init(
-                resume=config.jobname,
-                project=config.wandb_project,
-                config={k: v for k, v in config.__dict__.items() if k not in exclude},
-                dir=config.log_dir,
-                entity=config.wandb_entity,
-            )
+        wandb.init(
+            resume=config.jobname,
+            project=config.wandb_project,
+            config={k: v for k, v in config.__dict__.items() if k not in exclude},
+            dir=config.log_dir,
+            entity=config.wandb_entity,
+        )
 
     def _add_img_to_gif(self, gif, curr_img, goal_img):
         if self._record:
