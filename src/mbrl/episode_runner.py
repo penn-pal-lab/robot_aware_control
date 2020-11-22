@@ -14,7 +14,7 @@ from src.utils.plot import putText
 from torchvision.datasets.folder import has_file_allowed_extension
 from src.cem.demo_cem import DemoCEMPolicy
 
-# import wandb
+import wandb
 
 
 class EpisodeRunner(object):
@@ -48,7 +48,7 @@ class EpisodeRunner(object):
         demo = self._load_demo(demo_path)
         # use for debugging
         optimal_traj = demo["object_inpaint_demo"][:: self._timescale]
-        self.demo_goal_imgs = demo["object_inpaint_demo"][:: self._timescale]
+        self.demo_goal_imgs = demo["object_only_demo"][:: self._timescale]
         num_goals = len(self.demo_goal_imgs)
         pushed_obj = demo["pushed_obj"] + ":joint"
         goal_obj_poses = demo[pushed_obj][:: self._timescale]
@@ -64,11 +64,12 @@ class EpisodeRunner(object):
         curr_img = obs["observation"]
         curr_robot = obs["robot"]
         curr_sim = obs["state"]
+        curr_mask = obs["mask"]
 
         # Debug model CEM
         if config.debug_cem:
             self.policy.compare_optimal_actions(
-                demo, curr_img, curr_robot, curr_sim, goal_imgs, demo_name
+                demo, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, demo_name
             )
             return
 
@@ -92,7 +93,7 @@ class EpisodeRunner(object):
 
             # Use CEM to find the best action(s)
             actions = self.policy.get_action(
-                curr_img, curr_robot, curr_sim, goal_imgs, ep_num, self._step
+                curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, ep_num, self._step
             )
             # Execute the planned actions. Usually only 1 action
             for action in actions:
@@ -100,6 +101,7 @@ class EpisodeRunner(object):
                 curr_img = obs["observation"]
                 curr_robot = obs["robot"]
                 curr_sim = obs["state"]
+                curr_mask = obs["mask"]
                 # Log the cost, change in object pose, change in goal
                 rew = self.cost(curr_img, goal_img)
                 curr_obj_pos = obs[pushed_obj][:2]
@@ -182,15 +184,15 @@ class EpisodeRunner(object):
         self._logger.info("\n\n### Summary ###")
         # histograms = {"reward", "object_dist", "gripper_dist"}
         # upload table to wandb
-        # table = wandb.Table(columns=list(self._stats.keys()))
+        table = wandb.Table(columns=list(self._stats.keys()))
         table_rows = []
         for k, v in self._stats.items():
             mean = np.mean(v)
             sigma = np.std(v)
             self._logger.info(f"{k} avg: {mean} \u00B1 {sigma}")
-            # table_rows.append(f"{mean} \u00B1 {sigma}")
-            # log = {f"mean/{k}": mean, f"std/{k}": sigma}
-            # wandb.log(log, step=0)
+            table_rows.append(f"{mean} \u00B1 {sigma}")
+            log = {f"mean/{k}": mean, f"std/{k}": sigma}
+            wandb.log(log, step=0)
             # if k in histograms:  # save histogram to wandb and image
             #     plt.hist(v)
             #     plt.xlabel(k)
@@ -200,8 +202,8 @@ class EpisodeRunner(object):
             #     plt.savefig(fpath)
             #     plt.close("all")
 
-        # table.add_data(*table_rows)
-        # wandb.log({"Results": table}, step=0)
+        table.add_data(*table_rows)
+        wandb.log({"Results": table}, step=0)
 
     def _load_demo_dataset(self, config):
         file_type = "hdf5"
@@ -289,14 +291,13 @@ class EpisodeRunner(object):
             os.environ["WANDB_MODE"] = "dryrun"
         os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
         exclude = ["device"]
-        if config.wandb:
-            wandb.init(
-                resume=config.jobname,
-                project=config.wandb_project,
-                config={k: v for k, v in config.__dict__.items() if k not in exclude},
-                dir=config.log_dir,
-                entity=config.wandb_entity,
-            )
+        wandb.init(
+            resume=config.jobname,
+            project=config.wandb_project,
+            config={k: v for k, v in config.__dict__.items() if k not in exclude},
+            dir=config.log_dir,
+            entity=config.wandb_entity,
+        )
 
     def _add_img_to_gif(self, gif, curr_img, goal_img):
         if self._record:

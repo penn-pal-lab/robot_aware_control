@@ -1,3 +1,4 @@
+import math
 import os
 from collections import defaultdict
 from copy import deepcopy
@@ -8,10 +9,11 @@ import imageio
 import matplotlib.pyplot as plt
 import numpy as np
 from gym import spaces, utils
-
+from scipy.spatial.transform import Rotation as R
 from skimage.filters import gaussian
 from src.env.fetch.collision import CollisionSphere
 from src.env.fetch.fetch_env import FetchEnv
+from src.env.fetch.inverse_transform import getHomogenousT, pixel_coord_np
 from src.env.fetch.planar_rrt import PlanarRRT
 from src.env.fetch.rotations import mat2euler
 from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
@@ -45,7 +47,9 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         self._multiview = config.multiview
         self._camera_ids = config.camera_ids
         self._pixels_ob = config.pixels_ob
+        self._depth_ob = config.depth_ob
         self._norobot_pixels_ob = config.norobot_pixels_ob
+        self._inpaint_eef = config.inpaint_eef
         self._distance_threshold = {
             o: config.object_dist_threshold for o in self._objects
         }
@@ -109,7 +113,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 )
             )
 
-    def robot_kinematics(self, sim_state, action):
+    def robot_kinematics(self, sim_state, action, ret_mask=False):
         """
         Calculates the forward kinematics of the robot state.
         Does not actually affect the mujoco env.
@@ -123,8 +127,12 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             self.sim.step()
             self._step_callback()
         next_robot = self.get_robot_state()
+        if ret_mask:
+            next_mask = self.get_robot_mask()
         next_sim_state = self.get_flattened_state()
         self.set_flattened_state(sim_state)
+        if ret_mask:
+            return next_robot, next_mask, next_sim_state
         return next_robot, next_sim_state
 
     def get_robot_state(self):
@@ -144,12 +152,12 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         gripper_state = robot_qpos[-2:]
         gripper_vel = robot_qvel[-2:] * dt
         if self._pixels_ob:
-            img = self.render("rgb_array", remove_robot=self._norobot_pixels_ob)
+            img = self.render("rgb_array", remove_robot=self._norobot_pixels_ob, get_depth_map=self._depth_ob)
+            if self._depth_ob:
+                img, world_coord = img
             robot = np.concatenate([grip_pos, grip_velp])
             obs = {
                 "observation": img.copy(),
-                # "achieved_goal": img.copy(),
-                # "desired_goal": self.goal.copy(),
                 "robot": robot.copy().astype(np.float32),
                 "state": self.get_flattened_state(),
             }
@@ -159,6 +167,8 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 ).copy()
             if self._norobot_pixels_ob:
                 obs["mask"] = self._seg_mask
+            if self._depth_ob:
+                obs["world_coord"] = world_coord
             return obs
         # change to a scalar if the gripper is made symmetric
         if self.has_object:
@@ -573,7 +583,12 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         return goal
 
     def render(
-        self, mode="rgb_array", camera_name=None, segmentation=False, remove_robot=False
+        self,
+        mode="rgb_array",
+        camera_name=None,
+        segmentation=False,
+        remove_robot=False,
+        get_depth_map=False,
     ):
         """
         If remove_robot, then use inpaint and mask to remove robot pixels
@@ -593,17 +608,61 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
 
         if self._multiview:
             imgs = []
+            mv_world_coords = []
             for cam_id in self._camera_ids:
                 camera_name = self.sim.model.camera_id2name(cam_id)
-                img = super().render(
-                    mode,
-                    self._img_dim,
-                    self._img_dim,
-                    camera_name=camera_name,
-                    segmentation=segmentation,
-                )
+                if not get_depth_map:
+                    img = super().render(
+                        mode,
+                        self._img_dim,
+                        self._img_dim,
+                        camera_name=camera_name,
+                        segmentation=segmentation,
+                    )
+                else:
+                    img, depth = self.sim.render(
+                        width=self._img_dim,
+                        height=self._img_dim,
+                        camera_name=camera_name,
+                        depth=True,
+                    )
+                    img, depth = img[::-1, :, :], depth[::-1, :]
+                    extent = self.sim.model.stat.extent
+                    near_ = self.sim.model.vis.map.znear * extent
+                    far_ = self.sim.model.vis.map.zfar * extent
+
+                    # intrinsics
+                    height = width = self._img_dim
+                    fovy = self.sim.model.cam_fovy[cam_id]
+                    f = 0.5 * height / math.tan(fovy * math.pi / 360)
+                    K = np.array(((f, 0, width / 2), (0, f, height / 2), (0, 0, 1)))
+                    K_inv = np.linalg.inv(K)
+                    depth = -(
+                        near_ / (1 - depth * (1 - near_ / far_))
+                    )  # -1 because camera is looking along the -Z axis of its frame
+                    """
+                    replace pixel coords with keypoints coordinates in pixel space
+                    shape = (3,N) where N is no. of keypoints and third row is filled with 1s
+                    """
+                    pixel_coords = pixel_coord_np(width=width, height=height)
+                    cam_coords = K_inv[:3, :3] @ pixel_coords * depth.flatten()
+                    cam_quat = self.sim.model.cam_quat[cam_id]
+                    cam_pos = self.sim.model.cam_pos[cam_id]
+                    r = R.from_quat(
+                        [cam_quat[1], cam_quat[2], cam_quat[3], cam_quat[0]]
+                    )
+                    T = getHomogenousT(r.as_matrix(), cam_pos)
+                    cam_homogenous_coords = np.vstack(
+                        (cam_coords, np.ones(cam_coords.shape[1]))
+                    )
+                    world_coords = T @ cam_homogenous_coords
+                    world_coords[:3, :] = world_coords[:3, :] / world_coords[-1, :]
+                    mv_world_coords.append(world_coords[:3].reshape((3, height, width)))
                 imgs.append(img)
             multiview_img = np.concatenate(imgs, axis=0)
+            if get_depth_map:
+                multiview_coords = np.concatenate(mv_world_coords, axis=1)
+                return multiview_img, multiview_coords
             return multiview_img
         return super().render(
             mode,
@@ -708,16 +767,19 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         ids = seg[:, :, 1]
         geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
+        eef_geoms = ["robot0:r_gripper_finger_link", "robot0:l_gripper_finger_link"]
         mask_dim = [self._img_dim, self._img_dim]
         if self._multiview:
             viewpoints = len(self._camera_ids)
             mask_dim[0] *= viewpoints
-        mask = np.zeros(mask_dim, dtype=np.uint8)
+        mask = np.zeros(mask_dim, dtype=np.bool)
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
+            if not self._inpaint_eef and name in eef_geoms:
+                continue
             if name is not None and "robot0:" in name:
-                mask[ids == i] = np.ones(1, dtype=np.uint8)
-        return mask.astype(bool)
+                mask[ids == i] = True
+        return mask
 
     def _get_background_img(self):
         """

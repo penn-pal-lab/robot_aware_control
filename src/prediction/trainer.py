@@ -26,6 +26,7 @@ class PredictionTrainer(object):
         device = torch.device("cuda" if use_cuda else "cpu")
         self._device = device
         self._init_models(config)
+        self._scheduled_sampling = config.scheduled_sampling
 
         # init WandB
         if not config.wandb:
@@ -125,6 +126,22 @@ class PredictionTrainer(object):
         self.action_encoder_optimizer = optimizer(self.action_enc.parameters())
         self.robot_encoder_optimizer = optimizer(self.robot_enc.parameters())
 
+    def _schedule_prob(self):
+        """Returns probability of using ground truth"""
+        # assume 400k max training steps
+        k = 10000
+        use_truth = k / (k + np.exp(self._step / 18000))
+        use_model = 1 - use_truth
+        return [use_truth, use_model]
+
+    def _use_true_token(self):
+        """
+        Scheduled Sampling: Decide whether to use model output or ground truth
+        """
+        if not self._scheduled_sampling:
+            return True
+        return np.random.choice([True, False], p=self._schedule_prob())
+
     def _train_step(self, data):
         """Forward and Backward pass of models
         Returns info dict containing loss metrics
@@ -142,9 +159,13 @@ class PredictionTrainer(object):
         losses = defaultdict(float)  # log loss metrics
         recon_loss = kld = 0
         x, robot, ac, mask = data
-
+        x_pred = None
         for i in range(1, cf.n_past + cf.n_future):
-            h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
+            if i > 1:
+                input_token = x[i - 1] if self._use_true_token() else x_pred.detach()
+            else:
+                input_token = x[i - 1]
+            h = self.encoder(cat([input_token, mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
             a = self.action_enc(ac[i - 1])
             h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
@@ -295,7 +316,9 @@ class PredictionTrainer(object):
                 info = self._train_step(data)
                 for k, v in info.items():
                     epoch_losses[f"train/epoch_{k}"] += v
+                info["sample_schedule"] = self._schedule_prob()[0]
                 self._step += 1
+
                 wandb.log({f"train/{k}": v for k, v in info.items()}, step=self._step)
                 progress.update()
 

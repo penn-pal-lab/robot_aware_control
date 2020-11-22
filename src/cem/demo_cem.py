@@ -37,14 +37,14 @@ class DemoCEMPolicy(object):
             os.makedirs(self.debug_cem_dir, exist_ok=True)
 
     def compare_optimal_actions(
-        self, demo, curr_img, curr_robot, curr_sim, goal_imgs, demo_name
+        self, demo, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, demo_name
     ):
         """
         Run environment / model rollout on the action trajectory and compare
         the difference
         """
         old_state = self.env.get_flattened_state()
-        actions = torch.from_numpy(demo["actions"]).type(torch.float).unsqueeze(0)
+        actions = torch.from_numpy(demo["actions"]).type(torch.float32).unsqueeze(0)
         demo_start_state = demo["states"][0]
         # import ipdb; ipdb.set_trace()
         self.env.set_flattened_state(demo_start_state)
@@ -59,6 +59,7 @@ class DemoCEMPolicy(object):
                 self.model,
                 actions,
                 curr_img,
+                curr_mask,
                 curr_robot,
                 curr_sim,
                 goal_imgs,
@@ -82,7 +83,9 @@ class DemoCEMPolicy(object):
         imageio.mimwrite(gif_path, gif)
         self.env.set_flattened_state(old_state)
 
-    def get_action(self, curr_img, curr_robot, curr_sim, goal_imgs, ep_num, step):
+    def get_action(
+        self, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, ep_num, step
+    ):
         """
         curr_img: used by learned model, not needed for ground truth model
         curr_robot: robot eef pos, used by learned model, not needed for ground truth model
@@ -105,7 +108,7 @@ class DemoCEMPolicy(object):
             act_seq = m.sample((self.J,))  # of shape (J, L, A)
             # Generate J rollouts
             rollouts = self._get_rollouts(
-                act_seq, curr_img, curr_robot, curr_sim, goal_imgs
+                act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs
             )
             # Select top K action sequences based on cumulative cost
             costs = torch.from_numpy(rollouts["sum_cost"])
@@ -123,7 +126,9 @@ class DemoCEMPolicy(object):
         # Return first R actions, where R is number of actions to take before replanning
         return mean[: self.R, :].numpy()
 
-    def _get_rollouts(self, act_seq, curr_img, curr_robot, curr_sim, goal_imgs):
+    def _get_rollouts(
+        self, act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs
+    ):
         """
         Return the rollouts either from simulator or learned model
         """
@@ -136,6 +141,7 @@ class DemoCEMPolicy(object):
                 self.model,
                 act_seq,
                 curr_img,
+                curr_mask,
                 curr_robot,
                 curr_sim,
                 goal_imgs,

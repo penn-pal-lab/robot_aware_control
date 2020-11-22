@@ -3,6 +3,7 @@ from collections import defaultdict
 
 import numpy as np
 import torch
+from torch import cat
 import torch.multiprocessing as mp
 from src.prediction.models.dynamics import DynamicsModel
 from torchvision.transforms.functional import to_tensor
@@ -15,6 +16,7 @@ def generate_model_rollouts(
     model: DynamicsModel,
     action_sequences,
     start_img,
+    start_mask,
     start_robot,
     start_sim,
     goal_imgs,
@@ -46,6 +48,7 @@ def generate_model_rollouts(
     goal_imgs = torch.stack([to_tensor(g) for g in goal_imgs]).to(dev)
     # if cfg.demo_cost:  # for debug comparison
     #     optimal_traj = torch.stack([to_tensor(g) for g in cfg.optimal_traj]).to(dev)
+    start_mask = torch.from_numpy(start_mask).unsqueeze_(0)
     optimal_sum_cost = 0
     if not suppress_print:
         start_time = timer.time()
@@ -57,24 +60,27 @@ def generate_model_rollouts(
         action_batch = action_sequences[start:end]
         actions = action_batch.to(dev)
         model.reset(batch_size=num_batch)
-        curr_img = (
-            to_tensor(start_img.copy()).expand(num_batch, -1, -1, -1).to(dev)
-        )  # (N x |I|)
+        curr_img = cat([to_tensor(start_img.copy()), start_mask], dim=0)
+        curr_img = curr_img.expand(num_batch, -1, -1, -1).to(dev)  # (N x |I|)
         curr_robot = (
             torch.from_numpy(start_robot.copy()).expand(num_batch, -1).to(dev)
         )  # N x |A|)
         curr_sim = [start_sim] * num_batch  # (N x D)
+        curr_mask = torch.zeros((num_batch, 1, 128, 64), dtype=torch.bool).to(
+            dev
+        )  # (N x 1 x H x W)
         for t in range(T):
             ac = actions[:, t]  # (J, |A|)
             # compute the next img
             next_img = model.next_img(curr_img, curr_robot, ac, t == 0)
-            # compute the future robot and sim using kinematics solver like mujoco
+            # compute the future robot dynamics using mujoco
             for j in range(num_batch):
-                next_robot, next_sim = env.robot_kinematics(
-                    curr_sim[j], ac[j].cpu().numpy()
+                next_robot, next_mask, next_sim = env.robot_kinematics(
+                    curr_sim[j], ac[j].cpu().numpy(), ret_mask=True
                 )
                 curr_robot[j] = torch.from_numpy(next_robot).to(dev)
                 curr_sim[j] = next_sim
+                curr_mask[j] = torch.from_numpy(next_mask).unsqueeze_(0).to(dev)
             # compute the img costs
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
@@ -101,8 +107,7 @@ def generate_model_rollouts(
                 all_obs[start:end, t] = next_img.cpu()  # B x T x Obs
             if ret_step_cost:
                 all_step_cost[start:end] = rew  # B x T x 1
-
-            curr_img = next_img
+            curr_img = cat([next_img, curr_mask], dim=1)
 
     if not suppress_print:
         print(
