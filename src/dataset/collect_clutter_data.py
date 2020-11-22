@@ -195,8 +195,9 @@ def collect_svg_data():
 
     config, _ = argparser()
     config.norobot_pixels_ob = True
+    config.inpaint_eef = False
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/svg_inpaint_straight_push_only"
+    config.demo_dir = "demos/svg_noeef_inpaint"
     config.most_recent_background = False
     config.multiview = True
     config.img_dim = 64

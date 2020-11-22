@@ -49,6 +49,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         self._pixels_ob = config.pixels_ob
         self._depth_ob = config.depth_ob
         self._norobot_pixels_ob = config.norobot_pixels_ob
+        self._inpaint_eef = config.inpaint_eef
         self._distance_threshold = {
             o: config.object_dist_threshold for o in self._objects
         }
@@ -848,16 +849,19 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         ids = seg[:, :, 1]
         geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
+        eef_geoms = ["robot0:r_gripper_finger_link", "robot0:l_gripper_finger_link"]
         mask_dim = [self._img_dim, self._img_dim]
         if self._multiview:
             viewpoints = len(self._camera_ids)
             mask_dim[0] *= viewpoints
-        mask = np.zeros(mask_dim, dtype=np.uint8)
+        mask = np.zeros(mask_dim, dtype=np.bool)
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
+            if not self._inpaint_eef and name in eef_geoms:
+                continue
             if name is not None and "robot0:" in name:
-                mask[ids == i] = np.ones(1, dtype=np.uint8)
-        return mask.astype(bool)
+                mask[ids == i] = True
+        return mask
 
     def _get_background_img(self):
         """

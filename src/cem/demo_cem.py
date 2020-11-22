@@ -44,7 +44,7 @@ class DemoCEMPolicy(object):
         the difference
         """
         old_state = self.env.get_flattened_state()
-        actions = torch.from_numpy(demo["actions"]).type(torch.float).unsqueeze(0)
+        actions = torch.from_numpy(demo["actions"]).type(torch.float32).unsqueeze(0)
         demo_start_state = demo["states"][0]
         # import ipdb; ipdb.set_trace()
         self.env.set_flattened_state(demo_start_state)
