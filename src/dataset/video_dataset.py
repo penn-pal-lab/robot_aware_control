@@ -17,23 +17,23 @@ class VideoDataset(data.Dataset):
         self._cf = config
         self._horizon = config.n_past + config.n_future
         self._data = []
+        self._video_type = config.video_type
 
-        # try loading everything
+        # try loading everything into RAM
         for path in tqdm(files, desc="loading data into ram"):
             with h5py.File(path, "r") as hf:
                 # first check how long video is
-                ep_len = hf["object_inpaint_demo"].shape[0]
+                ep_len = hf[self._video_type].shape[0]
                 assert ep_len >= self._horizon, f"{ep_len}, {path}"
                 # if video is longer than horizon, sample a starting point
-                start = 0
-                frames_shape = list(hf["object_inpaint_demo"].shape)
+                frames_shape = list(hf[self._video_type].shape)
                 robot_shape = list(hf["robot_state"].shape)
                 actions_shape = list(hf["actions"].shape)
                 masks_shape = list(hf["masks"].shape)
 
                 # frames should be L x C x H x W
                 frames = np.zeros(frames_shape, dtype=np.uint8)
-                hf["object_inpaint_demo"].read_direct(frames)
+                hf[self._video_type].read_direct(frames)
                 frames = self._img_transforms(frames)
 
                 robot = np.zeros(robot_shape, dtype=np.float32)

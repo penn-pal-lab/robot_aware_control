@@ -84,7 +84,15 @@ class DemoCEMPolicy(object):
         self.env.set_flattened_state(old_state)
 
     def get_action(
-        self, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, ep_num, step
+        self,
+        curr_img,
+        curr_mask,
+        curr_robot,
+        curr_sim,
+        goal_imgs,
+        ep_num,
+        step,
+        opt_traj=None,
     ):
         """
         curr_img: used by learned model, not needed for ground truth model
@@ -93,6 +101,7 @@ class DemoCEMPolicy(object):
         Goal_imgs: set of goals for computing costs
         ep_num: used for plotting rollouts
         step: used for plotting rollouts
+        opt_traj: used for oracle demo cost
         Returns: a list of actions to execute in the environment
         """
         self.ep_num = ep_num
@@ -108,7 +117,13 @@ class DemoCEMPolicy(object):
             act_seq = m.sample((self.J,))  # of shape (J, L, A)
             # Generate J rollouts
             rollouts = self._get_rollouts(
-                act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs
+                act_seq,
+                curr_img,
+                curr_mask,
+                curr_robot,
+                curr_sim,
+                goal_imgs,
+                opt_traj,
             )
             # Select top K action sequences based on cumulative cost
             costs = torch.from_numpy(rollouts["sum_cost"])
@@ -127,13 +142,22 @@ class DemoCEMPolicy(object):
         return mean[: self.R, :].numpy()
 
     def _get_rollouts(
-        self, act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs
+        self,
+        act_seq,
+        curr_img,
+        curr_mask,
+        curr_robot,
+        curr_sim,
+        goal_imgs,
+        opt_traj,
     ):
         """
         Return the rollouts either from simulator or learned model
         """
         if self.use_env_dynamics:
-            rollouts = generate_env_rollouts(self.cfg, self.env, act_seq, goal_imgs)
+            rollouts = generate_env_rollouts(
+                self.cfg, self.env, act_seq, goal_imgs, opt_traj=opt_traj
+            )
         else:
             rollouts = generate_model_rollouts(
                 self.cfg,
@@ -146,6 +170,7 @@ class DemoCEMPolicy(object):
                 curr_sim,
                 goal_imgs,
                 ret_obs=self.plot_rollouts,
+                opt_traj=opt_traj,
             )
             if self.plot_rollouts:
                 obs = rollouts["obs"]  # N x T x C x H x W
@@ -163,9 +188,9 @@ class DemoCEMPolicy(object):
                         g = t if t < len(goal_imgs) else -1
                         goal_img = goal_imgs[g]
                         img = np.concatenate([curr_img, goal_img], axis=1)
-                        putText(img, "SVG", (0, 8))
+                        putText(img, "MODEL", (0, 8))
                         putText(img, "GOAL", (64, 8))
                         gif.append(img)
-                    gif_path = os.path.join(gif_folder, f"{n}_step_{self.step}.gif")
+                    gif_path = os.path.join(gif_folder, f"ep_{n}_step_{self.step}.gif")
                     imageio.mimwrite(gif_path, gif)
         return rollouts

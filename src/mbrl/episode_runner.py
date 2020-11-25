@@ -47,7 +47,7 @@ class EpisodeRunner(object):
         logger = self._logger
         demo = self._load_demo(demo_path)
         # use for debugging
-        optimal_traj = demo["object_inpaint_demo"][:: self._timescale]
+        demo_opt_traj = demo["object_inpaint_demo"][:: self._timescale]
         self.demo_goal_imgs = demo["object_only_demo"][:: self._timescale]
         num_goals = len(self.demo_goal_imgs)
         pushed_obj = demo["pushed_obj"] + ":joint"
@@ -89,11 +89,18 @@ class EpisodeRunner(object):
             goal_imgs = self.demo_goal_imgs[self._g_i :]
             goal_img = goal_imgs[0]
             if config.demo_cost:
-                config.optimal_traj = optimal_traj[self._g_i :]
+                opt_traj = demo_opt_traj[self._g_i :]
 
             # Use CEM to find the best action(s)
             actions = self.policy.get_action(
-                curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, ep_num, self._step
+                curr_img,
+                curr_mask,
+                curr_robot,
+                curr_sim,
+                goal_imgs,
+                ep_num,
+                self._step,
+                opt_traj=opt_traj,
             )
             # Execute the planned actions. Usually only 1 action
             for action in actions:
@@ -124,7 +131,7 @@ class EpisodeRunner(object):
                 finish_demo = False
                 if config.sequential_subgoal:
                     # just choose the next goal
-                    print("img distance =", np.linalg.norm(curr_img - goal_img))
+                    # print("img distance =", np.linalg.norm(curr_img - goal_img))
                     # config.subgoal_threshold = 5000 is too small, so that for some experiments, goal_img is not updated
                     if np.linalg.norm(curr_img - goal_img) < config.subgoal_threshold:
                         self._g_i += 1
