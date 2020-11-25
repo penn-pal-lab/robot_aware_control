@@ -390,7 +390,7 @@ class PredictionTrainer(object):
             for f in files:
                 name = f.split(".")[0]
                 num = int(name.rsplit("_", 1)[-1])
-                if max_step > num:
+                if num > max_step:
                     max_step = num
                     path = f
             return path, max_step
