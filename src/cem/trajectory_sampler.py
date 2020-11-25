@@ -20,6 +20,7 @@ def generate_model_rollouts(
     start_robot,
     start_sim,
     goal_imgs,
+    opt_traj=None,
     ret_obs=False,
     ret_step_cost=False,
     suppress_print=True,
@@ -46,8 +47,8 @@ def generate_model_rollouts(
     all_obs = torch.zeros((N, T, 3, 128, 64))  # N x T x obs
     all_step_cost = np.zeros((N, T))  # N x T x 1
     goal_imgs = torch.stack([to_tensor(g) for g in goal_imgs]).to(dev)
-    # if cfg.demo_cost:  # for debug comparison
-    #     optimal_traj = torch.stack([to_tensor(g) for g in cfg.optimal_traj]).to(dev)
+    if opt_traj is not None:  # for debug comparison
+        opt_traj = torch.stack([to_tensor(g) for g in opt_traj]).to(dev)
     start_mask = torch.from_numpy(start_mask).unsqueeze_(0)
     optimal_sum_cost = 0
     if not suppress_print:
@@ -72,7 +73,7 @@ def generate_model_rollouts(
         for t in range(T):
             ac = actions[:, t]  # (J, |A|)
             # compute the next img
-            next_img = model.next_img(curr_img, curr_robot, ac, t == 0)
+            next_img = model.next_img(curr_img, curr_robot, ac, True)
             # compute the future robot dynamics using mujoco
             for j in range(num_batch):
                 next_robot, next_mask, next_sim = env.robot_kinematics(
@@ -84,8 +85,8 @@ def generate_model_rollouts(
             # compute the img costs
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
-            # if cfg.demo_cost:  # for debug comparison
-            #     opt_img = optimal_traj[goal_idx]
+            if opt_traj is not None:  # for debug comparison
+                opt_img = opt_traj[goal_idx]
 
             if cfg.reward_type == "inpaint":
                 rew = (
@@ -94,13 +95,13 @@ def generate_model_rollouts(
                     .cpu()
                     .numpy()
                 )  # N x 1
-                # if cfg.demo_cost and b == 0:
-                #     optimal_sum_cost += (
-                #         -(torch.sum((255 * (opt_img - goal_img)) ** 2))
-                #         .sqrt()
-                #         .cpu()
-                #         .numpy()
-                #     )
+                if opt_traj is not None and b == 0:
+                    optimal_sum_cost += (
+                        -(torch.sum((255 * (opt_img - goal_img)) ** 2))
+                        .sqrt()
+                        .cpu()
+                        .numpy()
+                    )
 
             sum_cost[start:end] += rew
             if ret_obs:
@@ -137,6 +138,7 @@ def generate_env_rollouts(
     ret_obs=False,
     ret_step_cost=False,
     suppress_print=True,
+    opt_traj=None
 ):
     """
     Executes the action sequences on the environment. Used by the ground truth
@@ -170,16 +172,16 @@ def generate_env_rollouts(
         for t in range(T):
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
-            # if cfg.demo_cost:  # for debug comparison
-            #     opt_img = cfg.optimal_traj[goal_idx]
+            if opt_traj is not None:  # for debug comparison
+                opt_img = opt_traj[goal_idx]
             action = action_sequences[ep_num, t].numpy()
             ob, _, _, _ = env.step(action)
 
             img = ob["observation"]
             if cfg.reward_type == "inpaint":
                 rew = -np.linalg.norm(img - goal_img)
-                # if cfg.demo_cost:
-                #     optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
+                if opt_traj is not None:
+                    optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
 
             sum_cost[ep_num] += rew
             if ret_obs:
