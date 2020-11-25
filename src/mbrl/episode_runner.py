@@ -9,7 +9,7 @@ import imageio
 import numpy as np
 import torch
 from src.env.fetch.clutter_push import ClutterPushEnv
-from src.prediction.losses import InpaintBlurCost
+from src.prediction.losses import InpaintBlurCost, img_diff, weighted_img_diff
 from src.utils.plot import putText
 from torchvision.datasets.folder import has_file_allowed_extension
 from src.cem.demo_cem import DemoCEMPolicy
@@ -47,8 +47,9 @@ class EpisodeRunner(object):
         logger = self._logger
         demo = self._load_demo(demo_path)
         # use for debugging
-        optimal_traj = demo["object_inpaint_demo"][:: self._timescale]
-        self.demo_goal_imgs = demo["object_only_demo"][:: self._timescale]
+        optimal_traj = demo["object_inpaint_demo"][::self._timescale]
+        # TODO: create an argument option for loading which image
+        self.demo_goal_imgs = demo["robot_demo"][:: self._timescale]
         num_goals = len(self.demo_goal_imgs)
         pushed_obj = demo["pushed_obj"] + ":joint"
         goal_obj_poses = demo[pushed_obj][:: self._timescale]
@@ -88,12 +89,15 @@ class EpisodeRunner(object):
             logger.info(f"\tStep {self._step + 1}")
             goal_imgs = self.demo_goal_imgs[self._g_i :]
             goal_img = goal_imgs[0]
+            goal_masks = demo["masks"][self._g_i:]
+            goal_mask = goal_masks[0]
+
             if config.demo_cost:
                 config.optimal_traj = optimal_traj[self._g_i :]
 
             # Use CEM to find the best action(s)
             actions = self.policy.get_action(
-                curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, ep_num, self._step
+                curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, ep_num, self._step
             )
             # Execute the planned actions. Usually only 1 action
             for action in actions:
@@ -103,7 +107,8 @@ class EpisodeRunner(object):
                 curr_sim = obs["state"]
                 curr_mask = obs["mask"]
                 # Log the cost, change in object pose, change in goal
-                rew = self.cost(curr_img, goal_img)
+                # rew = self.cost(curr_img, goal_img)
+                rew = -weighted_img_diff(curr_img, goal_img, curr_mask, goal_mask, 0.001, thres=3)
                 curr_obj_pos = obs[pushed_obj][:2]
                 goal_obj_pos = goal_obj_poses[self._g_i][:2]
                 final_goal_obj_pos = goal_obj_poses[-1][:2]
@@ -124,9 +129,9 @@ class EpisodeRunner(object):
                 finish_demo = False
                 if config.sequential_subgoal:
                     # just choose the next goal
-                    print("img distance =", np.linalg.norm(curr_img - goal_img))
+                    print("weighted img distance =", -rew)
                     # config.subgoal_threshold = 5000 is too small, so that for some experiments, goal_img is not updated
-                    if np.linalg.norm(curr_img - goal_img) < config.subgoal_threshold:
+                    if -rew < config.subgoal_threshold:
                         self._g_i += 1
                         finish_demo = self._g_i >= num_goals
                 else:
@@ -223,7 +228,8 @@ class EpisodeRunner(object):
             demo["pushed_obj"] = hf.attrs["pushed_obj"]
             demo["actions"] = hf["actions"][:]
             demo["states"] = hf["states"][:]
-            # demo["robot_demo"] = hf["robot_demo"][:]
+            demo["robot_demo"] = hf["robot_demo"][:]
+            demo["masks"] = hf["masks"][:]
             for k, v in hf.items():
                 if "object" in k:
                     demo[k] = v[:]

@@ -15,7 +15,8 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
     """
     This generates demos, like random moving or block pushing.
 
-    We first have the robot perform the behavior, save the trajectory, and render it with the robot inpainted, and also render with the robot in scene.
+    We first have the robot perform the behavior, save the trajectory, 
+    and render it with the robot inpainted, and also render with the robot in scene.
     Next, we replay the trajectory, but move the robot out of scene and move the block without the robot.
 
     This results in 3 types of video for the dataset.
@@ -43,7 +44,10 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
         path = os.path.join(config.demo_dir, name)
         history = env.generate_demo(behavior)
         record_path = f"videos/{behavior}_{config.seed}_{i}.gif"
-        obs = history["obs"]  # array of observation dictionaries
+
+        # history["obs"]: array of observation dictionaries
+        # dict_keys(['observation', 'robot', 'state', 'object0:joint', 'object1:joint', 'object2:joint'])
+        obs = history["obs"]
         len_stats.append(len(obs))
         object_inpaint_demo = []
         robot = []
@@ -52,8 +56,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
         robot_states = []
         masks = []
         for ob in obs:
-            if config.norobot_pixels_ob:
-                masks.append(ob["mask"])
+            masks.append(ob["mask"])
             robot_states.append(ob["robot"])
             object_inpaint_demo.append(ob["observation"])
             states.append(ob["state"])
@@ -114,8 +117,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
             create_dataset("states", data=states)
             create_dataset("actions", data=actions)
             create_dataset("robot_state", data=robot_states)
-            if config.norobot_pixels_ob:
-                create_dataset("masks", data=masks)
+            create_dataset("masks", data=masks)
             # ground truth object demo
             create_dataset("object_only_demo", data=object_only_demo)
             # inpainted object demo
@@ -163,17 +165,20 @@ def collect_demo_cem_data():
     """
     Used for collecting the demo dataset for demo CEM
     """
-    num_demo = 50  # per worker
-    num_workers = 2
-    record = False
-    behavior = "straight_push"
+    num_demo = 100  # per worker
+    num_workers = 1
+    record = True
+    behavior = "random_robot_moving_object"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
 
     config, _ = argparser()
-    config.norobot_pixels_ob = True  # whether to inpaint the robot in observation
+    # Whether to inpaint the robot pixels in the observation.
+    # Remember to change the corresponding argument when
+    # running src.mbrl.episode_runner
+    config.norobot_pixels_ob = True
 
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/straight_push"
+    config.demo_dir = "demos/random_robot_moving_object"
     config.most_recent_background = False  # use static or mr background for inpaint
     config.multiview = True
     config.img_dim = 64
@@ -214,5 +219,5 @@ if __name__ == "__main__":
     """
     Use this to collect demonstrations for svg / demo cem experiments
     """
-    collect_svg_data()
-    # collect_demo_cem_data()
+    # collect_svg_data()
+    collect_demo_cem_data()

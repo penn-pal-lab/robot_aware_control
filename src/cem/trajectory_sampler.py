@@ -5,9 +5,10 @@ import numpy as np
 import torch
 from torch import cat
 import torch.multiprocessing as mp
-from src.prediction.models.dynamics import DynamicsModel
 from torchvision.transforms.functional import to_tensor
 
+from src.prediction.models.dynamics import DynamicsModel
+from src.prediction.losses import img_diff, weighted_img_diff
 
 @torch.no_grad()
 def generate_model_rollouts(
@@ -134,6 +135,7 @@ def generate_env_rollouts(
     env,
     action_sequences,
     goal_imgs,
+    goal_masks,
     ret_obs=False,
     ret_step_cost=False,
     suppress_print=True,
@@ -170,6 +172,7 @@ def generate_env_rollouts(
         for t in range(T):
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
+            goal_mask = goal_masks[goal_idx]
             # if cfg.demo_cost:  # for debug comparison
             #     opt_img = cfg.optimal_traj[goal_idx]
             action = action_sequences[ep_num, t].numpy()
@@ -177,7 +180,9 @@ def generate_env_rollouts(
 
             img = ob["observation"]
             if cfg.reward_type == "inpaint":
-                rew = -np.linalg.norm(img - goal_img)
+                # TODO: change this reward function
+                rew = -weighted_img_diff(img, goal_img, ob["mask"], goal_mask, 0.001, thres=3)
+                # rew = -np.linalg.norm(img - goal_img)
                 # if cfg.demo_cost:
                 #     optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
 

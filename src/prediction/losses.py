@@ -67,3 +67,32 @@ class InpaintBlurCost:
 
         cost = scale * mse_criterion(img, goal)
         return cost
+
+
+def img_diff(img1, img2, thres):
+    """
+    img: numpy array
+    """
+    diff = np.abs(img1 - img2)
+    return np.sum(diff > thres) / img1.size
+
+
+def weighted_img_diff(img1, img2, robot_mask1, robot_mask2, robot_w, thres):
+    """
+    img: numpy array
+    robot_mask: numpy array of bools
+    robot_w: weight for robot-region image loss
+    """
+    total_mask = robot_mask1 | robot_mask2
+    robot_region1 = img1[total_mask]
+    robot_region2 = img2[total_mask]
+    robot_diff = np.abs(robot_region1 - robot_region2)
+    robot_loss = np.sum(robot_diff > thres) / np.sum(total_mask) # larger than 1 because RGB
+
+    non_robot_region1 = img1[~total_mask]
+    non_robot_region2 = img2[~total_mask]
+    non_robot_diff = np.abs(non_robot_region1 - non_robot_region2)
+    non_robot_loss = np.sum(non_robot_diff > thres) / np.sum(~total_mask)
+
+    # print(f"robot_loss: {robot_loss:.2f}, non_robot_loss: {non_robot_loss:.2f}")
+    return robot_w * robot_loss + (1-robot_w) * non_robot_loss

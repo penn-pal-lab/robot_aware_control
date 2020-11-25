@@ -84,7 +84,7 @@ class DemoCEMPolicy(object):
         self.env.set_flattened_state(old_state)
 
     def get_action(
-        self, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, ep_num, step
+        self, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, ep_num, step
     ):
         """
         curr_img: used by learned model, not needed for ground truth model
@@ -108,7 +108,7 @@ class DemoCEMPolicy(object):
             act_seq = m.sample((self.J,))  # of shape (J, L, A)
             # Generate J rollouts
             rollouts = self._get_rollouts(
-                act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs
+                act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks
             )
             # Select top K action sequences based on cumulative cost
             costs = torch.from_numpy(rollouts["sum_cost"])
@@ -127,13 +127,13 @@ class DemoCEMPolicy(object):
         return mean[: self.R, :].numpy()
 
     def _get_rollouts(
-        self, act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs
+        self, act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks
     ):
         """
         Return the rollouts either from simulator or learned model
         """
         if self.use_env_dynamics:
-            rollouts = generate_env_rollouts(self.cfg, self.env, act_seq, goal_imgs)
+            rollouts = generate_env_rollouts(self.cfg, self.env, act_seq, goal_imgs, goal_masks)
         else:
             rollouts = generate_model_rollouts(
                 self.cfg,
