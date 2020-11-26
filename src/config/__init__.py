@@ -230,6 +230,8 @@ def add_cem_arguments(parser):
     parser.add_argument("--demo_cost", type=str2bool, default=False)
     parser.add_argument("--demo_timescale", type=int, default=1)
     parser.add_argument("--action_repeat", type=int, default=1)
+    parser.add_argument("--demo_type", default="object_only_demo", choices=["object_inpaint_demo", "object_only_demo", "robot_demo"])
+
 
 
 def argparser():

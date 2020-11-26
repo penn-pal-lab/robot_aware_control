@@ -167,6 +167,8 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 ).copy()
             if self._norobot_pixels_ob:
                 obs["mask"] = self._seg_mask
+            else:
+                obs["mask"] = self.get_robot_mask()
             if self._depth_ob:
                 obs["world_coord"] = world_coord
             return obs

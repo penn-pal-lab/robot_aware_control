@@ -48,7 +48,7 @@ class EpisodeRunner(object):
         demo = self._load_demo(demo_path)
         # use for debugging
         demo_opt_traj = demo["object_inpaint_demo"][:: self._timescale]
-        self.demo_goal_imgs = demo["object_only_demo"][:: self._timescale]
+        self.demo_goal_imgs = demo[config.demo_type][:: self._timescale]
         num_goals = len(self.demo_goal_imgs)
         pushed_obj = demo["pushed_obj"] + ":joint"
         goal_obj_poses = demo[pushed_obj][:: self._timescale]
@@ -230,7 +230,9 @@ class EpisodeRunner(object):
             demo["pushed_obj"] = hf.attrs["pushed_obj"]
             demo["actions"] = hf["actions"][:]
             demo["states"] = hf["states"][:]
-            # demo["robot_demo"] = hf["robot_demo"][:]
+            # import ipdb; ipdb.set_trace()
+            # demo[self._config.demo_type] = hf[self._config.demo_type]
+            demo["robot_demo"] = hf["robot_demo"][:]
             for k, v in hf.items():
                 if "object" in k:
                     demo[k] = v[:]
