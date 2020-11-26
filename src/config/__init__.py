@@ -207,7 +207,7 @@ def add_dataset_arguments(parser):
     parser.add_argument("--temporal_beta", type=float, default=1)
     parser.add_argument("--demo_length", type=int, default=12)
     parser.add_argument("--action_noise", type=float, default=0)
-    parser.add_argument("--video_type", default="object_inpaint_demo", choices=["object_inpaint_demo", "robot_demo"])
+    parser.add_argument("--video_type", default="object_inpaint_demo", choices=["object_inpaint_demo", "robot_demo", "object_only_demo"])
 
 
 
