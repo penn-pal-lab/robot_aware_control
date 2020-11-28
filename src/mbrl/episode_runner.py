@@ -9,7 +9,7 @@ import imageio
 import numpy as np
 import torch
 from src.env.fetch.clutter_push import ClutterPushEnv
-from src.prediction.losses import InpaintBlurCost, img_diff, weighted_img_diff
+from src.prediction.losses import InpaintBlurCost, img_diff, weighted_img_diff, pose_img_cost
 from src.utils.plot import putText
 from torchvision.datasets.folder import has_file_allowed_extension
 from src.cem.demo_cem import DemoCEMPolicy
@@ -45,6 +45,7 @@ class EpisodeRunner(object):
         config = self._config
         env = self._env
         logger = self._logger
+        # remember to change load_demo in order to load more data from demonstration
         demo = self._load_demo(demo_path)
         # use for debugging
         optimal_traj = demo["object_inpaint_demo"][::self._timescale]
@@ -91,24 +92,28 @@ class EpisodeRunner(object):
             goal_img = goal_imgs[0]
             goal_masks = demo["masks"][self._g_i:]
             goal_mask = goal_masks[0]
+            goal_robots = demo["robot_state"][self._g_i:]
+            goal_robot = goal_robots[0]
 
             if config.demo_cost:
                 config.optimal_traj = optimal_traj[self._g_i :]
 
             # Use CEM to find the best action(s)
             actions = self.policy.get_action(
-                curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, ep_num, self._step
+                curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, goal_robots, ep_num, self._step
             )
             # Execute the planned actions. Usually only 1 action
             for action in actions:
                 obs, _, _, _ = env.step(action)
                 curr_img = obs["observation"]
-                curr_robot = obs["robot"]
+                curr_robot = obs["robot"]  # [grip_pos, grip_velp]
+                # grip_pos: (x, y, z), x points inwards, y points to the left
                 curr_sim = obs["state"]
                 curr_mask = obs["mask"]
                 # Log the cost, change in object pose, change in goal
-                # rew = self.cost(curr_img, goal_img)
-                rew = -weighted_img_diff(curr_img, goal_img, curr_mask, goal_mask, 0.001, thres=3)
+                # TODO: add a new argument for selecting cost function
+                # Change the corresponding reward function in trajectory_sampler.py
+                rew = -pose_img_cost(curr_img, goal_img, curr_mask, goal_mask, curr_robot, goal_robot, robot_w=0.1, thres=3)
                 curr_obj_pos = obs[pushed_obj][:2]
                 goal_obj_pos = goal_obj_poses[self._g_i][:2]
                 final_goal_obj_pos = goal_obj_poses[-1][:2]
@@ -228,6 +233,7 @@ class EpisodeRunner(object):
             demo["pushed_obj"] = hf.attrs["pushed_obj"]
             demo["actions"] = hf["actions"][:]
             demo["states"] = hf["states"][:]
+            demo["robot_state"] = hf["robot_state"][:]
             demo["robot_demo"] = hf["robot_demo"][:]
             demo["masks"] = hf["masks"][:]
             for k, v in hf.items():

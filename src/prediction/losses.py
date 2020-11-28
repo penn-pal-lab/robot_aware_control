@@ -48,7 +48,7 @@ class InpaintBlurCost:
     def _blur_multiview(self, img):
         img = img.cpu().permute(1, 2, 0)
         img1 = img[: self.img_dim]
-        img2 = img[self.img_dim :]
+        img2 = img[self.img_dim:]
         blur_img1 = self._blur(img1)
         blur_img2 = self._blur(img2)
         blur_img = np.concatenate([blur_img1, blur_img2])
@@ -77,17 +77,18 @@ def img_diff(img1, img2, thres):
     return np.sum(diff > thres) / img1.size
 
 
-def weighted_img_diff(img1, img2, robot_mask1, robot_mask2, robot_w, thres):
+def weighted_img_diff(img1, img2, robot_mask1, robot_mask2, robot_w=0.01, thres=3):
     """
-    img: numpy array
-    robot_mask: numpy array of bools
-    robot_w: weight for robot-region image loss
+    Inputs:
+        img: numpy array
+        robot_mask: numpy array of bools
+        robot_w: weight for robot-region image loss, default to 0.01
     """
     total_mask = robot_mask1 | robot_mask2
     robot_region1 = img1[total_mask]
     robot_region2 = img2[total_mask]
     robot_diff = np.abs(robot_region1 - robot_region2)
-    robot_loss = np.sum(robot_diff > thres) / np.sum(total_mask) # larger than 1 because RGB
+    robot_loss = np.sum(robot_diff > thres) / np.sum(total_mask)  # larger than 1 because RGB
 
     non_robot_region1 = img1[~total_mask]
     non_robot_region2 = img2[~total_mask]
@@ -95,4 +96,24 @@ def weighted_img_diff(img1, img2, robot_mask1, robot_mask2, robot_w, thres):
     non_robot_loss = np.sum(non_robot_diff > thres) / np.sum(~total_mask)
 
     # print(f"robot_loss: {robot_loss:.2f}, non_robot_loss: {non_robot_loss:.2f}")
-    return robot_w * robot_loss + (1-robot_w) * non_robot_loss
+    return robot_w * robot_loss + (1 - robot_w) * non_robot_loss
+
+
+def pose_img_cost(img1, img2, robot_mask1, robot_mask2, curr_eef, goal_eef, robot_w, thres=3):
+    """
+    Inputs:
+        img: numpy array
+        robot_mask: numpy array of bools
+        robot_w: weight for robot-region image loss
+        curr_eef: current end-effector pose, numpy array
+        goal_eef: target end-effector pose, numpy array
+    """
+    total_mask = robot_mask1 | robot_mask2
+    robot_loss = np.linalg.norm(curr_eef - goal_eef)
+
+    non_robot_region1 = img1[~total_mask]
+    non_robot_region2 = img2[~total_mask]
+    non_robot_diff = np.abs(non_robot_region1 - non_robot_region2)
+    non_robot_loss = np.sum(non_robot_diff > thres) / np.sum(~total_mask)
+
+    return robot_w * robot_loss + (1 - robot_w) * non_robot_loss
