@@ -116,4 +116,14 @@ def pose_img_cost(img1, img2, robot_mask1, robot_mask2, curr_eef, goal_eef, robo
     non_robot_diff = np.abs(non_robot_region1 - non_robot_region2)
     non_robot_loss = np.sum(non_robot_diff > thres) / np.sum(~total_mask)
 
+    # print(f"robot_loss: {robot_loss:.2f}, non_robot_loss: {non_robot_loss:.2f}")
     return robot_w * robot_loss + (1 - robot_w) * non_robot_loss
+
+
+def gt_obj_cost(gt_obj_poses, curr_obj_poses):
+    """
+    Inputs:
+        poses: n * 7 numpy array
+    """
+    dist = np.linalg.norm(gt_obj_poses - curr_obj_poses, axis = 1)
+    return np.sum(dist)

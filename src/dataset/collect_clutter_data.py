@@ -168,7 +168,7 @@ def collect_demo_cem_data():
     num_demo = 100  # per worker
     num_workers = 1
     record = True
-    behavior = "random_robot_moving_object"
+    behavior = "straight_push"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
 
     config, _ = argparser()
@@ -178,7 +178,7 @@ def collect_demo_cem_data():
     config.norobot_pixels_ob = True
 
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/random_robot_moving_object"
+    config.demo_dir = "demos/straight_push"
     config.most_recent_background = False  # use static or mr background for inpaint
     config.multiview = True
     config.img_dim = 64

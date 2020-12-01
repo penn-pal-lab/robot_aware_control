@@ -8,7 +8,7 @@ import torch.multiprocessing as mp
 from torchvision.transforms.functional import to_tensor
 
 from src.prediction.models.dynamics import DynamicsModel
-from src.prediction.losses import img_diff, weighted_img_diff, pose_img_cost
+from src.prediction.losses import img_diff, weighted_img_diff, pose_img_cost, gt_obj_cost
 
 @torch.no_grad()
 def generate_model_rollouts(
@@ -137,6 +137,7 @@ def generate_env_rollouts(
     goal_imgs,
     goal_masks=None,
     goal_robots=None,
+    goal_objs_seqs=None,
     ret_obs=False,
     ret_step_cost=False,
     suppress_print=True,
@@ -159,7 +160,8 @@ def generate_env_rollouts(
     T = len(action_sequences[0])
     sum_cost = np.zeros(N)
     all_obs = []  # N x T x obs
-    all_step_cost = []  # N x T x 1
+    all_step_cost = []  # N x T
+    all_step_gt_cost = []  # N x T
 
     bg_img = env._background_img.copy()
     env_state = env.get_flattened_state()
@@ -169,12 +171,14 @@ def generate_env_rollouts(
     for ep_num in range(N):
         ep_obs = []
         ep_cost = []
+        ep_gt_cost = []
         optimal_sum_cost = 0
         for t in range(T):
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
             goal_mask = goal_masks[goal_idx]
             goal_robot = goal_robots[goal_idx]
+            goal_objs = goal_objs_seqs[goal_idx]
             # if cfg.demo_cost:  # for debug comparison
             #     opt_img = cfg.optimal_traj[goal_idx]
             action = action_sequences[ep_num, t].numpy()
@@ -182,10 +186,14 @@ def generate_env_rollouts(
 
             img = ob["observation"]
             curr_robot = ob["robot"]
+            curr_obj_poses = [ob['object0:joint'], ob['object1:joint'], ob['object2:joint']]
+            curr_obj_poses = np.asarray(curr_obj_poses)
             if cfg.reward_type == "inpaint":
                 # TODO: change this reward function
-                rew = -pose_img_cost(img, goal_img, ob["mask"], goal_mask, curr_robot, goal_robot, robot_w=0.1, thres=3)
-                # rew = -np.linalg.norm(img - goal_img)
+                rew = -pose_img_cost(img, goal_img, ob["mask"], goal_mask, curr_robot, goal_robot, robot_w=0.0, thres=3)
+                gt_cost = 0.0
+                if goal_objs_seqs is not None:
+                    gt_cost = gt_obj_cost(goal_objs, curr_obj_poses)
                 # if cfg.demo_cost:
                 #     optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
 
@@ -193,10 +201,12 @@ def generate_env_rollouts(
             if ret_obs:
                 ep_obs.append(img)
             if ret_step_cost:
-                ep_cost.append(rew)
+                ep_cost.append(-rew)
+                ep_gt_cost.append(gt_cost)
 
         all_obs.append(ep_obs)
         all_step_cost.append(ep_cost)
+        all_step_gt_cost.append(ep_gt_cost)
         env.set_flattened_state(env_state.copy())  # reset env to before rollout
         env._background_img = bg_img.copy()
     if not suppress_print:
@@ -212,7 +222,8 @@ def generate_env_rollouts(
     if ret_obs:
         rollouts["obs"] = np.asarray(all_obs)
     if ret_step_cost:
-        rollouts["step_cost"] = np.asarray(all_step_cost)
+        rollouts["step_cost"] = np.asarray(all_step_cost)  # cfg.action_candidates x 2(horizon?)
+        rollouts["step_gt_cost"] = np.asarray(all_step_gt_cost)
     return rollouts
 
 

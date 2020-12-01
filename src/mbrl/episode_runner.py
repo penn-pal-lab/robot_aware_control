@@ -16,6 +16,9 @@ from src.cem.demo_cem import DemoCEMPolicy
 
 import wandb
 
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
 
 class EpisodeRunner(object):
     """
@@ -50,7 +53,12 @@ class EpisodeRunner(object):
         # use for debugging
         optimal_traj = demo["object_inpaint_demo"][::self._timescale]
         # TODO: create an argument option for loading which image
-        self.demo_goal_imgs = demo["robot_demo"][:: self._timescale]
+        self.demo_goal_imgs = demo["robot_demo"][::self._timescale]
+        self.demo_goal_masks = demo["masks"][::self._timescale]
+        self.demo_goal_robots = demo["robot_state"][::self._timescale]
+        self.demo_obj0_poses = demo["object0:joint"][::self._timescale]
+        self.demo_obj1_poses = demo["object1:joint"][::self._timescale]
+        self.demo_obj2_poses = demo["object2:joint"][::self._timescale]
         num_goals = len(self.demo_goal_imgs)
         pushed_obj = demo["pushed_obj"] + ":joint"
         goal_obj_poses = demo[pushed_obj][:: self._timescale]
@@ -84,24 +92,35 @@ class EpisodeRunner(object):
         gif = []
         self._add_img_to_gif(gif, curr_img, goal_img)
 
+        all_gt_costs_data = []
+        all_metric_costs_data = []
+
         logger.info(f"=== Episode {ep_num}, {demo_name} ===")
         logger.info(f"Pushing {demo['pushed_obj']} for {(push_length * 100):.1f} cm\n")
         while True:
             logger.info(f"\tStep {self._step + 1}")
             goal_imgs = self.demo_goal_imgs[self._g_i :]
             goal_img = goal_imgs[0]
-            goal_masks = demo["masks"][self._g_i:]
+            goal_masks = self.demo_goal_masks[self._g_i:]
             goal_mask = goal_masks[0]
-            goal_robots = demo["robot_state"][self._g_i:]
+            goal_robots = self.demo_goal_robots[self._g_i:]
             goal_robot = goal_robots[0]
+            goal_objs_seqs = []
+            for t in range(self._g_i, len(self.demo_obj0_poses)):
+                goal_objs = [self.demo_obj0_poses[t], self.demo_obj1_poses[t], self.demo_obj2_poses[t]]
+                goal_objs = np.asarray(goal_objs)
+                goal_objs_seqs.append(goal_objs)
 
             if config.demo_cost:
                 config.optimal_traj = optimal_traj[self._g_i :]
 
             # Use CEM to find the best action(s)
-            actions = self.policy.get_action(
-                curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, goal_robots, ep_num, self._step
+            actions, gt_costs_data, metric_costs_data = self.policy.get_action(
+                curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, goal_robots, ep_num, self._step, goal_objs_seqs=goal_objs_seqs
             )
+            all_gt_costs_data += gt_costs_data
+            all_metric_costs_data += metric_costs_data
+
             # Execute the planned actions. Usually only 1 action
             for action in actions:
                 obs, _, _, _ = env.step(action)
@@ -113,7 +132,7 @@ class EpisodeRunner(object):
                 # Log the cost, change in object pose, change in goal
                 # TODO: add a new argument for selecting cost function
                 # Change the corresponding reward function in trajectory_sampler.py
-                rew = -pose_img_cost(curr_img, goal_img, curr_mask, goal_mask, curr_robot, goal_robot, robot_w=0.1, thres=3)
+                rew = -pose_img_cost(curr_img, goal_img, curr_mask, goal_mask, curr_robot, goal_robot, robot_w=0.0, thres=3)
                 curr_obj_pos = obs[pushed_obj][:2]
                 goal_obj_pos = goal_obj_poses[self._g_i][:2]
                 final_goal_obj_pos = goal_obj_poses[-1][:2]
@@ -181,15 +200,42 @@ class EpisodeRunner(object):
                 config.video_dir, f"ep_{ep_num}_{'s' if finish_demo else 'f'}.gif"
             )
             imageio.mimwrite(gif_path, gif)
+        return all_gt_costs_data, all_metric_costs_data
 
     def run(self):
         """
         Run all episodes and log their metrics
         """
+        all_gt_costs_data = []
+        all_metric_costs_data = []
+
         files = self._load_demo_dataset(self._config)
         for i in range(self._config.num_episodes):
             demo_name, demo_path = files[i]
-            self.run_episode(i, demo_name, demo_path)
+            gt_costs_data, metric_costs_data = self.run_episode(i, demo_name, demo_path)
+            all_gt_costs_data += gt_costs_data
+            all_metric_costs_data += metric_costs_data
+
+        all_gt_costs_data = np.asarray(all_gt_costs_data).reshape(-1)
+        all_metric_costs_data = np.asarray(all_metric_costs_data).reshape(-1)
+        # plt.figure()
+        # plt.plot(all_gt_costs_data, all_metric_costs_data, ".")
+        # plt.xlabel("ground truth cost")
+        # plt.ylabel("our metric")
+        # plt.savefig("cost_visual.png")
+        # plt.show()
+
+        heatmap, xedges, yedges = np.histogram2d(all_gt_costs_data, all_metric_costs_data, bins=100)
+        extent = [0.0, 0.4, 0.0, 0.1]
+
+        plt.clf()
+        plt.imshow(heatmap.T, extent=extent, origin='lower')
+        plt.xlabel("ground truth cost")
+        plt.ylabel("our metric")
+        plt.savefig("cost_visual.png")
+        plt.show()
+
+
         self._env.close()
         self._logger.info("\n\n### Summary ###")
         # histograms = {"reward", "object_dist", "gripper_dist"}

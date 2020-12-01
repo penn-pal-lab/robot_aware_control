@@ -84,7 +84,7 @@ class DemoCEMPolicy(object):
         self.env.set_flattened_state(old_state)
 
     def get_action(
-        self, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, goal_robots, ep_num, step
+        self, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, goal_robots, ep_num, step, goal_objs_seqs=None
     ):
         """
         curr_img: used by learned model, not needed for ground truth model
@@ -101,6 +101,9 @@ class DemoCEMPolicy(object):
         mean = torch.zeros(self.L, self.A)
         std = torch.ones(self.L, self.A)
         mean_top_costs = []  # for debugging
+
+        gt_costs_data = []
+        metric_costs_data = []
         # Optimization loop
         for _ in range(self.I):  # Use tqdm to track progress
             # Sample J candidate action sequence
@@ -108,8 +111,10 @@ class DemoCEMPolicy(object):
             act_seq = m.sample((self.J,))  # of shape (J, L, A)
             # Generate J rollouts
             rollouts = self._get_rollouts(
-                act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, goal_robots
+                act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, goal_robots, goal_objs_seqs
             )
+            gt_costs_data.append(rollouts["step_gt_cost"])
+            metric_costs_data.append(rollouts["step_cost"])
             # Select top K action sequences based on cumulative cost
             costs = torch.from_numpy(rollouts["sum_cost"])
             top_costs, top_idx = costs.topk(self.K)
@@ -124,16 +129,16 @@ class DemoCEMPolicy(object):
             f"\tMeans of top costs: {mean_top_costs} Opt return: {rollouts['optimal_sum_cost']:.3f}"
         )
         # Return first R actions, where R is number of actions to take before replanning
-        return mean[: self.R, :].numpy()
+        return mean[: self.R, :].numpy(), gt_costs_data, metric_costs_data
 
     def _get_rollouts(
-        self, act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, goal_robots
+        self, act_seq, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, goal_masks, goal_robots, goal_objs_seqs=None
     ):
         """
         Return the rollouts either from simulator or learned model
         """
         if self.use_env_dynamics:
-            rollouts = generate_env_rollouts(self.cfg, self.env, act_seq, goal_imgs, goal_masks, goal_robots)
+            rollouts = generate_env_rollouts(self.cfg, self.env, act_seq, goal_imgs, goal_masks, goal_robots, goal_objs_seqs, ret_step_cost=True)
         else:
             rollouts = generate_model_rollouts(
                 self.cfg,
