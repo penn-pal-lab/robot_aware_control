@@ -45,7 +45,7 @@ class VideoDataset(data.Dataset):
                 actions = np.clip(actions, -1, 1)
                 # all_actions.append(actions)
 
-                masks = np.zeros(masks_shape, dtype=np.bool)
+                masks = np.zeros(masks_shape, dtype=np.float32)
                 hf["masks"].read_direct(masks)
 
                 self._data.append((frames, robot, actions, masks))
