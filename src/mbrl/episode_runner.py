@@ -114,10 +114,10 @@ class EpisodeRunner(object):
                 final_goal_obj_pos = goal_obj_poses[-1][:2]
                 obj_dist = np.linalg.norm(curr_obj_pos - goal_obj_pos)
                 final_obj_dist = np.linalg.norm(curr_obj_pos - final_goal_obj_pos)
-                print(
+                logger.info(
                     f"Current goal: {self._g_i}/{num_goals-1}, dist to goal: {obj_dist:.4f}, dist to last goal: {final_obj_dist:.4f}"
                 )
-                print(f"Reward:{rew:.2f}")
+                logger.info(f"Reward:{rew:.2f}")
                 if cfg.record_trajectory:
                     trajectory["obs"].append(obs)
                     trajectory["ac"].append(action)
