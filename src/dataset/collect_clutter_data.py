@@ -187,17 +187,17 @@ def collect_svg_data():
     Collect 7k noisy pushing, 3k truly random demonstrations
     Each demo is around 7-14 steps long, and the dataset will be around 100k images total
     """
-    num_workers = 10
-    num_push = 10000 // num_workers
+    num_workers = 1
+    num_push = 1000 // num_workers
     num_rand = 3000 // num_workers
     record = False
     ep_len = 12  # gonna be off by 1 because of reset but whatever
 
     config, _ = argparser()
     config.norobot_pixels_ob = True
-    config.inpaint_eef = False
+    config.inpaint_eef = True
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/svg_noeef_inpaint"
+    config.demo_dir = "demos/mask_svg_train"
     config.most_recent_background = False
     config.multiview = True
     config.img_dim = 64

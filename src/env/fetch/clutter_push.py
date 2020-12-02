@@ -964,7 +964,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             # add some random noise to ac
             if noise > 0:
                 d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
-            ac = d[:2] * speed
+            ac = np.clip(d[:2] * speed, -1, 1)
             history["ac"].append(ac)
             obs, _, _, info = self.step(ac)
             history["obs"].append(obs)

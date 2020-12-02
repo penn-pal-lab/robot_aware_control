@@ -20,6 +20,7 @@ class VideoDataset(data.Dataset):
         self._video_type = config.video_type
 
         # try loading everything into RAM
+        # all_actions = []
         for path in tqdm(files, desc="loading data into ram"):
             with h5py.File(path, "r") as hf:
                 # first check how long video is
@@ -41,11 +42,23 @@ class VideoDataset(data.Dataset):
 
                 actions = np.zeros(actions_shape, dtype=np.float32)
                 hf["actions"].read_direct(actions)
+                actions = np.clip(actions, -1, 1)
+                # all_actions.append(actions)
 
                 masks = np.zeros(masks_shape, dtype=np.bool)
                 hf["masks"].read_direct(masks)
 
                 self._data.append((frames, robot, actions, masks))
+
+        # visualize the action distribution
+        # import matplotlib
+        # import matplotlib.pyplot as plt
+
+        # all_actions = np.concatenate(all_actions)
+        # plt.hist2d(x=all_actions[:, 0], y=all_actions[:,1])
+        # plt.scatter(x=all_actions[:, 0], y=all_actions[:,1])
+        # plt.show()
+
 
     def __getitem__(self, index):
         path = self._files[index]
