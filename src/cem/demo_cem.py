@@ -119,7 +119,7 @@ class DemoCEMPolicy(object):
             m = Normal(mean, std)
             act_seq = m.sample((self.J,))  # of shape (J, L, A)
             act_seq[-1] = 0 # always have a "do nothing" action sequence
-            act_seq.clip_(-1,1) # always between -1 and 1
+            act_seq.clamp_(-1,1) # always between -1 and 1
             # Generate J rollouts
             rollouts = self._get_rollouts(
                 act_seq,
