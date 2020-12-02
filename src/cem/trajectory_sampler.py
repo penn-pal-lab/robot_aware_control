@@ -73,7 +73,8 @@ def generate_model_rollouts(
         for t in range(T):
             ac = actions[:, t]  # (J, |A|)
             # compute the next img
-            next_img = model.next_img(curr_img, curr_robot, ac, True)
+            use_skip = t % 1 == 0
+            next_img = model.next_img(curr_img, curr_robot, ac, use_skip)
             # compute the future robot dynamics using mujoco
             for j in range(num_batch):
                 next_robot, next_mask, next_sim = env.robot_kinematics(
@@ -88,7 +89,9 @@ def generate_model_rollouts(
             if opt_traj is not None:  # for debug comparison
                 opt_img = opt_traj[goal_idx]
 
-            if cfg.reward_type == "inpaint":
+            rew = 0
+            # sparse_cost only uses last frame of trajectory for cost
+            if cfg.sparse_cost or (cfg.sparse_cost and t == T-1):
                 rew = (
                     -(torch.sum((255 * (next_img - goal_img)) ** 2, (1, 2, 3)))
                     .sqrt()
@@ -178,7 +181,8 @@ def generate_env_rollouts(
             ob, _, _, _ = env.step(action)
 
             img = ob["observation"]
-            if cfg.reward_type == "inpaint":
+            rew = 0
+            if not cfg.sparse_cost or (cfg.sparse_cost and t == T-1):
                 rew = -np.linalg.norm(img - goal_img)
                 if opt_traj is not None:
                     optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)

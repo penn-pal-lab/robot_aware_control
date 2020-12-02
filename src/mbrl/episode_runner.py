@@ -42,19 +42,19 @@ class EpisodeRunner(object):
         """
         Run one demo-following episode
         """
-        config = self._config
+        cfg = self._config
         env = self._env
         logger = self._logger
         demo = self._load_demo(demo_path)
         # use for debugging
         demo_opt_traj = demo["object_inpaint_demo"][:: self._timescale]
-        self.demo_goal_imgs = demo[config.demo_type][:: self._timescale]
+        self.demo_goal_imgs = demo[cfg.demo_type][:: self._timescale]
         num_goals = len(self.demo_goal_imgs)
         pushed_obj = demo["pushed_obj"] + ":joint"
         goal_obj_poses = demo[pushed_obj][:: self._timescale]
         push_length = np.linalg.norm(goal_obj_poses[-1][:2] - goal_obj_poses[0][:2])
 
-        self._g_i = config.subgoal_start  # goal index
+        self._g_i = cfg.subgoal_start  # goal index
         goal_imgs = self.demo_goal_imgs[self._g_i :]
         goal_img = goal_imgs[0]
 
@@ -67,17 +67,16 @@ class EpisodeRunner(object):
         curr_mask = obs["mask"]
 
         # Debug model CEM
-        if config.debug_cem:
+        if cfg.debug_cem:
             self.policy.compare_optimal_actions(
                 demo, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, demo_name
             )
-            return
 
-        if config.record_trajectory:
+        if cfg.record_trajectory:
             trajectory["obs"].append(obs)
             trajectory["state"].append(env.get_state())
 
-        self._record = ep_num % config.record_video_interval == 0
+        self._record = ep_num % cfg.record_video_interval == 0
         self._step = 0  # Step count
         gif = []
         self._add_img_to_gif(gif, curr_img, goal_img)
@@ -88,8 +87,7 @@ class EpisodeRunner(object):
             logger.info(f"\tStep {self._step + 1}")
             goal_imgs = self.demo_goal_imgs[self._g_i :]
             goal_img = goal_imgs[0]
-            if config.demo_cost:
-                opt_traj = demo_opt_traj[self._g_i :]
+            opt_traj = demo_opt_traj[self._g_i :] if cfg.demo_cost else None
 
             # Use CEM to find the best action(s)
             actions = self.policy.get_action(
@@ -120,7 +118,7 @@ class EpisodeRunner(object):
                     f"Current goal: {self._g_i}/{num_goals-1}, dist to goal: {obj_dist:.4f}, dist to last goal: {final_obj_dist:.4f}"
                 )
                 print(f"Reward:{rew:.2f}")
-                if config.record_trajectory:
+                if cfg.record_trajectory:
                     trajectory["obs"].append(obs)
                     trajectory["ac"].append(action)
                     trajectory["state"].append(env.get_state())
@@ -129,11 +127,11 @@ class EpisodeRunner(object):
 
                 # goal choosing logic
                 finish_demo = False
-                if config.sequential_subgoal:
+                if cfg.sequential_subgoal:
                     # just choose the next goal
                     # print("img distance =", np.linalg.norm(curr_img - goal_img))
-                    # config.subgoal_threshold = 5000 is too small, so that for some experiments, goal_img is not updated
-                    if np.linalg.norm(curr_img - goal_img) < config.subgoal_threshold:
+                    # cfg.subgoal_threshold = 5000 is too small, so that for some experiments, goal_img is not updated
+                    if np.linalg.norm(curr_img - goal_img) < cfg.subgoal_threshold:
                         self._g_i += 1
                         finish_demo = self._g_i >= num_goals
                 else:
@@ -143,7 +141,7 @@ class EpisodeRunner(object):
                     new_goal = False
                     for j, goal_diff in enumerate(all_goal_diffs):
                         goal_cost = np.linalg.norm(goal_diff)
-                        if goal_cost <= config.subgoal_threshold:
+                        if goal_cost <= cfg.subgoal_threshold:
                             new_goal = True
                             min_idx = j
                     self._g_i += min_idx
@@ -151,18 +149,18 @@ class EpisodeRunner(object):
                         self._g_i += 1
                         finish_demo = self._g_i >= num_goals
                 # if episode is done, log statistics and break out of loop
-                if finish_demo or self._step >= config.max_episode_length - 1:
+                if finish_demo or self._step >= cfg.max_episode_length - 1:
                     logger.info("=" * 10 + f"Episode {ep_num}" + "=" * 10)
-                    if config.record_trajectory and (
-                        ep_num % config.record_trajectory_interval == 0
+                    if cfg.record_trajectory and (
+                        ep_num % cfg.record_trajectory_interval == 0
                     ):
                         path = os.path.join(
-                            config.trajectory_dir, f"ep_s{self._g_i}_{ep_num}.pkl"
+                            cfg.trajectory_dir, f"ep_s{self._g_i}_{ep_num}.pkl"
                         )
                         with open(path, "wb") as f:
                             pickle.dump(trajectory, f)
-                    goal_progress = (self._g_i - config.subgoal_start) / (
-                        num_goals - config.subgoal_start
+                    goal_progress = (self._g_i - cfg.subgoal_start) / (
+                        num_goals - cfg.subgoal_start
                     )
                     self._stats["goal_progress"].append(goal_progress)
                     push_progress = (push_length - final_obj_dist) / push_length
@@ -175,7 +173,7 @@ class EpisodeRunner(object):
                 break
         if self._record:
             gif_path = os.path.join(
-                config.video_dir, f"ep_{ep_num}_{'s' if finish_demo else 'f'}.gif"
+                cfg.video_dir, f"ep_{ep_num}_{'s' if finish_demo else 'f'}.gif"
             )
             imageio.mimwrite(gif_path, gif)
 

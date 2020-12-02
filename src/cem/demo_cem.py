@@ -22,6 +22,9 @@ class DemoCEMPolicy(object):
         self.J = cfg.action_candidates  # Number of candidate action sequences
         self.K = cfg.topk
         self.R = cfg.replan_every  # Number of real world actions to take
+        self.std = cfg.cem_init_std
+        self.sparse_cost = cfg.sparse_cost # Use cost function at end of traj
+        self.cem_init_std = cfg.cem_init_std
 
         # Infer action size
         self.A = env.action_space.shape[0]
@@ -108,7 +111,7 @@ class DemoCEMPolicy(object):
         self.step = step
         # Initialize action sequence belief as standard normal, of shape (L, A)
         mean = torch.zeros(self.L, self.A)
-        std = torch.ones(self.L, self.A)
+        std = torch.ones(self.L, self.A) * self.cem_init_std
         mean_top_costs = []  # for debugging
         # Optimization loop
         for _ in range(self.I):  # Use tqdm to track progress
@@ -191,6 +194,6 @@ class DemoCEMPolicy(object):
                         putText(img, "MODEL", (0, 8))
                         putText(img, "GOAL", (64, 8))
                         gif.append(img)
-                    gif_path = os.path.join(gif_folder, f"ep_{n}_step_{self.step}.gif")
+                    gif_path = os.path.join(gif_folder, f"step_{self.step}_top_{n}.gif")
                     imageio.mimwrite(gif_path, gif)
         return rollouts
