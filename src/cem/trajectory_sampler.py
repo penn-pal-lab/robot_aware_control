@@ -91,7 +91,7 @@ def generate_model_rollouts(
 
             rew = 0
             # sparse_cost only uses last frame of trajectory for cost
-            if cfg.sparse_cost or (cfg.sparse_cost and t == T-1):
+            if not cfg.sparse_cost or (cfg.sparse_cost and t == T-1):
                 rew = (
                     -(torch.sum((255 * (next_img - goal_img)) ** 2, (1, 2, 3)))
                     .sqrt()
