@@ -141,7 +141,7 @@ class EpisodeRunner(object):
                     new_goal = False
                     for j, goal_diff in enumerate(all_goal_diffs):
                         goal_cost = np.linalg.norm(goal_diff)
-                        if goal_cost <= cfg.subgoal_threshold:
+                        if goal_cost <= cfg.subgoal_threshold and j > 0:
                             new_goal = True
                             min_idx = j
                     self._g_i += min_idx
