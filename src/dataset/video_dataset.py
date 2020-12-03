@@ -17,23 +17,24 @@ class VideoDataset(data.Dataset):
         self._cf = config
         self._horizon = config.n_past + config.n_future
         self._data = []
+        self._video_type = config.video_type
 
-        # try loading everything
+        # try loading everything into RAM
+        # all_actions = []
         for path in tqdm(files, desc="loading data into ram"):
             with h5py.File(path, "r") as hf:
                 # first check how long video is
-                ep_len = hf["object_inpaint_demo"].shape[0]
+                ep_len = hf[self._video_type].shape[0]
                 assert ep_len >= self._horizon, f"{ep_len}, {path}"
                 # if video is longer than horizon, sample a starting point
-                start = 0
-                frames_shape = list(hf["object_inpaint_demo"].shape)
+                frames_shape = list(hf[self._video_type].shape)
                 robot_shape = list(hf["robot_state"].shape)
                 actions_shape = list(hf["actions"].shape)
                 masks_shape = list(hf["masks"].shape)
 
                 # frames should be L x C x H x W
                 frames = np.zeros(frames_shape, dtype=np.uint8)
-                hf["object_inpaint_demo"].read_direct(frames)
+                hf[self._video_type].read_direct(frames)
                 frames = self._img_transforms(frames)
 
                 robot = np.zeros(robot_shape, dtype=np.float32)
@@ -41,11 +42,23 @@ class VideoDataset(data.Dataset):
 
                 actions = np.zeros(actions_shape, dtype=np.float32)
                 hf["actions"].read_direct(actions)
+                actions = np.clip(actions, -1, 1)
+                # all_actions.append(actions)
 
-                masks = np.zeros(masks_shape, dtype=np.bool)
+                masks = np.zeros(masks_shape, dtype=np.float32)
                 hf["masks"].read_direct(masks)
 
                 self._data.append((frames, robot, actions, masks))
+
+        # visualize the action distribution
+        # import matplotlib
+        # import matplotlib.pyplot as plt
+
+        # all_actions = np.concatenate(all_actions)
+        # plt.hist2d(x=all_actions[:, 0], y=all_actions[:,1])
+        # plt.scatter(x=all_actions[:, 0], y=all_actions[:,1])
+        # plt.show()
+
 
     def __getitem__(self, index):
         path = self._files[index]
