@@ -6,7 +6,6 @@ import torch
 from torch import cat
 import torch.multiprocessing as mp
 from src.prediction.models.dynamics import DynamicsModel
-from torchvision.transforms.functional import to_tensor
 
 
 @torch.no_grad()
@@ -46,9 +45,13 @@ def generate_model_rollouts(
     sum_cost = np.zeros(N)
     all_obs = torch.zeros((N, T, 3, 128, 64))  # N x T x obs
     all_step_cost = np.zeros((N, T))  # N x T x 1
-    goal_imgs = torch.stack([to_tensor(g) for g in goal_imgs]).to(dev)
+    goal_imgs = torch.stack(
+        [torch.from_numpy(g).permute(2, 0, 1) / 255 for g in goal_imgs]
+    ).to(dev)
     if opt_traj is not None:  # for debug comparison
-        opt_traj = torch.stack([to_tensor(g) for g in opt_traj]).to(dev)
+        opt_traj = torch.stack(
+            [torch.from_numpy(g).permute(2, 0, 1) / 255 for g in opt_traj]
+        ).to(dev)
     start_mask = torch.from_numpy(start_mask).unsqueeze_(0)
     optimal_sum_cost = 0
     if not suppress_print:
@@ -61,7 +64,10 @@ def generate_model_rollouts(
         action_batch = action_sequences[start:end]
         actions = action_batch.to(dev)
         model.reset(batch_size=num_batch)
-        curr_img = cat([to_tensor(start_img.copy()), start_mask], dim=0)
+        curr_img = cat(
+            [torch.from_numpy(start_img.copy()).permute(2, 0, 1) / 255, start_mask],
+            dim=0,
+        )
         curr_img = curr_img.expand(num_batch, -1, -1, -1).to(dev)  # (N x |I|)
         curr_robot = (
             torch.from_numpy(start_robot.copy()).expand(num_batch, -1).to(dev)
@@ -91,13 +97,10 @@ def generate_model_rollouts(
 
             rew = 0
             # sparse_cost only uses last frame of trajectory for cost
-            if not cfg.sparse_cost or (cfg.sparse_cost and t == T-1):
-                rew = (
-                    -(torch.sum((255 * (next_img - goal_img)) ** 2, (1, 2, 3)))
-                    .sqrt()
-                    .cpu()
-                    .numpy()
-                )  # N x 1
+            if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
+                img_diff = 255 * (next_img - goal_img)
+                img_diff_norm = torch.sum(img_diff ** 2, (1, 2, 3)).sqrt().cpu().numpy()
+                rew = -img_diff_norm  # N x 1
                 if opt_traj is not None and b == 0:
                     optimal_sum_cost += (
                         -(torch.sum((255 * (opt_img - goal_img)) ** 2))
@@ -141,7 +144,7 @@ def generate_env_rollouts(
     ret_obs=False,
     ret_step_cost=False,
     suppress_print=True,
-    opt_traj=None
+    opt_traj=None,
 ):
     """
     Executes the action sequences on the environment. Used by the ground truth
@@ -174,18 +177,23 @@ def generate_env_rollouts(
         optimal_sum_cost = 0
         for t in range(T):
             goal_idx = t if t < len(goal_imgs) else -1
-            goal_img = goal_imgs[goal_idx]
+            goal_img = goal_imgs[goal_idx].astype(np.float32)
             if opt_traj is not None:  # for debug comparison
-                opt_img = opt_traj[goal_idx]
+                opt_img = opt_traj[goal_idx].astype(np.float32)
             action = action_sequences[ep_num, t].numpy()
             ob, _, _, _ = env.step(action)
 
-            img = ob["observation"]
+            img = ob["observation"].astype(np.float32)
             rew = 0
-            if not cfg.sparse_cost or (cfg.sparse_cost and t == T-1):
+            if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
                 rew = -np.linalg.norm(img - goal_img)
-                if opt_traj is not None:
+                if opt_traj is not None and ep_num == 0:
                     optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
+                    # print("env", optimal_sum_cost, goal_idx)
+                    # import pickle
+                    # with open(f"env_goal_{t}.pkl", "wb") as f:
+                    #     data = {"opt_img": opt_img, "goal_img": goal_img}
+                    #     pickle.dump(data, f)
 
             sum_cost[ep_num] += rew
             if ret_obs:

@@ -29,7 +29,9 @@ class EpisodeRunner(object):
         self._setup_loggers(config)
         self._env = ClutterPushEnv(config)
         self.policy = self._get_policy(config, self._env)
-        self.cost = lambda a, b: -np.linalg.norm(a - b)
+        self.cost = lambda a, b: -np.linalg.norm(
+            a.astype(np.float32) - b.astype(np.float32)
+        )
         if config.reward_type == "inpaint-blur":
             self.cost = InpaintBlurCost(self._config)
         self._stats = defaultdict(list)
@@ -66,11 +68,11 @@ class EpisodeRunner(object):
         curr_sim = obs["state"]
         curr_mask = obs["mask"]
 
-        # Debug model CEM
-        if cfg.debug_cem:
-            self.policy.compare_optimal_actions(
-                demo, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, demo_name
-            )
+        # Check if demo actions are meaningful
+        # if cfg.debug_cem:
+        #     self.policy.compare_optimal_actions(
+        #         demo, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, demo_name
+        #     )
 
         if cfg.record_trajectory:
             trajectory["obs"].append(obs)
@@ -100,6 +102,22 @@ class EpisodeRunner(object):
                 self._step,
                 opt_traj=opt_traj,
             )
+            # See how CEM actions rollout in actual environment
+            # if cfg.debug_cem:
+            #     gif_folder = os.path.join(cfg.log_dir, "debug_cem")
+            #     os.makedirs(f"{gif_folder}/ep_num", exist_ok=True)
+            #     gif_path = f"ep_{ep_num}/step_{self._step}_env_comparison.gif"
+            #     fake_demo = {"states": [curr_sim], "actions":actions}
+            #     self.policy.compare_optimal_actions(
+            #         fake_demo,
+            #         curr_img,
+            #         curr_mask,
+            #         curr_robot,
+            #         curr_sim,
+            #         goal_imgs,
+            #         gif_path,
+            #     )
+            actions = actions[: cfg.replan_every]
             # Execute the planned actions. Usually only 1 action
             for action in actions:
                 obs, _, _, _ = env.step(action)
