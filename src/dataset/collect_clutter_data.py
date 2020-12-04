@@ -205,9 +205,7 @@ def collect_svg_data():
     config.temporal_beta = 0.3  # control random policy's temporal correlation
     config.action_noise = 0.05
     # create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)
-    create_demo_dataset(
-       config, num_rand, num_workers, record, "random_robot", ep_len
-    )
+    create_demo_dataset(config, num_rand, num_workers, record, "random_robot", ep_len)
 
 
 if __name__ == "__main__":

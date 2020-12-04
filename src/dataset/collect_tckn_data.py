@@ -133,7 +133,7 @@ def collect_push_data():
     config.action_noise = 0.5
     # create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)
     create_demo_dataset(
-       config, num_push, num_workers, record, "temporal_random_robot", ep_len
+        config, num_push, num_workers, record, "temporal_random_robot", ep_len
     )
 
 

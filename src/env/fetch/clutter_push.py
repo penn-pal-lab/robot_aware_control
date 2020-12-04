@@ -152,7 +152,11 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         gripper_state = robot_qpos[-2:]
         gripper_vel = robot_qvel[-2:] * dt
         if self._pixels_ob:
-            img = self.render("rgb_array", remove_robot=self._norobot_pixels_ob, get_depth_map=self._depth_ob)
+            img = self.render(
+                "rgb_array",
+                remove_robot=self._norobot_pixels_ob,
+                get_depth_map=self._depth_ob,
+            )
             if self._depth_ob:
                 img, world_coord = img
             robot = np.concatenate([grip_pos, grip_velp])
