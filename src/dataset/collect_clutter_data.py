@@ -178,7 +178,7 @@ def collect_demo_cem_data():
     config.norobot_pixels_ob = True
 
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/straight_push"
+    config.demo_dir = "demos/random_robot_moving_object"
     config.most_recent_background = False  # use static or mr background for inpaint
     config.multiview = True
     config.img_dim = 64

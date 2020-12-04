@@ -210,20 +210,27 @@ class EpisodeRunner(object):
         all_metric_costs_data = []
 
         files = self._load_demo_dataset(self._config)
+        plt.figure()
         for i in range(self._config.num_episodes):
             demo_name, demo_path = files[i]
             gt_costs_data, metric_costs_data = self.run_episode(i, demo_name, demo_path)
             all_gt_costs_data += gt_costs_data
             all_metric_costs_data += metric_costs_data
 
+            plt.plot(np.asarray(gt_costs_data).reshape(-1).reshape(-1), np.asarray(metric_costs_data).reshape(-1), ".", alpha=0.1)
+            plt.xlabel("ground truth cost")
+            plt.ylabel("our metric")
+            # plt.savefig("cost_visual_scatter.png")
+            plt.show()
+
         all_gt_costs_data = np.asarray(all_gt_costs_data).reshape(-1)
         all_metric_costs_data = np.asarray(all_metric_costs_data).reshape(-1)
-        # plt.figure()
-        # plt.plot(all_gt_costs_data, all_metric_costs_data, ".")
-        # plt.xlabel("ground truth cost")
-        # plt.ylabel("our metric")
-        # plt.savefig("cost_visual.png")
-        # plt.show()
+        plt.figure()
+        plt.plot(all_gt_costs_data, all_metric_costs_data, ".", alpha=0.1)
+        plt.xlabel("ground truth cost")
+        plt.ylabel("our metric")
+        plt.savefig("cost_visual_scatter.png")
+        plt.show()
 
         heatmap, xedges, yedges = np.histogram2d(all_gt_costs_data, all_metric_costs_data, bins=100)
         extent = [0.0, 0.4, 0.0, 0.1]
@@ -232,7 +239,7 @@ class EpisodeRunner(object):
         plt.imshow(heatmap.T, extent=extent, origin='lower')
         plt.xlabel("ground truth cost")
         plt.ylabel("our metric")
-        plt.savefig("cost_visual.png")
+        plt.savefig("cost_visual_heatmap.png")
         plt.show()
 
 
