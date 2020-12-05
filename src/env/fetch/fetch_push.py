@@ -277,13 +277,11 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
                 w = self._blur_width
                 t = (((w - 1) / 2) - 0.5) / s
                 unblurred_ag = achieved_goal
-                achieved_goal = np.uint8(
-                    255 * gaussian(achieved_goal, sigma=s, truncate=t, mode="nearest", multichannel=True)
-                )
-                blur_cost = np.linalg.norm(achieved_goal - goal)
+                achieved_goal = 255 * gaussian(achieved_goal, sigma=s, truncate=t, mode="nearest", multichannel=True)
+                blur_cost = np.linalg.norm(achieved_goal.astype(np.float) - goal.astype(np.float))
                 d = blur_cost
                 if self._use_unblur:
-                    unblur_cost = np.linalg.norm(unblurred_ag - self._unblurred_goal)
+                    unblur_cost = np.linalg.norm(unblurred_ag.astype(np.float) - self._unblurred_goal.astype(np.float))
                     d = self._unblur_cost_scale * unblur_cost
                 return -d
 
@@ -297,7 +295,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
         elif self.reward_type == "blackrobot":
             # make robot black
             achieved_goal[ag_mask] = np.zeros(3)
-            pixel_costs = achieved_goal - goal
+            pixel_costs = achieved_goal.astype(np.float) - goal.astype(np.float)
         d = np.linalg.norm(pixel_costs)
         return -d
 
@@ -311,7 +309,7 @@ class FetchPushEnv(FetchEnv, utils.EzPickle):
             ]:
                 return self.weighted_cost(achieved_goal, goal, info)
             # Compute distance between goal and the achieved goal.
-            d = np.linalg.norm(achieved_goal - goal)
+            d = np.linalg.norm(achieved_goal.astype(np.float) - goal.astype(np.float))
             if self.reward_type == "sparse":
                 return -(d > self.distance_threshold).astype(np.float32)
             elif self.reward_type == "dense":
@@ -592,11 +590,11 @@ def plot_behaviors_per_cost():
     """ Plots a cost function's performance over behaviors"""
     config, _ = argparser()
     # visualize the initialization
-    # cost_funcs = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
-    cost_funcs = ["inpaint-blur"]
+    cost_funcs = ["dontcare", "l2", "inpaint", "blackrobot", "alpha"]
+    # cost_funcs = ["inpaint-blur"]
     normalize = False
     data = {}
-    viewpoints = ["single", "multiview"]
+    viewpoints = ["multiview"]
     behaviors = ["only_robot", "push", "occlude", "occlude_all"]
     # behaviors = ["push"]
     save_goal = False  # save a goal for each cost
