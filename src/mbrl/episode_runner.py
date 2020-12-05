@@ -149,12 +149,12 @@ class EpisodeRunner(object):
                     # just choose the next goal
                     # print("img distance =", np.linalg.norm(curr_img - goal_img))
                     # cfg.subgoal_threshold = 5000 is too small, so that for some experiments, goal_img is not updated
-                    if np.linalg.norm(curr_img - goal_img) < cfg.subgoal_threshold:
+                    if np.linalg.norm(curr_img.astype(np.float) - goal_img.astype(np.float)) < cfg.subgoal_threshold:
                         self._g_i += 1
                         finish_demo = self._g_i >= num_goals
                 else:
                     # skip to most future goal that is still <= threshold, and start from there
-                    all_goal_diffs = curr_img - self.demo_goal_imgs[self._g_i :]
+                    all_goal_diffs = curr_img.astype(np.float) - self.demo_goal_imgs[self._g_i :].astype(np.float)
                     min_idx = 0
                     new_goal = False
                     for j, goal_diff in enumerate(all_goal_diffs):
