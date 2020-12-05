@@ -46,11 +46,11 @@ def generate_model_rollouts(
     all_obs = torch.zeros((N, T, 3, 128, 64))  # N x T x obs
     all_step_cost = np.zeros((N, T))  # N x T x 1
     goal_imgs = torch.stack(
-        [torch.from_numpy(g).permute(2, 0, 1) / 255 for g in goal_imgs]
+        [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in goal_imgs]
     ).to(dev)
     if opt_traj is not None:  # for debug comparison
         opt_traj = torch.stack(
-            [torch.from_numpy(g).permute(2, 0, 1) / 255 for g in opt_traj]
+            [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in opt_traj]
         ).to(dev)
     start_mask = torch.from_numpy(start_mask).unsqueeze_(0)
     optimal_sum_cost = 0
@@ -65,7 +65,7 @@ def generate_model_rollouts(
         actions = action_batch.to(dev)
         model.reset(batch_size=num_batch)
         curr_img = cat(
-            [torch.from_numpy(start_img.copy()).permute(2, 0, 1) / 255, start_mask],
+            [torch.from_numpy(start_img.copy()).permute(2, 0, 1).float() / 255, start_mask],
             dim=0,
         )
         curr_img = curr_img.expand(num_batch, -1, -1, -1).to(dev)  # (N x |I|)
