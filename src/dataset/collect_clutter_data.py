@@ -104,7 +104,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
                 gif_object_only_img = object_only_img.copy()
                 putText(gif_object_only_img, f"NO-ROBOT", (10, 10))
 
-                cost = -np.linalg.norm(gif_inpaint_img - gif_object_only_img)
+                cost = -np.linalg.norm(gif_inpaint_img.astype(np.float) - gif_object_only_img.astype(np.float))
                 putText(gif_inpaint_img, f"{cost:.0f}", (0, 126))
                 img = np.concatenate(
                     [gif_robot_img, gif_inpaint_img, gif_object_only_img], axis=1
@@ -203,7 +203,7 @@ def collect_svg_data():
     num_workers = 1
     num_push = 20000 // num_workers
     num_rand = 10000 // num_workers
-    record = True
+    record = False
     ep_len = 12  # gonna be off by 1 because of reset but whatever
 
     config, _ = argparser()
@@ -214,7 +214,7 @@ def collect_svg_data():
     config.most_recent_background = False
     config.multiview = True
     config.img_dim = 64
-    config.camera_ids = [0, 1]
+    config.camera_ids = [0, 2]
     config.temporal_beta = 0.2  # control random policy's temporal correlation
     config.action_noise = 0.05
     # create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)

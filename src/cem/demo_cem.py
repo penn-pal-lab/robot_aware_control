@@ -79,26 +79,23 @@ class DemoCEMPolicy(object):
         model_cost = model_rollout["sum_cost"][0]
         curr_img = curr_img.copy()
         putText(curr_img, "START", (0, 8))
-        diff = np.abs(curr_img - curr_img)
-        img = np.concatenate([curr_img, diff, curr_img, diff, goal_imgs[0]], axis=1)
+        img = np.concatenate([curr_img, curr_img, goal_imgs[0]], axis=1)
         gif = [img] * 2
         for t, (env_ob, model_ob) in enumerate(zip(env_video, model_video)):
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
-            env_diff = np.abs(env_ob - goal_img)
-            model_diff = np.abs(model_ob - goal_img)
 
             img = np.concatenate(
-                [env_ob, env_diff, model_ob, model_diff, goal_img], axis=1
+                [env_ob, model_ob, goal_img], axis=1
             )
             putText(img, "ENV", (0, 8))
             putText(img, f"{env_cost:.0f}", (0, 72))
-            putText(img, "SVG", (128, 8))
-            putText(img, f"{model_cost:.0f}", (128, 72))
+            putText(img, "SVG", (64, 8))
+            putText(img, f"{model_cost:.0f}", (64, 72))
             putText(img, f"{t+1}/{len(env_video)}", (0, 124))
-            putText(img, f"{t+1}/{len(env_video)}", (128, 124))
+            putText(img, f"{t+1}/{len(env_video)}", (64, 124))
             putText(img, "GOAL", (256, 8))
-            putText(img, f"{t+1}/{len(env_video)}", (256, 124))
+            putText(img, f"{t+1}/{len(env_video)}", (128, 124))
             gif.append(img)
         gif_path = os.path.join(self.debug_cem_dir, f"{demo_name}.gif")
         imageio.mimwrite(gif_path, gif, fps=2)
