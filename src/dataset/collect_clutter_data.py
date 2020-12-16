@@ -176,9 +176,9 @@ def collect_demo_cem_data():
     """
     Used for collecting the demo dataset for demo CEM
     """
-    num_demo = 50  # per worker
-    num_workers = 2
-    record = False
+    num_demo = 100  # per worker
+    num_workers = 1
+    record = True
     behavior = "straight_push"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
 
@@ -186,11 +186,11 @@ def collect_demo_cem_data():
     config.norobot_pixels_ob = True  # whether to inpaint the robot in observation
 
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/straight_push"
+    config.demo_dir = "demos/realvp_straight_push"
     config.most_recent_background = False  # use static or mr background for inpaint
     config.multiview = True
     config.img_dim = 64
-    config.camera_ids = [0, 1]
+    config.camera_ids = [0, 2]
     create_demo_dataset(config, num_demo, num_workers, record, behavior, ep_len)
 
 
@@ -226,5 +226,5 @@ if __name__ == "__main__":
     """
     Use this to collect demonstrations for svg / demo cem experiments
     """
-    collect_svg_data()
-    # collect_demo_cem_data()
+    # collect_svg_data()
+    collect_demo_cem_data()
