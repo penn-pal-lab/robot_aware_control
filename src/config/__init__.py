@@ -45,7 +45,7 @@ def add_method_arguments(parser: ArgumentParser):
         "--reward_type",
         type=str,
         default="weighted",
-        choices=["weighted", "dense", "inpaint", "sparse" "blackrobot", "inpaint-blur"],
+        choices=["weighted", "dense", "inpaint", "sparse" "blackrobot", "inpaint-blur", "eef_inpaint"],
     )
     # for use with inpaint blur
     parser.add_argument("--most_recent_background", type=str2bool, default=False)
@@ -228,6 +228,8 @@ def add_cem_arguments(parser):
     parser.add_argument("--debug_cem", type=str2bool, default=False)
     parser.add_argument("--object_demo_dir", type=str, default=None)
     parser.add_argument("--subgoal_threshold", type=float, default=4000)
+    parser.add_argument("--subgoal_robot_threshold", type=float, default=0.01)
+    parser.add_argument("--robot_weight", type=float, default=1)
     parser.add_argument("--subgoal_start", type=int, default=0)
     parser.add_argument("--sequential_subgoal", type=str2bool, default=True)
     parser.add_argument("--demo_cost", type=str2bool, default=False)

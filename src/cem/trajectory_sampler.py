@@ -1,5 +1,9 @@
+from src.prediction.losses import eef_inpaint_cost
 import time as timer
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Any
+
 
 import numpy as np
 import torch
@@ -8,17 +12,27 @@ import torch.multiprocessing as mp
 from src.prediction.models.dynamics import DynamicsModel
 
 
+@dataclass
+class StartState:
+    img: Any = None # used by learned model, not needed for ground truth model
+    robot: Any = None # robot eef pos, used by learned model, not needed for gt model
+    mask: Any = None #  used by learned model, not needed for ground truth model
+    sim: Any = None # used by learned model, not needed for ground truth model
+
+@dataclass
+class GoalState:
+    imgs: Any = None # list of goal imgs for computing costs
+    robots: Any = None # list of goal eef pos
+
+
 @torch.no_grad()
 def generate_model_rollouts(
     cfg,
     env,
     model: DynamicsModel,
     action_sequences,
-    start_img,
-    start_mask,
-    start_robot,
-    start_sim,
-    goal_imgs,
+    start: StartState,
+    goal: GoalState,
     opt_traj=None,
     ret_obs=False,
     ret_step_cost=False,
@@ -46,13 +60,14 @@ def generate_model_rollouts(
     all_obs = torch.zeros((N, T, 3, 128, 64))  # N x T x obs
     all_step_cost = np.zeros((N, T))  # N x T x 1
     goal_imgs = torch.stack(
-        [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in goal_imgs]
+        [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in goal.imgs]
     ).to(dev)
     if opt_traj is not None:  # for debug comparison
         opt_traj = torch.stack(
             [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in opt_traj]
         ).to(dev)
-    start_mask = torch.from_numpy(start_mask).unsqueeze_(0)
+
+    start_mask = torch.from_numpy(start.mask).unsqueeze_(0)
     optimal_sum_cost = 0
     if not suppress_print:
         start_time = timer.time()
@@ -65,14 +80,17 @@ def generate_model_rollouts(
         actions = action_batch.to(dev)
         model.reset(batch_size=num_batch)
         curr_img = cat(
-            [torch.from_numpy(start_img.copy()).permute(2, 0, 1).float() / 255, start_mask],
+            [
+                torch.from_numpy(start.img.copy()).permute(2, 0, 1).float() / 255,
+                start_mask,
+            ],
             dim=0,
         )
         curr_img = curr_img.expand(num_batch, -1, -1, -1).to(dev)  # (N x |I|)
         curr_robot = (
-            torch.from_numpy(start_robot.copy()).expand(num_batch, -1).to(dev)
+            torch.from_numpy(start.robot.copy()).expand(num_batch, -1).to(dev)
         )  # N x |A|)
-        curr_sim = [start_sim] * num_batch  # (N x D)
+        curr_sim = [start.sim] * num_batch  # (N x D)
         curr_mask = torch.zeros((num_batch, 1, 128, 64), dtype=torch.bool).to(
             dev
         )  # (N x 1 x H x W)
@@ -140,7 +158,7 @@ def generate_env_rollouts(
     cfg,
     env,
     action_sequences,
-    goal_imgs,
+    goal: GoalState,
     ret_obs=False,
     ret_step_cost=False,
     suppress_print=True,
@@ -176,19 +194,26 @@ def generate_env_rollouts(
         ep_cost = []
         optimal_sum_cost = 0
         for t in range(T):
-            goal_idx = t if t < len(goal_imgs) else -1
-            goal_img = goal_imgs[goal_idx].astype(np.float32)
+            goal_idx = t if t < len(goal.imgs) else -1
+            goal_img = goal.imgs[goal_idx].astype(np.float32)
+            goal_robot = goal.robots[goal_idx]
             if opt_traj is not None:  # for debug comparison
-                opt_img = opt_traj[goal_idx].astype(np.float32)
+                opt_img = opt_traj[goal_idx].imgs.astype(np.float32)
+                opt_robot = opt_traj[goal_idx].robots
+
             action = action_sequences[ep_num, t].numpy()
             ob, _, _, _ = env.step(action)
 
             img = ob["observation"].astype(np.float32)
+            robot = ob["robot"]
             rew = 0
             if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
-                rew = -np.linalg.norm(img - goal_img)
+                # rew = -np.linalg.norm(img - goal_img)
+                rew = eef_inpaint_cost(robot, goal_robot, img, goal_img, cfg.robot_weight)
                 if opt_traj is not None and ep_num == 0:
-                    optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
+                    # optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
+                    optimal_sum_cost += eef_inpaint_cost(opt_robot, opt_robot, opt_img, goal_img, cfg.robot_weight)
+
                     # print("env", optimal_sum_cost, goal_idx)
                     # import pickle
                     # with open(f"env_goal_{t}.pkl", "wb") as f:

@@ -1,5 +1,6 @@
 """Loss functions for the video prediction"""
 import numpy as np
+from numpy.linalg import norm
 import torch
 import torch.nn as nn
 from skimage.filters import gaussian
@@ -67,3 +68,19 @@ class InpaintBlurCost:
 
         cost = scale * mse_criterion(img, goal)
         return cost
+
+def img_l2_dist(curr_img, goal_img):
+    # makes sure to cast uint8 img to float before norming
+    dist = norm(curr_img.astype(np.float) - goal_img.astype(np.float))
+    return dist
+
+def eef_inpaint_cost(curr_eef, goal_eef, curr_img, goal_img, robot_weight, print_cost=False):
+    """
+    Assumes the images are inpainted.
+    """
+    eef_loss = -norm(curr_eef - goal_eef)
+    # TODO: add option for don't-care cost instead of inpaint image cost.
+    image_cost = -img_l2_dist(curr_img, goal_img)
+    if print_cost:
+        print(f"eef_cost: {robot_weight * eef_loss :.2f},  img cost: {image_cost :.2f}")
+    return robot_weight * eef_loss + image_cost
