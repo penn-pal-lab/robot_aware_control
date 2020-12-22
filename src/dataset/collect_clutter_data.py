@@ -210,7 +210,7 @@ def collect_svg_data():
     config.norobot_pixels_ob = True
     config.inpaint_eef = True
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/random_mask_svg_train"
+    config.demo_dir = "demos/realvp_random_mask_svg_train"
     config.most_recent_background = False
     config.multiview = True
     config.img_dim = 64
