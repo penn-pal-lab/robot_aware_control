@@ -2,22 +2,23 @@ import logging
 import os
 import pickle
 from collections import defaultdict
+from os.path import join
 from typing import List
-from src.cem.trajectory_sampler import GoalState, StartState
 
 import colorlog
 import h5py
 import imageio
 import numpy as np
-from numpy.linalg import norm
 import torch
+import wandb
+from numpy.linalg import norm
+from tqdm import trange
+from src.cem.demo_cem import DemoCEMPolicy
+from src.cem.trajectory_sampler import GoalState, StartState
 from src.env.fetch.clutter_push import ClutterPushEnv
 from src.prediction.losses import eef_inpaint_cost, img_l2_dist
 from src.utils.plot import putText
 from torchvision.datasets.folder import has_file_allowed_extension
-from src.cem.demo_cem import DemoCEMPolicy
-
-import wandb
 
 
 class EpisodeRunner(object):
@@ -41,7 +42,6 @@ class EpisodeRunner(object):
             w = self._config.robot_weight
             return eef_inpaint_cost(curr_robot, goal_robot, curr_img, goal_img, w, True)
         return -img_l2_dist(curr_img, goal_img)
-
 
     def _pick_next_goal(self, curr_robot, goal_robot, curr_img, goal_img):
         """
@@ -150,7 +150,7 @@ class EpisodeRunner(object):
             )
             # See how CEM actions rollout in actual environment
             # if cfg.debug_cem:
-            #     gif_folder = os.path.join(cfg.log_dir, "debug_cem")
+            #     gif_folder = join(cfg.log_dir, "debug_cem")
             #     os.makedirs(f"{gif_folder}/ep_num", exist_ok=True)
             #     gif_path = f"ep_{ep_num}/step_{self._step}_env_comparison.gif"
             #     fake_demo = {"states": [curr_sim], "actions": actions}
@@ -193,9 +193,7 @@ class EpisodeRunner(object):
                     if cfg.record_trajectory and (
                         ep_num % cfg.record_trajectory_interval == 0
                     ):
-                        path = os.path.join(
-                            cfg.trajectory_dir, f"ep_s{self._g_i}_{ep_num}.pkl"
-                        )
+                        path = join(cfg.trajectory_dir, f"ep_s{self._g_i}_{ep_num}.pkl")
                         with open(path, "wb") as f:
                             pickle.dump(trajectory, f)
                     goal_progress = (self._g_i - cfg.subgoal_start) / (
@@ -205,13 +203,14 @@ class EpisodeRunner(object):
                     push_progress = (push_length - final_obj_dist) / push_length
                     self._stats["push_progress"].append(push_progress)
                     self._stats["final_obj_dist"].append(final_obj_dist)
+                    self._stats["demo_name"].append(demo_name)
                     terminate_ep = True
                     break
 
             if terminate_ep:
                 break
         if self._record:
-            gif_path = os.path.join(
+            gif_path = join(
                 cfg.video_dir, f"ep_{ep_num}_{'s' if finish_demo else 'f'}.gif"
             )
             imageio.mimwrite(gif_path, gif)
@@ -221,13 +220,15 @@ class EpisodeRunner(object):
         Run all episodes and log their metrics
         """
         files = self._load_demo_dataset(self._config)
-        for i in range(self._config.num_episodes):
+        for i in trange(self._config.num_episodes, desc="running episode"):
             demo_name, demo_path = files[i]
             self.run_episode(i, demo_name, demo_path)
         self._env.close()
         self._logger.info("\n\n### Summary ###")
         # histograms = {"reward", "object_dist", "gripper_dist"}
         # upload table to wandb
+        with open(join(config.plot_dir, "stats.pkl"), "wb") as f:
+            pickle.dump(f, self._stats)
         table = wandb.Table(columns=list(self._stats.keys()))
         table_rows = []
         for k, v in self._stats.items():
@@ -242,7 +243,7 @@ class EpisodeRunner(object):
             #     plt.xlabel(k)
             #     plt.ylabel("Count")
             #     wandb.log({f"hist/{k}": wandb.Image(plt)}, step=0)
-            #     fpath = os.path.join(config.plot_dir, f"{k}_hist.png")
+            #     fpath = join(config.plot_dir, f"{k}_hist.png")
             #     plt.savefig(fpath)
             #     plt.close("all")
 
@@ -258,6 +259,8 @@ class EpisodeRunner(object):
         assert config.num_episodes <= len(
             files
         ), f"need at least {config.num_episodes} demos"
+        # sort files for comparing across runs
+        files.sort(key=lambda e: e[0])
         return files[: config.num_episodes]
 
     def _load_demo(self, path):
@@ -301,23 +304,23 @@ class EpisodeRunner(object):
         ch.setFormatter(formatter)
         logger.addHandler(ch)
 
-        config.log_dir = os.path.join(config.log_dir, config.jobname)
+        config.log_dir = join(config.log_dir, config.jobname)
         logger.info(f"Create log directory: {config.log_dir}")
         os.makedirs(config.log_dir, exist_ok=True)
 
-        config.plot_dir = os.path.join(config.log_dir, "plot")
+        config.plot_dir = join(config.log_dir, "plot")
         os.makedirs(config.plot_dir, exist_ok=True)
 
-        config.video_dir = os.path.join(config.log_dir, "video")
+        config.video_dir = join(config.log_dir, "video")
         os.makedirs(config.video_dir, exist_ok=True)
 
-        config.trajectory_dir = os.path.join(config.log_dir, "trajectory")
+        config.trajectory_dir = join(config.log_dir, "trajectory")
         os.makedirs(config.trajectory_dir, exist_ok=True)
 
         # create the file / console logger
         filelogger = colorlog.getLogger("file/console")
         filelogger.setLevel(logging.DEBUG)
-        logfile_path = os.path.join(config.log_dir, "log.txt")
+        logfile_path = join(config.log_dir, "log.txt")
         fh = logging.FileHandler(logfile_path)
         fh.setLevel(logging.DEBUG)
         formatter = logging.Formatter(
