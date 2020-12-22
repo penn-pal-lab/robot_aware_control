@@ -2,14 +2,17 @@ import logging
 import os
 import pickle
 from collections import defaultdict
+from typing import List
+from src.cem.trajectory_sampler import GoalState, StartState
 
 import colorlog
 import h5py
 import imageio
 import numpy as np
+from numpy.linalg import norm
 import torch
 from src.env.fetch.clutter_push import ClutterPushEnv
-from src.prediction.losses import InpaintBlurCost
+from src.prediction.losses import eef_inpaint_cost, img_l2_dist
 from src.utils.plot import putText
 from torchvision.datasets.folder import has_file_allowed_extension
 from src.cem.demo_cem import DemoCEMPolicy
@@ -25,20 +28,55 @@ class EpisodeRunner(object):
     def __init__(self, config) -> None:
         self._config = config
         self._use_env = config.use_env_dynamics
-        self._timescale = config.demo_timescale
         self._setup_loggers(config)
         self._env = ClutterPushEnv(config)
-        self.policy = self._get_policy(config, self._env)
-        self.cost = lambda a, b: -np.linalg.norm(
-            a.astype(np.float32) - b.astype(np.float32)
-        )
-        if config.reward_type == "inpaint-blur":
-            self.cost = InpaintBlurCost(self._config)
+        self._setup_policy(config, self._env)
         self._stats = defaultdict(list)
 
-    def _get_policy(self, config, env) -> DemoCEMPolicy:
-        policy = DemoCEMPolicy(config, env)
-        return policy
+    def _setup_policy(self, config, env):
+        self.policy = DemoCEMPolicy(config, env)
+
+    def cost(self, curr_img, goal_img, curr_robot=None, goal_robot=None):
+        if config.reward_type == "eef_inpaint":
+            w = self._config.robot_weight
+            return eef_inpaint_cost(curr_robot, goal_robot, curr_img, goal_img, w, True)
+        return -img_l2_dist(curr_img, goal_img)
+
+
+    def _pick_next_goal(self, curr_robot, goal_robot, curr_img, goal_img):
+        """
+        This function checks if the current image is close enough to the goal img.
+        If it is, then we will pick the next goal index.
+        """
+        # goal choosing logic
+        cfg = self._config
+        if cfg.sequential_subgoal:
+            if cfg.reward_type == "eef_inpaint":
+                img_dist = img_l2_dist(curr_img, goal_img)
+                eef_dist = norm(curr_robot - goal_robot)
+                if (
+                    img_dist < cfg.subgoal_threshold
+                    and eef_dist < cfg.subgoal_robot_threshold
+                ):
+                    self._g_i += 1
+            else:
+                if img_l2_dist(curr_img, goal_img) < cfg.subgoal_threshold:
+                    self._g_i += 1
+        else:
+            # skip to most future goal that is still <= threshold, and start from there
+            all_goal_diffs = curr_img.astype(np.float) - self.demo_goal_imgs[
+                self._g_i :
+            ].astype(np.float)
+            min_idx = 0
+            new_goal = False
+            for j, goal_diff in enumerate(all_goal_diffs):
+                goal_cost = norm(goal_diff)
+                if goal_cost <= cfg.subgoal_threshold:
+                    new_goal = True
+                    min_idx = j + 1
+            self._g_i += min_idx
+            if new_goal:
+                self._g_i += 1
 
     def run_episode(self, ep_num, demo_name, demo_path):
         """
@@ -48,17 +86,28 @@ class EpisodeRunner(object):
         env = self._env
         logger = self._logger
         demo = self._load_demo(demo_path)
-        # use for debugging
-        demo_opt_traj = demo["object_inpaint_demo"][:: self._timescale]
-        self.demo_goal_imgs = demo[cfg.demo_type][:: self._timescale]
+        self.demo_goal_imgs = demo[cfg.demo_type][:: cfg.demo_timescale]
+        self.demo_goal_robots = demo["robot_state"][:: cfg.demo_timescale]
+
+        # use opt trajectory for debugging
+        demo_opt_traj: List[GoalState] = []
+        demo_opt_imgs = demo["object_inpaint_demo"][:: cfg.demo_timescale]
+        for i in range(len(demo_opt_imgs)):
+            goal_img = demo_opt_imgs[i]
+            goal_robot = self.demo_goal_robots[i]
+            g = GoalState(goal_img, goal_robot)
+            demo_opt_traj.append(g)
+
         num_goals = len(self.demo_goal_imgs)
         pushed_obj = demo["pushed_obj"] + ":joint"
-        goal_obj_poses = demo[pushed_obj][:: self._timescale]
-        push_length = np.linalg.norm(goal_obj_poses[-1][:2] - goal_obj_poses[0][:2])
+        goal_obj_poses = demo[pushed_obj][:: cfg.demo_timescale]
+        push_length = norm(goal_obj_poses[-1][:2] - goal_obj_poses[0][:2])
 
         self._g_i = cfg.subgoal_start  # goal index
         goal_imgs = self.demo_goal_imgs[self._g_i :]
         goal_img = goal_imgs[0]
+        goal_robots = self.demo_goal_robots[self._g_i :]
+        goal_robot = goal_robots[0]
 
         trajectory = defaultdict(list)
         terminate_ep = False
@@ -69,10 +118,10 @@ class EpisodeRunner(object):
         curr_mask = obs["mask"]
 
         # Check if demo actions are meaningful
-        # if cfg.debug_cem:
-        #     self.policy.compare_optimal_actions(
-        #         demo, curr_img, curr_mask, curr_robot, curr_sim, goal_imgs, demo_name
-        #     )
+        if cfg.debug_cem:
+            curr_state = StartState(curr_img, curr_robot, curr_mask, curr_sim)
+            goal_state = GoalState(goal_imgs, goal_robots)
+            self.policy.compare_optimal_actions(demo, curr_state, goal_state, demo_name)
 
         if cfg.record_trajectory:
             trajectory["obs"].append(obs)
@@ -89,33 +138,24 @@ class EpisodeRunner(object):
             logger.info(f"\tStep {self._step + 1}")
             goal_imgs = self.demo_goal_imgs[self._g_i :]
             goal_img = goal_imgs[0]
+            goal_robots = self.demo_goal_robots[self._g_i :]
+            goal_robot = goal_robots[0]
             opt_traj = demo_opt_traj[self._g_i :] if cfg.demo_cost else None
 
             # Use CEM to find the best action(s)
+            curr_state = StartState(curr_img, curr_robot, curr_mask, curr_sim)
+            goal_state = GoalState(goal_imgs, goal_robots)
             actions = self.policy.get_action(
-                curr_img,
-                curr_mask,
-                curr_robot,
-                curr_sim,
-                goal_imgs,
-                ep_num,
-                self._step,
-                opt_traj=opt_traj,
+                curr_state, goal_state, ep_num, self._step, opt_traj=opt_traj
             )
             # See how CEM actions rollout in actual environment
             # if cfg.debug_cem:
             #     gif_folder = os.path.join(cfg.log_dir, "debug_cem")
             #     os.makedirs(f"{gif_folder}/ep_num", exist_ok=True)
             #     gif_path = f"ep_{ep_num}/step_{self._step}_env_comparison.gif"
-            #     fake_demo = {"states": [curr_sim], "actions":actions}
+            #     fake_demo = {"states": [curr_sim], "actions": actions}
             #     self.policy.compare_optimal_actions(
-            #         fake_demo,
-            #         curr_img,
-            #         curr_mask,
-            #         curr_robot,
-            #         curr_sim,
-            #         goal_imgs,
-            #         gif_path,
+            #         fake_demo, curr_state, goal_state, gif_path
             #     )
             actions = actions[: cfg.replan_every]
             # Execute the planned actions. Usually only 1 action
@@ -125,13 +165,13 @@ class EpisodeRunner(object):
                 curr_robot = obs["robot"]
                 curr_sim = obs["state"]
                 curr_mask = obs["mask"]
-                # Log the cost, change in object pose, change in goal
-                rew = self.cost(curr_img, goal_img)
+                # TODO change cost to include robot pose cost
+                rew = self.cost(curr_img, goal_img, curr_robot, goal_robot)
                 curr_obj_pos = obs[pushed_obj][:2]
                 goal_obj_pos = goal_obj_poses[self._g_i][:2]
                 final_goal_obj_pos = goal_obj_poses[-1][:2]
-                obj_dist = np.linalg.norm(curr_obj_pos - goal_obj_pos)
-                final_obj_dist = np.linalg.norm(curr_obj_pos - final_goal_obj_pos)
+                obj_dist = norm(curr_obj_pos - goal_obj_pos)
+                final_obj_dist = norm(curr_obj_pos - final_goal_obj_pos)
                 logger.info(
                     f"Current goal: {self._g_i}/{num_goals-1}, dist to goal: {obj_dist:.4f}, dist to last goal: {final_obj_dist:.4f}"
                 )
@@ -144,28 +184,9 @@ class EpisodeRunner(object):
                 self._add_img_to_gif(gif, curr_img, goal_img)
 
                 # goal choosing logic
-                finish_demo = False
-                if cfg.sequential_subgoal:
-                    # just choose the next goal
-                    # print("img distance =", np.linalg.norm(curr_img - goal_img))
-                    # cfg.subgoal_threshold = 5000 is too small, so that for some experiments, goal_img is not updated
-                    if np.linalg.norm(curr_img.astype(np.float) - goal_img.astype(np.float)) < cfg.subgoal_threshold:
-                        self._g_i += 1
-                        finish_demo = self._g_i >= num_goals
-                else:
-                    # skip to most future goal that is still <= threshold, and start from there
-                    all_goal_diffs = curr_img.astype(np.float) - self.demo_goal_imgs[self._g_i :].astype(np.float)
-                    min_idx = 0
-                    new_goal = False
-                    for j, goal_diff in enumerate(all_goal_diffs):
-                        goal_cost = np.linalg.norm(goal_diff)
-                        if goal_cost <= cfg.subgoal_threshold:
-                            new_goal = True
-                            min_idx = j + 1
-                    self._g_i += min_idx
-                    if new_goal:
-                        self._g_i += 1
-                        finish_demo = self._g_i >= num_goals
+                self._pick_next_goal(curr_robot, goal_robot, curr_img, goal_img)
+                finish_demo = self._g_i >= num_goals
+
                 # if episode is done, log statistics and break out of loop
                 if finish_demo or self._step >= cfg.max_episode_length - 1:
                     logger.info("=" * 10 + f"Episode {ep_num}" + "=" * 10)
@@ -249,6 +270,7 @@ class EpisodeRunner(object):
             # import ipdb; ipdb.set_trace()
             # demo[self._config.demo_type] = hf[self._config.demo_type]
             demo["robot_demo"] = hf["robot_demo"][:]
+            demo["robot_state"] = hf["robot_state"][:]
             for k, v in hf.items():
                 if "object" in k:
                     demo[k] = v[:]
@@ -327,7 +349,8 @@ class EpisodeRunner(object):
     def _add_img_to_gif(self, gif, curr_img, goal_img):
         if self._record:
             env_ob = self._env.render("rgb_array")  # no inpainting
-            rew = self.cost(curr_img, goal_img)
+            # rew = self.cost(curr_img, goal_img)
+            rew = 0
             goal_str = f"{self._g_i}/{len(self.demo_goal_imgs)-1}"
             time_str = f"{self._step}/{config.max_episode_length}"
             gif_img = self._create_gif_img(
