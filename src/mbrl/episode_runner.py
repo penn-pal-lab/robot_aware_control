@@ -227,11 +227,11 @@ class EpisodeRunner(object):
         self._logger.info("\n\n### Summary ###")
         # histograms = {"reward", "object_dist", "gripper_dist"}
         # upload table to wandb
-        with open(join(config.plot_dir, "stats.pkl"), "wb") as f:
-            pickle.dump(f, self._stats)
         table = wandb.Table(columns=list(self._stats.keys()))
         table_rows = []
         for k, v in self._stats.items():
+            if k in ["demo_name"]:
+                continue
             mean = np.mean(v)
             sigma = np.std(v)
             self._logger.info(f"{k} avg: {mean} \u00B1 {sigma}")
@@ -249,6 +249,9 @@ class EpisodeRunner(object):
 
         table.add_data(*table_rows)
         wandb.log({"Results": table}, step=0)
+
+        with open(join(config.plot_dir, "stats.pkl"), "wb") as f:
+            pickle.dump(self._stats, f)
 
     def _load_demo_dataset(self, config):
         file_type = "hdf5"

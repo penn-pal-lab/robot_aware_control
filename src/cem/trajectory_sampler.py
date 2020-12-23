@@ -183,8 +183,8 @@ def generate_env_rollouts(
     sum_cost = np.zeros(N)
     all_obs = []  # N x T x obs
     all_step_cost = []  # N x T x 1
-
-    bg_img = env._background_img.copy()
+    if env._background_img is not None:
+        bg_img = env._background_img.copy()
     env_state = env.get_flattened_state()
     if not suppress_print:
         start_time = timer.time()
@@ -229,7 +229,8 @@ def generate_env_rollouts(
         all_obs.append(ep_obs)
         all_step_cost.append(ep_cost)
         env.set_flattened_state(env_state.copy())  # reset env to before rollout
-        env._background_img = bg_img.copy()
+        if env._background_img is not None:
+            env._background_img = bg_img.copy()
     if not suppress_print:
         print(
             "======= Samples Gathered  ======= | >>>> Time taken = %f "
