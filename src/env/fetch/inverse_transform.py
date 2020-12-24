@@ -15,7 +15,6 @@ from scipy.spatial.transform import Rotation as R
 import pdb
 import sys
 import matplotlib
-matplotlib.use("macOSX")
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 import imageio
@@ -43,25 +42,26 @@ def getHomogenousT(rot_matrix, pos):
     )
     return T
 
-def getCameraMatrix(sim, width, height, camera_name):
+def get_world_to_cam(sim, width, height, camera_name):
     cam_id = sim.model.camera_name2id(camera_name)
     cam_quat = mat2quat(sim.data.cam_xmat[cam_id].reshape(3,3)) # this gets the global quaternion
     r = R.from_quat([cam_quat[1], cam_quat[2], cam_quat[3], cam_quat[0]])
     # position vector from world to camera
     cam_pos = sim.data.cam_xpos[cam_id].copy()
-     # intrinsics
     fovy = sim.model.cam_fovy[cam_id]
     f = 0.5 * height / math.tan(fovy * math.pi / 360)
+    # intrinsic matrix
+    # fkn mujoco flips the horizontal image so intrinsic matrix needs -f
     K = np.array(((-f, 0, (width-1)/ 2.0), (0, f, (height-1) / 2.0), (0, 0, 1)))
+    # extrinsic matrix (camera to world)
     T = getHomogenousT(r.as_matrix(), cam_pos) # 4 x 4
     return K @ np.linalg.inv(T)[:3] # (3 x 4) world to camera matrix
 
-
-def get2DCoordinate(world_pos, camera_matrix):
+def get_pixel_coord(world_pos, camera_matrix):
+    """Returns u,v pixel coordinates"""
     coords = camera_matrix @ world_pos # (3, 4) x (4, N)
-    coords[:2] /= coords[2]
+    coords[:2] /= coords[2] # normalize to homogenous coordinates
     return int(round(coords[0])), int(round(coords[1]))
-
 
 def main(width=128, height=128, camera_name="external_camera_0"):
     xml_path = os.path.join("fetch", "clutterpush.xml")
@@ -118,11 +118,11 @@ def main(width=128, height=128, camera_name="external_camera_0"):
     world_coords[:3, :] = world_coords[:3, :] / world_coords[-1, :].reshape(1, -1)
 
     # forward projection start
-    world_to_cam = getCameraMatrix(sim, width, height, camera_name)
+    world_to_cam = get_world_to_cam(sim, width, height, camera_name)
     for i in range(3):
         world_pos = sim.data.get_site_xpos(f"object{i}")
         world_pos = np.concatenate([world_pos, [1]])
-        u, v = get2DCoordinate(world_pos, world_to_cam)
+        u, v = get_pixel_coord(world_pos, world_to_cam)
         image[v, u] = (255, 255, 255)
 
     imageio.imwrite("test.png", image)

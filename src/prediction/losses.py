@@ -170,12 +170,15 @@ class RobotWorldCost(Cost):
         weights = [self.robot_cost_weight, self.world_cost_weight]
         costs = [self.robot_cost, self.world_cost]
         total_cost = 0
+        print_str = ""
         for w, c in zip(weights, costs):
             if w == 0:
                 continue
             cost = w * c(curr, goal)
             if print_cost:
-                print(f"cost {c.name}: {cost:.2f}")
+                print_str += f"{c.name}: {cost:.2f} ,"
             total_cost += cost
+        if print_cost:
+            print(print_str)
 
         return total_cost
