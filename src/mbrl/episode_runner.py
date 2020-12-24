@@ -232,6 +232,7 @@ class EpisodeRunner(object):
         table_rows = []
         for k, v in self._stats.items():
             if k in ["demo_name"]:
+                table_rows.append(v)
                 continue
             mean = np.mean(v)
             sigma = np.std(v)

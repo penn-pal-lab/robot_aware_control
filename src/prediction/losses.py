@@ -151,7 +151,7 @@ class ImgDontcareCost(Cost):
 
 class RobotWorldCost(Cost):
     """Combination of a robot and a world cost."""
-    def __init__(self, config) -> None:
+    def __init__(self, config):
         self._config = config
         self._build_robot_cost(config)
         self._build_world_cost(config)

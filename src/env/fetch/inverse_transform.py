@@ -1,7 +1,6 @@
 import os
 import copy
 import math
-import ipdb
 from mujoco_py import (
     utils,
     load_model_from_path,
@@ -12,9 +11,6 @@ from mujoco_py import (
 from mujoco_py.modder import CameraModder
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-import pdb
-import sys
-import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 unused import
 import imageio
