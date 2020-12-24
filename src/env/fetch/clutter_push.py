@@ -723,7 +723,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                     height = width = self._img_dim
                     fovy = self.sim.model.cam_fovy[cam_id]
                     f = 0.5 * height / math.tan(fovy * math.pi / 360)
-                    K = np.array(((f, 0, width / 2), (0, f, height / 2), (0, 0, 1)))
+                    K = np.array(((-f, 0, (width-1) / 2.0), (0, f, (height-1)/ 2.0), (0, 0, 1)))
                     K_inv = np.linalg.inv(K)
                     depth = -(
                         near_ / (1 - depth * (1 - near_ / far_))
