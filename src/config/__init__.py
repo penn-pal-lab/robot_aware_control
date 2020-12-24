@@ -78,6 +78,7 @@ def add_method_arguments(parser: ArgumentParser):
 
     add_prediction_arguments(parser)
     add_dataset_arguments(parser)
+    add_cost_arguments(parser)
 
     if args.mbrl_algo == "cem":
         add_cem_arguments(parser)
@@ -227,9 +228,6 @@ def add_cem_arguments(parser):
     parser.add_argument("--debug_trajectory_path", type=str, default=None)
     parser.add_argument("--debug_cem", type=str2bool, default=False)
     parser.add_argument("--object_demo_dir", type=str, default=None)
-    parser.add_argument("--subgoal_threshold", type=float, default=4000)
-    parser.add_argument("--subgoal_robot_threshold", type=float, default=0.01)
-    parser.add_argument("--robot_weight", type=float, default=1)
     parser.add_argument("--subgoal_start", type=int, default=0)
     parser.add_argument("--sequential_subgoal", type=str2bool, default=True)
     parser.add_argument("--demo_cost", type=str2bool, default=False)
@@ -243,6 +241,18 @@ def add_cem_arguments(parser):
     parser.add_argument("--cem_init_std", type=float, default=1)
     parser.add_argument("--sparse_cost", type=str2bool, default=False)
 
+# Cost Fn Hyperparameters
+def add_cost_arguments(parser):
+    # cost thresholds for determining goal success
+    parser.add_argument("--world_cost_success", type=float, default=4000)
+    parser.add_argument("--robot_cost_success", type=float, default=0.01)
+    # weight of the costs
+    parser.add_argument("--robot_cost_weight", type=float, default=0)
+    parser.add_argument("--world_cost_weight", type=float, default=1)
+    # checks if pixel diff > threshold before counting it
+    parser.add_argument("--img_cost_threshold", type=float, default=None)
+    # only used by img don't care cost, divide by number of mask pixels
+    parser.add_argument("--img_cost_mask_norm", type=str2bool, default=True)
 
 def argparser():
     """ Directly parses the arguments. """

@@ -1,9 +1,7 @@
-from src.prediction.losses import eef_inpaint_cost
+from src.prediction.losses import RobotWorldCost
 import time as timer
 from collections import defaultdict
-from dataclasses import dataclass
-from typing import Any
-
+from src.utils.state import State, DemoGoalState
 
 import numpy as np
 import torch
@@ -12,27 +10,14 @@ import torch.multiprocessing as mp
 from src.prediction.models.dynamics import DynamicsModel
 
 
-@dataclass
-class StartState:
-    img: Any = None # used by learned model, not needed for ground truth model
-    robot: Any = None # robot eef pos, used by learned model, not needed for gt model
-    mask: Any = None #  used by learned model, not needed for ground truth model
-    sim: Any = None # used by learned model, not needed for ground truth model
-
-@dataclass
-class GoalState:
-    imgs: Any = None # list of goal imgs for computing costs
-    robots: Any = None # list of goal eef pos
-
-
 @torch.no_grad()
 def generate_model_rollouts(
     cfg,
     env,
     model: DynamicsModel,
     action_sequences,
-    start: StartState,
-    goal: GoalState,
+    start: State,
+    goal: DemoGoalState,
     opt_traj=None,
     ret_obs=False,
     ret_step_cost=False,
@@ -153,12 +138,11 @@ def generate_model_rollouts(
         rollouts["step_cost"] = torch.stack(all_step_cost).transpose(0, 1).cpu().numpy()
     return rollouts
 
-
 def generate_env_rollouts(
     cfg,
     env,
     action_sequences,
-    goal: GoalState,
+    goal: DemoGoalState,
     ret_obs=False,
     ret_step_cost=False,
     suppress_print=True,
@@ -178,6 +162,7 @@ def generate_env_rollouts(
 
     Returns a dictionary containing the cost per trajectory by default.
     """
+    cost = RobotWorldCost(cfg)
     N = len(action_sequences)  # Number of candidate action sequences
     T = len(action_sequences[0])
     sum_cost = np.zeros(N)
@@ -197,22 +182,25 @@ def generate_env_rollouts(
             goal_idx = t if t < len(goal.imgs) else -1
             goal_img = goal.imgs[goal_idx].astype(np.float32)
             goal_robot = goal.robots[goal_idx]
+            goal_mask = None
+            if goal.masks is not None:
+                goal_mask = goal.masks[goal_idx]
+            goal_state = State(img=goal_img, robot=goal_robot, mask=goal_mask)
             if opt_traj is not None:  # for debug comparison
-                opt_img = opt_traj[goal_idx].imgs.astype(np.float32)
-                opt_robot = opt_traj[goal_idx].robots
+                opt_state = opt_traj[goal_idx]
 
             action = action_sequences[ep_num, t].numpy()
             ob, _, _, _ = env.step(action)
 
             img = ob["observation"].astype(np.float32)
             robot = ob["robot"]
+            mask = None
+            curr_state = State(img=img, robot=robot, mask=mask)
             rew = 0
             if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
-                # rew = -np.linalg.norm(img - goal_img)
-                rew = eef_inpaint_cost(robot, goal_robot, img, goal_img, cfg.robot_weight)
+                rew = cost(curr_state, goal_state)
                 if opt_traj is not None and ep_num == 0:
-                    # optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
-                    optimal_sum_cost += eef_inpaint_cost(opt_robot, opt_robot, opt_img, goal_img, cfg.robot_weight)
+                    optimal_sum_cost += cost(opt_state, goal_state)
 
                     # print("env", optimal_sum_cost, goal_idx)
                     # import pickle

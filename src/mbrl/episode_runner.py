@@ -14,9 +14,9 @@ import wandb
 from numpy.linalg import norm
 from tqdm import trange
 from src.cem.demo_cem import DemoCEMPolicy
-from src.cem.trajectory_sampler import GoalState, StartState
+from src.utils.state import State, DemoGoalState
 from src.env.fetch.clutter_push import ClutterPushEnv
-from src.prediction.losses import eef_inpaint_cost, img_l2_dist
+from src.prediction.losses import RobotWorldCost
 from src.utils.plot import putText
 from torchvision.datasets.folder import has_file_allowed_extension
 
@@ -32,16 +32,14 @@ class EpisodeRunner(object):
         self._setup_loggers(config)
         self._env = ClutterPushEnv(config)
         self._setup_policy(config, self._env)
+        self._setup_cost(config)
         self._stats = defaultdict(list)
 
     def _setup_policy(self, config, env):
         self.policy = DemoCEMPolicy(config, env)
 
-    def cost(self, curr_img, goal_img, curr_robot=None, goal_robot=None):
-        if config.reward_type == "eef_inpaint":
-            w = self._config.robot_weight
-            return eef_inpaint_cost(curr_robot, goal_robot, curr_img, goal_img, w, True)
-        return -img_l2_dist(curr_img, goal_img)
+    def _setup_cost(self, config):
+        self.cost: RobotWorldCost = RobotWorldCost(config)
 
     def _pick_next_goal(self, curr_robot, goal_robot, curr_img, goal_img):
         """
@@ -52,15 +50,15 @@ class EpisodeRunner(object):
         cfg = self._config
         if cfg.sequential_subgoal:
             if cfg.reward_type == "eef_inpaint":
-                img_dist = img_l2_dist(curr_img, goal_img)
-                eef_dist = norm(curr_robot - goal_robot)
+                img_dist = self.cost.world_cost.call(curr_img, goal_img)
+                eef_dist = self.cost.robot_cost.call(curr_robot, goal_robot)
                 if (
-                    img_dist < cfg.subgoal_threshold
-                    and eef_dist < cfg.subgoal_robot_threshold
+                    img_dist < cfg.world_cost_success
+                    and eef_dist < cfg.robot_cost_success
                 ):
                     self._g_i += 1
             else:
-                if img_l2_dist(curr_img, goal_img) < cfg.subgoal_threshold:
+                if self.cost.world_cost.call(curr_img, goal_img) < cfg.world_cost_success:
                     self._g_i += 1
         else:
             # skip to most future goal that is still <= threshold, and start from there
@@ -71,7 +69,7 @@ class EpisodeRunner(object):
             new_goal = False
             for j, goal_diff in enumerate(all_goal_diffs):
                 goal_cost = norm(goal_diff)
-                if goal_cost <= cfg.subgoal_threshold:
+                if goal_cost <= cfg.world_cost_success:
                     new_goal = True
                     min_idx = j + 1
             self._g_i += min_idx
@@ -90,12 +88,12 @@ class EpisodeRunner(object):
         self.demo_goal_robots = demo["robot_state"][:: cfg.demo_timescale]
 
         # use opt trajectory for debugging
-        demo_opt_traj: List[GoalState] = []
+        demo_opt_traj: List[State] = []
         demo_opt_imgs = demo["object_inpaint_demo"][:: cfg.demo_timescale]
         for i in range(len(demo_opt_imgs)):
             goal_img = demo_opt_imgs[i]
             goal_robot = self.demo_goal_robots[i]
-            g = GoalState(goal_img, goal_robot)
+            g = State(goal_img, goal_robot)
             demo_opt_traj.append(g)
 
         num_goals = len(self.demo_goal_imgs)
@@ -119,8 +117,8 @@ class EpisodeRunner(object):
 
         # Check if demo actions are meaningful
         if cfg.debug_cem:
-            curr_state = StartState(curr_img, curr_robot, curr_mask, curr_sim)
-            goal_state = GoalState(goal_imgs, goal_robots)
+            curr_state = State(curr_img, curr_robot, curr_mask, curr_sim)
+            goal_state = DemoGoalState(goal_imgs, goal_robots)
             self.policy.compare_optimal_actions(demo, curr_state, goal_state, demo_name)
 
         if cfg.record_trajectory:
@@ -143,8 +141,8 @@ class EpisodeRunner(object):
             opt_traj = demo_opt_traj[self._g_i :] if cfg.demo_cost else None
 
             # Use CEM to find the best action(s)
-            curr_state = StartState(curr_img, curr_robot, curr_mask, curr_sim)
-            goal_state = GoalState(goal_imgs, goal_robots)
+            curr_state = State(curr_img, curr_robot, curr_mask, curr_sim)
+            goal_state = DemoGoalState(goal_imgs, goal_robots)
             actions = self.policy.get_action(
                 curr_state, goal_state, ep_num, self._step, opt_traj=opt_traj
             )
@@ -165,8 +163,11 @@ class EpisodeRunner(object):
                 curr_robot = obs["robot"]
                 curr_sim = obs["state"]
                 curr_mask = obs["mask"]
-                # TODO change cost to include robot pose cost
-                rew = self.cost(curr_img, goal_img, curr_robot, goal_robot)
+
+                state = State(curr_img, curr_robot, curr_mask, curr_sim)
+                g_state = State(goal_img, goal_robot)
+
+                rew = self.cost(state, g_state, print_cost=True)
                 curr_obj_pos = obs[pushed_obj][:2]
                 goal_obj_pos = goal_obj_poses[self._g_i][:2]
                 final_goal_obj_pos = goal_obj_poses[-1][:2]

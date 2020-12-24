@@ -2,9 +2,8 @@ from src.env.fetch.clutter_push import ClutterPushEnv
 import imageio
 import numpy as np
 import torch
+from src.utils.state import State, DemoGoalState
 from src.cem.trajectory_sampler import (
-    StartState,
-    GoalState,
     generate_env_rollouts,
     generate_model_rollouts,
 )
@@ -141,8 +140,8 @@ class DemoCEMPolicy(object):
     def _get_rollouts(
         self,
         act_seq,
-        start: StartState,
-        goal: GoalState,
+        start: State,
+        goal: DemoGoalState,
         opt_traj,
     ):
         """
