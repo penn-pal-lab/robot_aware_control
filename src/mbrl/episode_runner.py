@@ -41,26 +41,29 @@ class EpisodeRunner(object):
     def _setup_cost(self, config):
         self.cost: RobotWorldCost = RobotWorldCost(config)
 
-    def _pick_next_goal(self, curr_robot, goal_robot, curr_img, goal_img):
+    def _pick_next_goal(self, curr: State, goal: State):
         """
-        This function checks if the current image is close enough to the goal img.
+        This function checks if the costs are under the threshold
         If it is, then we will pick the next goal index.
         """
         # goal choosing logic
         cfg = self._config
         if cfg.sequential_subgoal:
-            if cfg.reward_type == "eef_inpaint":
-                img_dist = self.cost.world_cost.call(curr_img, goal_img)
-                eef_dist = self.cost.robot_cost.call(curr_robot, goal_robot)
-                if (
-                    img_dist < cfg.world_cost_success
-                    and eef_dist < cfg.robot_cost_success
-                ):
-                    self._g_i += 1
-            else:
-                if self.cost.world_cost.call(curr_img, goal_img) < cfg.world_cost_success:
-                    self._g_i += 1
+            robot_success = True
+            if cfg.robot_cost_weight != 0:
+                eef_dist = self.cost.robot_cost(curr, goal)
+                robot_success = eef_dist < cfg.robot_cost_success
+
+            world_success = True
+            if cfg.world_cost_weight != 0:
+                img_dist = self.cost.world_cost(curr, goal)
+                world_success = img_dist < cfg.world_cost_success
+
+            all_success = robot_success and world_success
+            if all_success:
+                self._g_i += 1
         else:
+            raise NotImplementedError("Need to implement skip subgoal with State")
             # skip to most future goal that is still <= threshold, and start from there
             all_goal_diffs = curr_img.astype(np.float) - self.demo_goal_imgs[
                 self._g_i :
@@ -86,14 +89,15 @@ class EpisodeRunner(object):
         demo = self._load_demo(demo_path)
         self.demo_goal_imgs = demo[cfg.demo_type][:: cfg.demo_timescale]
         self.demo_goal_robots = demo["robot_state"][:: cfg.demo_timescale]
-
+        demo_goal_masks = demo["masks"][:: cfg.demo_timescale]
         # use opt trajectory for debugging
         demo_opt_traj: List[State] = []
         demo_opt_imgs = demo["object_inpaint_demo"][:: cfg.demo_timescale]
         for i in range(len(demo_opt_imgs)):
             goal_img = demo_opt_imgs[i]
             goal_robot = self.demo_goal_robots[i]
-            g = State(goal_img, goal_robot)
+            goal_mask = demo_goal_masks[i]
+            g = State(goal_img, goal_robot, goal_mask)
             demo_opt_traj.append(g)
 
         num_goals = len(self.demo_goal_imgs)
@@ -106,6 +110,8 @@ class EpisodeRunner(object):
         goal_img = goal_imgs[0]
         goal_robots = self.demo_goal_robots[self._g_i :]
         goal_robot = goal_robots[0]
+        goal_masks = demo_goal_masks[self._g_i :]
+        goal_mask = goal_masks[0]
 
         trajectory = defaultdict(list)
         terminate_ep = False
@@ -142,7 +148,7 @@ class EpisodeRunner(object):
 
             # Use CEM to find the best action(s)
             curr_state = State(curr_img, curr_robot, curr_mask, curr_sim)
-            goal_state = DemoGoalState(goal_imgs, goal_robots)
+            goal_state = DemoGoalState(goal_imgs, goal_robots, goal_masks)
             actions = self.policy.get_action(
                 curr_state, goal_state, ep_num, self._step, opt_traj=opt_traj
             )
@@ -165,7 +171,7 @@ class EpisodeRunner(object):
                 curr_mask = obs["mask"]
 
                 state = State(curr_img, curr_robot, curr_mask, curr_sim)
-                g_state = State(goal_img, goal_robot)
+                g_state = State(goal_img, goal_robot, goal_mask)
 
                 rew = self.cost(state, g_state, print_cost=True)
                 curr_obj_pos = obs[pushed_obj][:2]
@@ -185,7 +191,7 @@ class EpisodeRunner(object):
                 self._add_img_to_gif(gif, curr_img, goal_img)
 
                 # goal choosing logic
-                self._pick_next_goal(curr_robot, goal_robot, curr_img, goal_img)
+                self._pick_next_goal(state, g_state)
                 finish_demo = self._g_i >= num_goals
 
                 # if episode is done, log statistics and break out of loop
@@ -275,6 +281,8 @@ class EpisodeRunner(object):
             demo["pushed_obj"] = hf.attrs["pushed_obj"]
             demo["actions"] = hf["actions"][:]
             demo["states"] = hf["states"][:]
+            if "masks" in hf:
+                demo["masks"] = hf["masks"][:]
             # import ipdb; ipdb.set_trace()
             # demo[self._config.demo_type] = hf[self._config.demo_type]
             demo["robot_demo"] = hf["robot_demo"][:]

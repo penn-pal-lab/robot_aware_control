@@ -194,7 +194,7 @@ def generate_env_rollouts(
 
             img = ob["observation"].astype(np.float32)
             robot = ob["robot"]
-            mask = None
+            mask = ob["mask"]
             curr_state = State(img=img, robot=robot, mask=mask)
             rew = 0
             if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):

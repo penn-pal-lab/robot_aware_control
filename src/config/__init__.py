@@ -45,7 +45,7 @@ def add_method_arguments(parser: ArgumentParser):
         "--reward_type",
         type=str,
         default="weighted",
-        choices=["weighted", "dense", "inpaint", "sparse" "blackrobot", "inpaint-blur", "eef_inpaint"],
+        choices=["weighted", "dense", "inpaint", "sparse" "blackrobot", "inpaint-blur", "eef_inpaint", "dontcare"],
     )
     # for use with inpaint blur
     parser.add_argument("--most_recent_background", type=str2bool, default=False)
@@ -251,8 +251,8 @@ def add_cost_arguments(parser):
     parser.add_argument("--world_cost_weight", type=float, default=1)
     # checks if pixel diff > threshold before counting it
     parser.add_argument("--img_cost_threshold", type=float, default=None)
-    # only used by img don't care cost, divide by number of mask pixels
-    parser.add_argument("--img_cost_mask_norm", type=str2bool, default=True)
+    # only used by img don't care cost, divide by number of world pixels
+    parser.add_argument("--img_cost_world_norm", type=str2bool, default=True)
 
 def argparser():
     """ Directly parses the arguments. """

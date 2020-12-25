@@ -88,6 +88,7 @@ class InpaintBlurCost:
 
 class Cost:
     """Generic Cost fn interface"""
+    name = "generic_cost"
     def __init__(self, config):
         self._config = config
 
@@ -116,9 +117,11 @@ class ImgL2Cost(Cost):
         goal_img = goal_img.astype(np.float)
         threshold = self._config.img_cost_threshold
         if threshold is None:
-            return -norm(curr_img - goal_img)
-        diff = np.abs(curr_img - goal_img)
-        return -np.sum(diff > threshold)
+            dist = norm(curr_img - goal_img)
+        else:
+            diff = np.abs(curr_img - goal_img)
+            dist = np.sum(diff > threshold)
+        return -dist
 
     def __call__(self, curr: State, goal: State):
         return self.call(curr.img, goal.img)
@@ -137,11 +140,12 @@ class ImgDontcareCost(Cost):
         non_robot_region2 = goal_img[~total_mask]
         threshold = self._config.img_cost_threshold
         if threshold is None:
-            return -norm(non_robot_region1 - non_robot_region2)
-        non_robot_diff = np.abs(non_robot_region1 - non_robot_region2)
-        non_robot_loss = np.sum(non_robot_diff > threshold)
+            non_robot_loss = norm(non_robot_region1 - non_robot_region2)
+        else:
+            non_robot_diff = np.abs(non_robot_region1 - non_robot_region2)
+            non_robot_loss = np.sum(non_robot_diff > threshold)
 
-        if self._config.img_cost_mask_norm:
+        if self._config.img_cost_world_norm:
             non_robot_loss /= np.sum(~total_mask)
         return -non_robot_loss
 
