@@ -186,7 +186,7 @@ def collect_demo_cem_data():
     config.norobot_pixels_ob = True  # whether to inpaint the robot in observation
 
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/realvp_straight_push"
+    config.demo_dir = "demos/redobject_straight_push"
     config.most_recent_background = False  # use static or mr background for inpaint
     config.multiview = True
     config.img_dim = 64
