@@ -3,10 +3,6 @@ import os
 from collections import defaultdict
 from copy import deepcopy
 
-import imageio
-
-# import ipdb
-import matplotlib.pyplot as plt
 import numpy as np
 from gym import spaces, utils
 from scipy.spatial.transform import Rotation as R
@@ -19,6 +15,7 @@ from src.env.fetch.rotations import mat2euler
 from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
 
 MODEL_XML_PATH = os.path.join("fetch", "clutterpush.xml")
+RED_MODEL_XML_PATH = os.path.join("fetch", "red_clutterpush.xml")
 
 
 class ClutterPushEnv(FetchEnv, utils.EzPickle):
@@ -57,7 +54,10 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         self._push_dist = config.push_dist
         self._background_img = None
         self._invisible_demo = config.invisible_demo
+        self._red_robot = config.red_robot
         xml_path = MODEL_XML_PATH
+        if self._red_robot:
+            xml_path = RED_MODEL_XML_PATH
         self._blur_width = self._img_dim * 2
         self._sigma = config.blur_sigma
         self._unblur_cost_scale = config.unblur_cost_scale
@@ -1158,7 +1158,8 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             history["pushed_obj"] = obj
             self.random_robot_moving_object(history, ep_len, object=obj)
         elif behavior == "straight_push":
-            obj = np.random.choice(self._objects)
+            # obj = np.random.choice(self._objects)
+            obj = "object1"
             history["pushed_obj"] = obj
             self.straight_push(history, object=obj, noise=noise)
         return history

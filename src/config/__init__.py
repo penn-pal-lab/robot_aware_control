@@ -118,6 +118,7 @@ def add_fetch_push_arguments(parser: ArgumentParser):
         choices=["random", "behind_block"],
     )
     parser.add_argument("--large_block", type=str2bool, default=False)
+    parser.add_argument("--red_robot", type=str2bool, default=False)
     parser.add_argument("--invisible_demo", type=str2bool, default=False)
     parser.add_argument("--demo_dir", type=str, default="demos/fetch_push")
 

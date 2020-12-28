@@ -283,6 +283,8 @@ class EpisodeRunner(object):
             demo["states"] = hf["states"][:]
             if "masks" in hf:
                 demo["masks"] = hf["masks"][:]
+            if self._config.reward_type == "dontcare" and self._config.demo_type == "object_only_demo":
+                demo["masks"] = np.zeros(hf["masks"].shape)
             # import ipdb; ipdb.set_trace()
             # demo[self._config.demo_type] = hf[self._config.demo_type]
             demo["robot_demo"] = hf["robot_demo"][:]
