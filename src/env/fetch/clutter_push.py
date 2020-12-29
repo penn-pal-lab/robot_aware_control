@@ -1,7 +1,6 @@
 import math
 import os
 from collections import defaultdict
-from copy import deepcopy
 
 import numpy as np
 from gym import spaces, utils
@@ -84,26 +83,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         self.action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype="float32")
         obs = self._get_obs()
         if self._pixels_ob:
-            # self.observation_space = spaces.Dict(
-            #     dict(
-            #         desired_goal=spaces.Box(
-            #             -np.inf,
-            #             np.inf,
-            #             shape=obs["achieved_goal"].shape,
-            #             dtype=np.uint8,
-            #         ),
-            #         achieved_goal=spaces.Box(
-            #             -np.inf,
-            #             np.inf,
-            #             shape=obs["achieved_goal"].shape,
-            #             dtype=np.uint8,
-            #         ),
-            #         observation=spaces.Box(
-            #             -np.inf, np.inf, shape=obs["observation"].shape, dtype=np.uint8
-            #         ),
-            #         robot=spaces.Box(-np.inf, np.inf, shape=(6,), dtype="float32"),
-            #     )
-            # )
             self.observation_space = spaces.Dict(
                 dict(
                     observation=spaces.Box(
@@ -518,27 +497,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                     obj_pose[2] = 0.43
                     self.sim.data.set_joint_qpos(k, obj_pose)
 
-    def set_goal(self, goal_info):
-        """
-        Assume goal is image, and reward type is either L2, inpaint, inpaint-blur
-        """
-        # self.goal_pose contains goal poses of all objects
-        # self.current_goal_obj is the string of the current object to push
-
-        # self.goal_pose[obj][:2] = goal_state
-        # goal = self._unblurred_goal = img
-        # if self.reward_type == "inpaint-blur":
-        #     # https://stackoverflow.com/questions/25216382/gaussian-filter-in-scipy
-        #     s = self._sigma
-        #     w = self._blur_width
-        #     t = (((w - 1) / 2) - 0.5) / s
-        #     self._unblurred_goal = goal
-        #     goal = np.uint8(
-        #         255
-        #         * gaussian(goal, sigma=s, truncate=t, mode="nearest", multichannel=True)
-        #     )
-        # return goal
-
     def _sample_goal(self):
         """
         For each object, place it somewhere in the arena
@@ -849,6 +807,19 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         return super().compute_reward(achieved_goal, goal, info)
 
     def get_robot_mask(self):
+        """
+        Return binary img mask where 1 = robot and 0 = world pixel.
+        robot_mask_with_obj means the robot mask is computed with object occlusions.
+        """
+        if not self._config.robot_mask_with_obj:
+            old_state = self.get_flattened_state()
+            # move the objects out of sight
+            for k, v in self.initial_qpos.items():
+                if "object" in k:
+                    obj_pose = list(v)
+                    self.sim.data.set_joint_qpos(k, obj_pose)
+            self.sim.forward()
+
         # returns a binary mask where robot pixels are True
         seg = self.render(segmentation=True)
         types = seg[:, :, 0]
@@ -856,6 +827,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
         eef_geoms = ["robot0:r_gripper_finger_link", "robot0:l_gripper_finger_link"]
+        ignore_geoms = ["robot0:base_link", "robot0:torso_lift_link"]
         mask_dim = [self._img_dim, self._img_dim]
         if self._multiview:
             viewpoints = len(self._camera_ids)
@@ -865,8 +837,12 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             name = self.sim.model.geom_id2name(i)
             if not self._inpaint_eef and name in eef_geoms:
                 continue
+            if name in ignore_geoms:
+                continue
             if name is not None and "robot0:" in name:
                 mask[ids == i] = True
+        if not self._config.robot_mask_with_obj:
+            self.set_flattened_state(old_state)
         return mask
 
     def _get_background_img(self):
@@ -1167,9 +1143,8 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
 
 if __name__ == "__main__":
     from src.config import argparser
+    import imageio
 
     config, _ = argparser()
     env = ClutterPushEnv(config)
     env.reset()
-    while True:
-        env.render("human")

@@ -105,6 +105,7 @@ def add_fetch_push_arguments(parser: ArgumentParser):
     parser.add_argument("--camera_ids", type=str2intlist, default=[0, 4])
     parser.add_argument("--pixels_ob", type=str2bool, default=True)
     parser.add_argument("--norobot_pixels_ob", type=str2bool, default=False)
+    parser.add_argument("--robot_mask_with_obj", type=str2bool, default=False)
     parser.add_argument("--inpaint_eef", type=str2bool, default=True)
     parser.add_argument("--depth_ob", type=str2bool, default=False)
     parser.add_argument("--object_dist_threshold", type=float, default=0.01)
