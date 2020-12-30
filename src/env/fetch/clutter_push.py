@@ -827,7 +827,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
         eef_geoms = ["robot0:r_gripper_finger_link", "robot0:l_gripper_finger_link"]
-        ignore_geoms = ["robot0:base_link", "robot0:torso_lift_link"]
+        # ignore_geoms = ["robot0:base_link", "robot0:torso_lift_link"]
         mask_dim = [self._img_dim, self._img_dim]
         if self._multiview:
             viewpoints = len(self._camera_ids)
@@ -837,8 +837,8 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             name = self.sim.model.geom_id2name(i)
             if not self._inpaint_eef and name in eef_geoms:
                 continue
-            if name in ignore_geoms:
-                continue
+            # if name in ignore_geoms:
+            #     continue
             if name is not None and "robot0:" in name:
                 mask[ids == i] = True
         if not self._config.robot_mask_with_obj:
