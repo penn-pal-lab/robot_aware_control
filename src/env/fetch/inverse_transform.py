@@ -38,6 +38,20 @@ def getHomogenousT(rot_matrix, pos):
     )
     return T
 
+def get_camera_matrix(sim, width, height, cam_id):
+    # returns 3x3 camera intrinsics matrix
+    # position vector from world to camera
+    fovy = sim.model.cam_fovy[cam_id]
+    f = 0.5 * height / math.tan(fovy * math.pi / 360)
+    K = np.array(((-f, 0, (width-1)/ 2.0), (0, f, (height-1) / 2.0), (0, 0, 1)))
+    return K
+
+def get_camera_pose(sim, cam_id):
+    # returns 7D pos, quat array
+    cam_pos = sim.data.cam_xpos[cam_id].copy()
+    cam_quat = mat2quat(sim.data.cam_xmat[cam_id].reshape(3,3)) # this gets the global quaternion
+    return np.concatenate([cam_pos, cam_quat])
+
 def get_world_to_cam(sim, width, height, camera_name):
     cam_id = sim.model.camera_name2id(camera_name)
     cam_quat = mat2quat(sim.data.cam_xmat[cam_id].reshape(3,3)) # this gets the global quaternion

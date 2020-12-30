@@ -8,7 +8,7 @@ from scipy.spatial.transform import Rotation as R
 from skimage.filters import gaussian
 from src.env.fetch.collision import CollisionSphere
 from src.env.fetch.fetch_env import FetchEnv
-from src.env.fetch.inverse_transform import getHomogenousT, pixel_coord_np
+from src.env.fetch.inverse_transform import getHomogenousT, get_camera_matrix, get_camera_pose, get_pixel_coord, get_world_to_cam, pixel_coord_np
 from src.env.fetch.planar_rrt import PlanarRRT
 from src.env.fetch.rotations import mat2euler
 from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
@@ -91,6 +91,26 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                     robot=spaces.Box(-np.inf, np.inf, shape=(6,), dtype="float32"),
                 )
             )
+        self._init_camera_calibration()
+
+    def _init_camera_calibration(self):
+        self.world_to_cam_matrices = {}
+        self.camera_poses = {}
+        self.camera_intrinsics = {}
+        for i in self._camera_ids:
+            name = self.sim.model.camera_id2name(i)
+            matrix = get_world_to_cam(self.sim, self._img_dim, self._img_dim, name)
+            self.world_to_cam_matrices[i] = matrix
+            self.camera_poses[i] = get_camera_pose(self.sim, i)
+            self.camera_intrinsics[i] = get_camera_matrix(self.sim, self._img_dim, self._img_dim, i)
+
+    def world_to_pixel(self, world_pos, camera_id):
+        """
+        Takes in a 3d world position, and returns 2d pixel coordinates
+        """
+        world_pos = np.concatenate([world_pos, [1]])
+        world_to_cam = self.world_to_cam_matrices[camera_id]
+        return get_pixel_coord(world_pos, world_to_cam)
 
     def robot_kinematics(self, sim_state, action, ret_mask=False):
         """
@@ -144,6 +164,14 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 "robot": robot.copy().astype(np.float32),
                 "state": self.get_flattened_state(),
             }
+            if not hasattr(self, "camera_matrices"):
+                self._init_camera_calibration()
+            for cam_id in self._camera_ids:
+                u, v = self.world_to_pixel(grip_pos, cam_id)
+                obs[f"{cam_id}_eef_keypoint"] = [u, v]
+                # annotate the img with a white keypoint
+                obs["observation"][v, u] = (255, 255, 255)
+
             for obj in self._objects:
                 obs[obj + ":joint"] = self.sim.data.get_joint_qpos(
                     obj + ":joint"

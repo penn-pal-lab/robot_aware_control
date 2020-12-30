@@ -1,6 +1,8 @@
 from functools import partial
 import os
 from collections import defaultdict
+
+import ipdb
 from src.utils.plot import putText
 
 import h5py
@@ -52,6 +54,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
         states = []
         robot_states = []
         masks = []
+        eef_keypoints = []
         for ob in obs:
             if config.norobot_pixels_ob:
                 masks.append(ob["mask"])
@@ -60,6 +63,8 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
             states.append(ob["state"])
             for obj in env._objects:
                 obj_poses[obj + ":joint"].append(ob[obj + ":joint"])
+            # add keypoints
+            eef_keypoints.append(ob["0_eef_keypoint"])
         # record object changes
         for obj in env._objects:
             obj_change = np.linalg.norm(obj_poses[f"{obj}:joint"][-1][:2] - obj_poses[f"{obj}:joint"][0][:2])
@@ -130,6 +135,12 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
             create_dataset("robot_demo", data=robot_demo)
             for obj in env._objects:
                 create_dataset(obj + ":joint", data=obj_poses[obj + ":joint"])
+            # eef keypoints
+            create_dataset("0_eef_keypoints", data=eef_keypoints)
+            # camera position and quaternion
+            create_dataset("0_camera_pose", data=env.camera_poses[0])
+            # camera intrinsics matrix
+            create_dataset("0_camera_intrinsic", data=env.camera_intrinsics[0])
 
     # print out stats about the dataset
     stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}\n"
@@ -222,10 +233,36 @@ def collect_svg_data():
     create_demo_dataset(config, num_push, num_workers, record, "temporal_random_robot", ep_len)
     create_demo_dataset(config, num_rand, num_workers, record, "random_robot", ep_len)
 
+def collect_camera_calibration_data():
+    """
+    We need some trajectories with:
+    ground truth camera matrix
+    ground truth camera pose (pos and quaternion)
+    ground truth 3d eef position
+    ground truth 2d eef position
+    """
+    num_demo = 100  # per worker
+    num_workers = 1
+    record = True
+    behavior = "straight_push"
+    ep_len = 12  # gonna be off by -1 because of reset but whatever
+
+    config, _ = argparser()
+    config.norobot_pixels_ob = False  # whether to inpaint the robot in observation
+
+    config.reward_type = "inpaint"
+    config.robot_mask_with_obj = False
+    config.demo_dir = "demos/camera_calibration"
+    config.most_recent_background = False  # use static or mr background for inpaint
+    config.multiview = True
+    config.img_dim = 64
+    config.camera_ids = [0]
+    create_demo_dataset(config, num_demo, num_workers, record, behavior, ep_len)
 
 if __name__ == "__main__":
     """
     Use this to collect demonstrations for svg / demo cem experiments
     """
     # collect_svg_data()
-    collect_demo_cem_data()
+    # collect_demo_cem_data()
+    collect_camera_calibration_data()
