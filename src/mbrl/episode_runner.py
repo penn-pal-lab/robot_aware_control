@@ -196,7 +196,6 @@ class EpisodeRunner(object):
 
                 # if episode is done, log statistics and break out of loop
                 if finish_demo or self._step >= cfg.max_episode_length - 1:
-                    logger.info("=" * 10 + f"Episode {ep_num}" + "=" * 10)
                     if cfg.record_trajectory and (
                         ep_num % cfg.record_trajectory_interval == 0
                     ):
