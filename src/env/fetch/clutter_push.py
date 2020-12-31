@@ -26,6 +26,8 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
     """
 
     def __init__(self, config):
+        self._config = config
+        self._init_render_device()
         # initialize objects out of bounds first
         self.initial_qpos = initial_qpos = {
             "robot0:slide0": 0.175,
@@ -62,7 +64,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         self._unblur_cost_scale = config.unblur_cost_scale
         self._most_recent_background = config.most_recent_background
         self._action_repeat = config.action_repeat
-        self._config = config
         FetchEnv.__init__(
             self,
             xml_path,
@@ -91,6 +92,27 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                     robot=spaces.Box(-np.inf, np.inf, shape=(6,), dtype="float32"),
                 )
             )
+
+    def _init_render_device(self):
+        """
+        Decide which device to render on for mujoco.
+        -1 is CPU.
+        """
+        if self._config.gpu is None:
+            self._render_device = -1
+        else: # use the GPU
+            # if slurm job, need to get the SLURM GPUs from env var
+            if "SLURM_JOB_GPUS" in os.environ or "SLURM_STEP_GPUS" in os.environ:
+                if "SLURM_JOB_GPUS" in os.environ:
+                    gpus = os.environ["SLURM_JOB_GPUS"].split(",")
+                elif "SLURM_STEP_GPUS" in os.environ:
+                    gpus = os.environ["SLURM_STEP_GPUS"].split(",")
+                gpus = [int(i) for i in gpus]
+                self._render_device = gpus[self._config.gpu]
+            else:
+                self._render_device = self._config.gpu
+        print("Render Device:", self._render_device)
+
 
     def robot_kinematics(self, sim_state, action, ret_mask=False):
         """
@@ -628,6 +650,27 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         reset_mocap_welds(self.sim)
         return goal
 
+    def _render(
+        self,
+        mode="human",
+        width=500,
+        height=500,
+        camera_name=None,
+        segmentation=False,
+    ):
+        if mode == "rgb_array":
+            data = self.sim.render(
+                width,
+                height,
+                camera_name=camera_name,
+                segmentation=segmentation,
+                device_id=self._render_device,
+            )
+            # original image is upside-down, so flip it
+            return data[::-1, :, :]
+        elif mode == "human":
+            self._get_viewer(mode).render()
+
     def render(
         self,
         mode="rgb_array",
@@ -658,7 +701,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             for cam_id in self._camera_ids:
                 camera_name = self.sim.model.camera_id2name(cam_id)
                 if not get_depth_map:
-                    img = super().render(
+                    img = self._render(
                         mode,
                         self._img_dim,
                         self._img_dim,
@@ -710,7 +753,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 multiview_coords = np.concatenate(mv_world_coords, axis=1)
                 return multiview_img, multiview_coords
             return multiview_img
-        return super().render(
+        return self._render(
             mode,
             self._img_dim,
             self._img_dim,

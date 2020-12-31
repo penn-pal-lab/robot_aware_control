@@ -13,7 +13,7 @@ if "SLURM_JOB_GPUS" in os.environ:
     DEVICE_ID = int(os.environ["SLURM_JOB_GPUS"])
 elif "SLURM_STEP_GPUS" in os.environ:
     DEVICE_ID = int(os.environ["SLURM_STEP_GPUS"])
-print("SLURM GPU:", DEVICE_ID)
+# print("SLURM GPU:", DEVICE_ID)
 
 
 class RobotEnv(gym.GoalEnv):
