@@ -178,7 +178,7 @@ def collect_demo_cem_data():
     """
     num_demo = 100  # per worker
     num_workers = 1
-    record = True
+    record = False
     behavior = "straight_push"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
 
@@ -228,5 +228,5 @@ if __name__ == "__main__":
     """
     Use this to collect demonstrations for svg / demo cem experiments
     """
-    # collect_svg_data()
-    collect_demo_cem_data()
+    collect_svg_data()
+    # collect_demo_cem_data()
