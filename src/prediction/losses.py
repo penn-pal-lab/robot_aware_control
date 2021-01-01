@@ -2,6 +2,7 @@
 import numpy as np
 from numpy.linalg import norm
 import torch
+from torch.functional import Tensor
 import torch.nn as nn
 from skimage.filters import gaussian
 from torchvision.transforms import ToTensor
@@ -109,10 +110,9 @@ class RobotL2Cost(Cost):
 
 class ImgL2Cost(Cost):
     name = "img_l2"
-    def call(self, curr_img, goal_img):
+    def _call(self, curr_img, goal_img):
         if curr_img is None or goal_img is None:
             return 0
-        # TODO: check for tensor vs np array
         curr_img = curr_img.astype(np.float)
         goal_img = goal_img.astype(np.float)
         threshold = self._config.img_cost_threshold
@@ -122,13 +122,31 @@ class ImgL2Cost(Cost):
             diff = np.abs(curr_img - goal_img)
             dist = np.sum(diff > threshold)
         return -dist
+    
+    def _call_tensor(self, curr_img: Tensor, goal_img: Tensor):
+        if curr_img is None or goal_img is None:
+            return 0
+        img_diff = (curr_img - goal_img) ** 2
+        if len(img_diff.shape) == 4: # batch x |img|
+            sum_diff = torch.sum(img_diff, (1, 2, 3)) # sum up across image dimensions
+        elif len(img_diff.shape) == 3: # img only
+            sum_diff = torch.sum(img_diff) 
+        else:
+            raise NotImplementedError(f"Tensor shape {img_diff.shape} not supported")
+        dist = sum_diff.sqrt_().cpu().numpy()
+        return -dist
 
     def __call__(self, curr: State, goal: State):
-        return self.call(curr.img, goal.img)
+        if isinstance(curr.img, Tensor) or isinstance(goal.img, Tensor):
+            return self._call_tensor(curr.img, goal.img) 
+        return self._call(curr.img, goal.img)
 
 class ImgDontcareCost(Cost):
     name = "img_dontcare"
-    def call(self, curr_img, goal_img, curr_mask, goal_mask):
+    def _call_tensor(self, curr_img, goal_img, curr_mask, goal_mask):
+        raise NotImplementedError()
+
+    def _call(self, curr_img, goal_img, curr_mask, goal_mask):
         if curr_img is None or goal_img is None:
             return 0
         # TODO: check for tensor vs np array
@@ -150,6 +168,8 @@ class ImgDontcareCost(Cost):
         return -non_robot_loss
 
     def __call__(self, curr: State, goal: State):
+        if isinstance(curr.img, Tensor) or isinstance(goal.img, Tensor):
+            return self._call_tensor(curr.img, goal.img, curr.mask, goal.mask) 
         return self.call(curr.img, goal.img, curr.mask, goal.mask)
 
 

@@ -16,7 +16,7 @@ def generate_model_rollouts(
     env,
     model: DynamicsModel,
     action_sequences,
-    start: State,
+    start_state: State,
     goal: DemoGoalState,
     opt_traj=None,
     ret_obs=False,
@@ -36,6 +36,7 @@ def generate_model_rollouts(
 
     Returns a dictionary containing the cost per trajectory by default.
     """
+    cost = RobotWorldCost(cfg)
     dev = cfg.device
     N = len(action_sequences)  # Number of candidate action sequences
     ac_per_batch = cfg.candidates_batch_size
@@ -45,14 +46,9 @@ def generate_model_rollouts(
     all_obs = torch.zeros((N, T, 3, 128, 64))  # N x T x obs
     all_step_cost = np.zeros((N, T))  # N x T x 1
     goal_imgs = torch.stack(
-        [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in goal.imgs]
+        [torch.from_numpy(g).permute(2, 0, 1).float() for g in goal.imgs]
     ).to(dev)
-    if opt_traj is not None:  # for debug comparison
-        opt_traj = torch.stack(
-            [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in opt_traj]
-        ).to(dev)
-
-    start_mask = torch.from_numpy(start.mask).unsqueeze_(0)
+    start_mask = torch.from_numpy(start_state.mask).unsqueeze_(0)
     optimal_sum_cost = 0
     if not suppress_print:
         start_time = timer.time()
@@ -66,16 +62,16 @@ def generate_model_rollouts(
         model.reset(batch_size=num_batch)
         curr_img = cat(
             [
-                torch.from_numpy(start.img.copy()).permute(2, 0, 1).float() / 255,
+                torch.from_numpy(start_state.img.copy()).permute(2, 0, 1).float(),
                 start_mask,
             ],
             dim=0,
         )
         curr_img = curr_img.expand(num_batch, -1, -1, -1).to(dev)  # (N x |I|)
         curr_robot = (
-            torch.from_numpy(start.robot.copy()).expand(num_batch, -1).to(dev)
+            torch.from_numpy(start_state.robot.copy()).expand(num_batch, -1).to(dev)
         )  # N x |A|)
-        curr_sim = [start.sim] * num_batch  # (N x D)
+        curr_sim = [start_state.sim] * num_batch  # (N x D)
         curr_mask = torch.zeros((num_batch, 1, 128, 64), dtype=torch.bool).to(
             dev
         )  # (N x 1 x H x W)
@@ -95,23 +91,16 @@ def generate_model_rollouts(
             # compute the img costs
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
-            if opt_traj is not None:  # for debug comparison
-                opt_img = opt_traj[goal_idx]
-
+            goal_robot = goal.robots[goal_idx]
+            goal_mask = None
+            if goal.masks is not None:
+                goal_mask = goal.masks[goal_idx]
+            goal_state = State(img=goal_img, robot=goal_robot, mask=goal_mask)
+            curr_state = State(img=next_img, robot=curr_robot, mask=curr_mask)
             rew = 0
             # sparse_cost only uses last frame of trajectory for cost
             if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
-                img_diff = 255 * (next_img - goal_img)
-                img_diff_norm = torch.sum(img_diff ** 2, (1, 2, 3)).sqrt().cpu().numpy()
-                rew = -img_diff_norm  # N x 1
-                if opt_traj is not None and b == 0:
-                    optimal_sum_cost += (
-                        -(torch.sum((255 * (opt_img - goal_img)) ** 2))
-                        .sqrt()
-                        .cpu()
-                        .numpy()
-                    )
-
+                rew = cost(curr_state, goal_state)
             sum_cost[start:end] += rew
             if ret_obs:
                 all_obs[start:end, t] = next_img.cpu()  # B x T x Obs
