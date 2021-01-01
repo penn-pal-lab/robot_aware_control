@@ -126,14 +126,14 @@ class ImgL2Cost(Cost):
     def _call_tensor(self, curr_img: Tensor, goal_img: Tensor):
         if curr_img is None or goal_img is None:
             return 0
-        img_diff = (curr_img - goal_img) ** 2
+        img_diff = (255 * (curr_img - goal_img)) ** 2
         if len(img_diff.shape) == 4: # batch x |img|
             sum_diff = torch.sum(img_diff, (1, 2, 3)) # sum up across image dimensions
         elif len(img_diff.shape) == 3: # img only
             sum_diff = torch.sum(img_diff) 
         else:
             raise NotImplementedError(f"Tensor shape {img_diff.shape} not supported")
-        dist = sum_diff.sqrt_().cpu().numpy()
+        dist = sum_diff.sqrt().cpu().numpy()
         return -dist
 
     def __call__(self, curr: State, goal: State):
