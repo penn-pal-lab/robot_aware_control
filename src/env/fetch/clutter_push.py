@@ -104,13 +104,13 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             self.camera_poses[i] = get_camera_pose(self.sim, i)
             self.camera_intrinsics[i] = get_camera_matrix(self.sim, self._img_dim, self._img_dim, i)
 
-    def world_to_pixel(self, world_pos, camera_id):
+    def world_to_pixel(self, world_pos, camera_id, width, height):
         """
         Takes in a 3d world position, and returns 2d pixel coordinates
         """
         world_pos = np.concatenate([world_pos, [1]])
         world_to_cam = self.world_to_cam_matrices[camera_id]
-        return get_pixel_coord(world_pos, world_to_cam)
+        return get_pixel_coord(world_pos, world_to_cam, width, height)
 
     def robot_kinematics(self, sim_state, action, ret_mask=False):
         """
@@ -167,7 +167,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             if not hasattr(self, "camera_matrices"):
                 self._init_camera_calibration()
             for cam_id in self._camera_ids:
-                u, v = self.world_to_pixel(grip_pos, cam_id)
+                u, v = self.world_to_pixel(grip_pos, cam_id, self._img_dim, self._img_dim)
                 obs[f"{cam_id}_eef_keypoint"] = [u, v]
                 # annotate the img with a white keypoint
                 obs["observation"][v, u] = (255, 255, 255)
@@ -948,7 +948,10 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
 
     def _set_action(self, action):
         assert action.shape == (2,)
-        action = np.concatenate([action, [0, 0]])
+        # add z axis for camera calibration dataset
+        # z = 0
+        z = np.random.uniform(low=-1, high=1)
+        action = np.concatenate([action, [z, 0]])
         super()._set_action(action)
 
     def _move(

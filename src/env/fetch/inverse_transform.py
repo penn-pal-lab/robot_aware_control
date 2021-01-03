@@ -67,11 +67,14 @@ def get_world_to_cam(sim, width, height, camera_name):
     T = getHomogenousT(r.as_matrix(), cam_pos) # 4 x 4
     return K @ np.linalg.inv(T)[:3] # (3 x 4) world to camera matrix
 
-def get_pixel_coord(world_pos, camera_matrix):
+def get_pixel_coord(world_pos, camera_matrix, width, height):
     """Returns u,v pixel coordinates"""
     coords = camera_matrix @ world_pos # (3, 4) x (4, N)
     coords[:2] /= coords[2] # normalize to homogenous coordinates
-    return int(round(coords[0])), int(round(coords[1]))
+    coords[:2] = np.clip(coords[:2], 0, [width-1, height-1])
+    u = int(round(coords[0]))
+    v = int(round(coords[1]))
+    return u, v
 
 def main(width=128, height=128, camera_name="external_camera_0"):
     xml_path = os.path.join("fetch", "clutterpush.xml")
