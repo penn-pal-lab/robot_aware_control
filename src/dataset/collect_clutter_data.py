@@ -187,7 +187,7 @@ def collect_demo_cem_data():
 
     config.reward_type = "inpaint"
     config.robot_mask_with_obj = False
-    config.demo_dir = "demos/realisticrobotmask_straight_push"
+    config.demo_dir = "demos/table_realrobotmask_straight_push"
     config.most_recent_background = False  # use static or mr background for inpaint
     config.multiview = True
     config.img_dim = 64
@@ -228,5 +228,5 @@ if __name__ == "__main__":
     """
     Use this to collect demonstrations for svg / demo cem experiments
     """
-    collect_svg_data()
-    # collect_demo_cem_data()
+    #collect_svg_data()
+    collect_demo_cem_data()

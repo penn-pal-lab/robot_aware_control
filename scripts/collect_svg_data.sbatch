@@ -6,5 +6,5 @@
 #SBATCH --qos=dinesh-high
 #SBATCH --job-name=democem
 
-python -um src.dataset.collect_clutter_data >svg_data.out 2>&1 &
+python -um src.dataset.collect_clutter_data --gpu 0 >svg_data.out 2>&1 &
 wait

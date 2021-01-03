@@ -170,7 +170,7 @@ class ImgDontcareCost(Cost):
     def __call__(self, curr: State, goal: State):
         if isinstance(curr.img, Tensor) or isinstance(goal.img, Tensor):
             return self._call_tensor(curr.img, goal.img, curr.mask, goal.mask) 
-        return self.call(curr.img, goal.img, curr.mask, goal.mask)
+        return self._call(curr.img, goal.img, curr.mask, goal.mask)
 
 
 class RobotWorldCost(Cost):
