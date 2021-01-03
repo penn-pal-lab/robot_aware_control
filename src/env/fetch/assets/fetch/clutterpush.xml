@@ -198,17 +198,21 @@
         </body>
 
 		<body pos="1.3 0.75 0.2" name="table0">
-			<geom rgba="0 0 0 0" size="10 0.35 0.2" type="box" mass="2000" material="table_mat"></geom>
+			<geom size="15 5 0.2" type="box" mass="2000" material="table_mat"></geom>
 		</body>
 		<body name="sidecamera_target" pos="1 0.75 0.4">
 			<site name="sidecamera_target" pos="0 0 0" size="0.1 0.1 0.1" rgba="1 0 0 0" type="sphere"></site>
 		</body>
 
         <body name="arenaboundary" pos="1.06 0.75 0.4">
-            <site name="arenaright" pos="0 0.2 0" size="0.2 0.005 0.005" rgba="0 0 0 0.1" type="box"></site>
-            <site name="arenaleft" pos="0 -0.2 0" size="0.2 0.005 0.005" rgba="0 0 0 0.1" type="box"></site>
-            <site name="arenatop" pos="-0.2 0 0" size="0.005 0.2 0.005" rgba="0 0 0 0.1" type="box"></site>
-            <site name="arenabottom" pos="0.2 0 0" size="0.005 0.2 0.005" rgba="0 0 0 0.1" type="box"></site>
+            <site name="arenaright" pos="0 0.2 0" size="0.2 0.005 0.005" rgba="0 0 0 0" type="box"></site>
+            <geom contype="0" conaffinity="0" pos="0 0.2 0" size="0.2 0.005 0.005" rgba="0 0 0 0.1" type="box" ></geom>
+            <site name="arenaleft" pos="0 -0.2 0" size="0.2 0.005 0.005" rgba="0 0 0 0" type="box"></site>
+            <geom  contype="0" conaffinity="0" pos="0 -0.2 0" size="0.2 0.005 0.005" rgba="0 0 0 0.1" type="box"></geom>
+            <site name="arenatop" pos="-0.2 0 0" size="0.005 0.2 0.005" rgba="0 0 0 0" type="box"></site>
+            <geom  contype="0" conaffinity="0" pos="-0.2 0 0" size="0.005 0.2 0.005" rgba="0 0 0 0.1" type="box"></geom>
+            <site name="arenabottom" pos="0.2 0 0" size="0.005 0.2 0.005" rgba="0 0 0 0" type="box"></site>
+            <geom contype="0" conaffinity="0" pos="0.2 0 0" size="0.005 0.2 0.005" rgba="0 0 0 0.1" type="box"></geom>
             <site name="spawn" pos="0 0 0" size="0.1 0.005" rgba="0 0 0 0" type="cylinder"></site>
         </body>
         <body name="arenacenter" pos="1.06 0.75 0.42">
