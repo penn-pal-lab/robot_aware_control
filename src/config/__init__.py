@@ -49,7 +49,6 @@ def add_method_arguments(parser: ArgumentParser):
     )
     # for use with inpaint blur
     parser.add_argument("--most_recent_background", type=str2bool, default=False)
-    parser.add_argument("--robot_pixel_weight", type=float, default=0)
     # inpaint-blur
     parser.add_argument("--blur_sigma", type=float, default=10)
     parser.add_argument("--unblur_cost_scale", type=float, default=3)
@@ -196,8 +195,11 @@ def add_prediction_arguments(parser):
     parser.add_argument(
         "--stoch", type=str2bool, default=True, help="stochastic prediction"
     )
-    parser.add_argument("--reconstruction_loss", default="mse", choices=["mse", "l1"])
+    parser.add_argument("--reconstruction_loss", default="mse", choices=["mse", "l1", "dontcare_mse"])
     parser.add_argument("--scheduled_sampling", type=str2bool, default=False)
+    parser.add_argument(
+        "--robot_pixel_weight", type=float, default=0, help="weighting on robot pixels"
+    )
 
 
 def add_dataset_arguments(parser):

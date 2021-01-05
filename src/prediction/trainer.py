@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import wandb
 from src.dataset.dataloaders import create_loaders, get_batch
-from src.prediction.losses import kl_criterion, mse_criterion, l1_criterion
+from src.prediction.losses import dontcare_mse_criterion, kl_criterion, mse_criterion, l1_criterion, robot_mse_criterion, world_mse_criterion
 from src.prediction.models.base import MLPEncoder, init_weights
 from src.prediction.models.lstm import LSTM, GaussianLSTM
 from src.utils.plot import save_gif, save_tensors_image
@@ -41,10 +41,6 @@ class PredictionTrainer(object):
             entity=config.wandb_entity,
         )
         self._logger = colorlog.getLogger("file/console")
-        if config.reconstruction_loss == "mse":
-            self._recon_loss = mse_criterion
-        elif config.reconstruction_loss == "l1":
-            self._recon_loss = l1_criterion
 
     def _init_models(self, cf):
         """Initialize models and optimizers
@@ -142,6 +138,17 @@ class PredictionTrainer(object):
             return True
         return np.random.choice([True, False], p=self._schedule_prob())
 
+    def _recon_loss(self, prediction, target, mask=None):
+        if self._config.reconstruction_loss == "mse":
+            return mse_criterion(prediction, target)
+        elif self._config.reconstruction_loss == "l1":
+            return l1_criterion(prediction, target)
+        elif self._config.reconstruction_loss == "dontcare_mse":
+            robot_weight = self._config.robot_pixel_weight
+            return dontcare_mse_criterion(prediction, target, mask, robot_weight)
+        else:
+            raise NotImplementedError(f"{self._config.reconstruction_loss}")
+
     def _train_step(self, data):
         """Forward and Backward pass of models
         Returns info dict containing loss metrics
@@ -190,13 +197,14 @@ class PredictionTrainer(object):
                     start, end = n * cf.image_width, (n + 1) * cf.image_width
                     view_pred = x_pred[:, :, start:end, :]
                     view = x[i][:, :, start:end, :]
-                    view_loss = self._recon_loss(view_pred, view)
+                    view_mask = mask[i][:, :, start:end, :]
+                    view_loss = self._recon_loss(view_pred, view, view_mask)
                     recon_loss += view_loss
                     view_loss_scalar = view_loss.cpu().item()
                     losses[f"view_{n}"] += view_loss_scalar
                     losses["recon_loss"] += view_loss_scalar
             else:
-                view_loss = self._recon_loss(x_pred, x[i])
+                view_loss = self._recon_loss(x_pred, x[i], mask[i])
                 recon_loss += view_loss
                 losses["recon_loss"] += view_loss.cpu().item()
 
@@ -251,7 +259,6 @@ class PredictionTrainer(object):
             self.posterior.hidden = self.posterior.init_hidden()
             self.prior.hidden = self.prior.init_hidden()
 
-        recon_loss = kld = 0
         losses = defaultdict(float)
         x, robot, ac, mask = data
         for i in range(1, cf.n_past + cf.n_future):
@@ -279,19 +286,29 @@ class PredictionTrainer(object):
                     start, end = n * cf.image_width, (n + 1) * cf.image_width
                     view_pred = x_pred[:, :, start:end, :]
                     view = x[i][:, :, start:end, :]
-                    view_loss = self._recon_loss(view_pred, view)
-                    recon_loss += view_loss
+                    view_mask = mask[i][:, :, start:end, :]
+                    view_loss = self._recon_loss(view_pred, view, view_mask)
                     view_loss_scalar = view_loss.cpu().item()
-                    losses[f"view_{n}"] += view_loss_scalar
-                    losses["recon_loss"] += view_loss_scalar
+                    robot_mse = robot_mse_criterion(view_pred, view, view_mask)
+                    robot_mse_scalar = robot_mse.cpu().item()
+                    world_mse = world_mse_criterion(view_pred, view, view_mask)
+                    world_mse_scalar = world_mse.cpu().item()
+                    losses[f"view_{n}_robot"] += robot_mse_scalar
+                    losses[f"view_{n}_world"] += world_mse_scalar
+                    losses[f"view_{n}_recon"] += view_loss_scalar
+                    losses["total_recon_loss"] += view_loss_scalar
+                    losses["total_robot_loss"] += robot_mse_scalar
+                    losses["total_world_loss"] += world_mse_scalar
             else:
-                view_loss = self._recon_loss(x_pred, x[i])
-                recon_loss += view_loss
-                losses["recon_loss"] += view_loss.cpu().item()
+                view_loss = self._recon_loss(x_pred, x[i], mask[i])
+                robot_mse = robot_mse_criterion(x_pred, x[i], mask[i])
+                world_mse = world_mse_criterion(x_pred, x[i], mask[i])
+                losses["total_recon_loss"] += view_loss.cpu().item()
+                losses["total_robot_loss"] += robot_mse.cpu().item()
+                losses["total_world_loss"] += world_mse.cpu().item()
 
             if cf.stoch:
                 kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
-                kld += kl
                 losses["kld"] += kl.cpu().item()
 
         for k, v in losses.items():
