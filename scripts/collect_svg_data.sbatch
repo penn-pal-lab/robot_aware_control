@@ -4,7 +4,7 @@
 #SBATCH --time=20:00:00
 #SBATCH --partition=dinesh-compute
 #SBATCH --qos=dinesh-high
-#SBATCH --job-name=democem
+#SBATCH --job-name=gen_data
 
 python -um src.dataset.collect_clutter_data --gpu 0 >svg_data.out 2>&1 &
 wait

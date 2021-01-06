@@ -212,7 +212,7 @@ def collect_svg_data():
     config.inpaint_eef = True
     config.reward_type = "inpaint"
     config.robot_mask_with_obj = False
-    config.demo_dir = "demos/realvp_random_realisticmask_svg_train"
+    config.demo_dir = "demos/table_svg_train"
     config.most_recent_background = False
     config.multiview = True
     config.img_dim = 64
@@ -228,5 +228,5 @@ if __name__ == "__main__":
     """
     Use this to collect demonstrations for svg / demo cem experiments
     """
-    #collect_svg_data()
-    collect_demo_cem_data()
+    collect_svg_data()
+    # collect_demo_cem_data()

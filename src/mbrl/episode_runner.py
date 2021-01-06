@@ -3,6 +3,7 @@ import os
 import pickle
 from collections import defaultdict
 from os.path import join
+from src.utils.mujoco import init_mjrender_device
 from typing import List
 
 import colorlog
@@ -30,6 +31,7 @@ class EpisodeRunner(object):
         self._config = config
         self._use_env = config.use_env_dynamics
         self._setup_loggers(config)
+        init_mjrender_device(config)
         self._env = ClutterPushEnv(config)
         self._setup_policy(config, self._env)
         self._setup_cost(config)

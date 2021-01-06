@@ -27,7 +27,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
 
     def __init__(self, config):
         self._config = config
-        self._init_render_device()
         # initialize objects out of bounds first
         self.initial_qpos = initial_qpos = {
             "robot0:slide0": 0.175,
@@ -37,6 +36,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             "object1:joint": [3.1, 0.75, 0.44, 1.0, 0.0, 0.0, 0.0],
             "object2:joint": [3.2, 0.75, 0.44, 1.0, 0.0, 0.0, 0.0],
         }
+        self._render_device = config.render_device
         self._objects = ["object0", "object1", "object2"]
         self._robot_pixel_weight = config.robot_pixel_weight
         reward_type = config.reward_type
@@ -92,27 +92,6 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                     robot=spaces.Box(-np.inf, np.inf, shape=(6,), dtype="float32"),
                 )
             )
-
-    def _init_render_device(self):
-        """
-        Decide which device to render on for mujoco.
-        -1 is CPU.
-        """
-        if self._config.gpu is None:
-            self._render_device = -1
-        else: # use the GPU
-            # if slurm job, need to get the SLURM GPUs from env var
-            if "SLURM_JOB_GPUS" in os.environ or "SLURM_STEP_GPUS" in os.environ:
-                if "SLURM_JOB_GPUS" in os.environ:
-                    gpus = os.environ["SLURM_JOB_GPUS"].split(",")
-                elif "SLURM_STEP_GPUS" in os.environ:
-                    gpus = os.environ["SLURM_STEP_GPUS"].split(",")
-                gpus = [int(i) for i in gpus]
-                self._render_device = gpus[self._config.gpu]
-            else:
-                self._render_device = self._config.gpu
-        print("Render Device:", self._render_device)
-
 
     def robot_kinematics(self, sim_state, action, ret_mask=False):
         """
@@ -1182,12 +1161,13 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             history["pushed_obj"] = obj
             self.straight_push(history, object=obj, noise=noise)
         return history
-
-
+        
 if __name__ == "__main__":
     from src.config import argparser
+    from src.utils.mujoco import init_mjrender_device
     import imageio
 
     config, _ = argparser()
+    init_mjrender_device(config)
     env = ClutterPushEnv(config)
     env.reset()
