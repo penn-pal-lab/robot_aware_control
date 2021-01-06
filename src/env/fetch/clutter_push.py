@@ -170,7 +170,12 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 u, v = self.world_to_pixel(grip_pos, cam_id, self._img_dim, self._img_dim)
                 obs[f"{cam_id}_eef_keypoint"] = [u, v]
                 # annotate the img with a white keypoint
-                obs["observation"][v, u] = (255, 255, 255)
+                # obs["observation"][v, u] = (255, 255, 255)
+                for obj in self._objects:
+                    obj_pos = self.sim.data.get_joint_qpos(obj + ":joint")[:3]
+                    u, v = self.world_to_pixel(obj_pos, cam_id, self._img_dim, self._img_dim)
+                    obs[f"{cam_id}_{obj}_keypoint"] = [u, v]
+                  
 
             for obj in self._objects:
                 obs[obj + ":joint"] = self.sim.data.get_joint_qpos(
