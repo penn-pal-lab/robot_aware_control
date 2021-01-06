@@ -138,8 +138,8 @@ def bar_plot(ax, data, colors=None, total_width=0.8, single_width=1, legend=True
     # Draw legend if we need
     if legend:
         ax.legend(bars, data.keys())
-    fig.set_figheight(5)
-    fig.set_figwidth(20)
+    fig.set_figheight(2.5)
+    fig.set_figwidth(5)
     ax.set_xlabel("Demonstration ID")
     ax.set_ylabel("Goal Error (cm)")
     ax.set_title("Goal Error Per Demonstration")
@@ -171,9 +171,9 @@ def load_all_stats(data):
 
 if __name__ == "__main__":
     methods = {
-        "noinpaint": "noinpaint_real_stats.pkl",
-        "inpaint": "inpaint_real_stats.pkl",
-        "dontcare": "dontcare_real_stats.pkl"
+        "noinpaint": "noinpaint_stats.pkl",
+        "inpaint": "inpaint_stats.pkl",
+        "dontcare": "dontcare_stats.pkl"
     }
 
     # num_demos = 100
