@@ -17,20 +17,12 @@ def dontcare_mse_criterion(prediction, target, mask, robot_weight):
     prediction / target is B x C x H x W
     mask is B x 1 x H x W
     """
-    batch_size = prediction.shape[0]
     diff = target - prediction # 3 x H x W
     mask = mask.type(torch.bool)
     repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
     diff[repeat_mask] *= robot_weight
-    # # visualize diff to check
-    # img = diff[0].permute(1,2,0).detach().cpu().numpy() * 255
-    # import imageio
-    # imageio.imwrite("diff.png", img)
-    # import ipdb; ipdb.set_trace()
-    # get squared err per batch
-    squared_err = torch.sum(diff ** 2, (1,2,3)).sqrt()
-    # sum up all of squared err, get avg
-    mean_squared_err = squared_err.sum() / batch_size
+    num_world_pixels = (~repeat_mask).sum()
+    mean_squared_err = torch.sum(diff ** 2) / num_world_pixels
     return mean_squared_err
 
 def robot_mse_criterion(prediction, target, mask):
@@ -39,15 +31,12 @@ def robot_mse_criterion(prediction, target, mask):
     prediction / target is B x C x H x W
     mask is B x 1 x H x W
     """
-    batch_size = prediction.shape[0]
     diff = target - prediction # 3 x H x W
     mask = mask.type(torch.bool)
     repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
     diff[~repeat_mask] = 0
-    # get squared err per batch
-    squared_err = torch.sum(diff ** 2, (1,2,3)).sqrt()
-    # sum up all of squared err, get avg
-    mean_squared_err = squared_err.sum() / batch_size
+    num_robot_pixels = repeat_mask.sum()
+    mean_squared_err = torch.sum(diff ** 2) / num_robot_pixels
     return mean_squared_err
 
 def world_mse_criterion(prediction, target, mask):
@@ -56,15 +45,12 @@ def world_mse_criterion(prediction, target, mask):
     prediction / target is B x C x H x W
     mask is B x 1 x H x W
     """
-    batch_size = prediction.shape[0]
     diff = target - prediction # 3 x H x W
     mask = mask.type(torch.bool)
     repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
     diff[repeat_mask] = 0
-    # get squared err per batch
-    squared_err = torch.sum(diff ** 2, (1,2,3)).sqrt()
-    # sum up all of squared err, get avg
-    mean_squared_err = squared_err.sum() / batch_size
+    num_world_pixels = (~repeat_mask).sum()
+    mean_squared_err = torch.sum(diff ** 2) / num_world_pixels
     return mean_squared_err
 
 
