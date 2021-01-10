@@ -186,12 +186,27 @@ class ImgL2Cost(Cost):
 class ImgDontcareCost(Cost):
     name = "img_dontcare"
     def _call_tensor(self, curr_img, goal_img, curr_mask, goal_mask):
-        raise NotImplementedError()
+        if curr_img is None or goal_img is None:
+            return 0
+        img_diff = (255 * (curr_img - goal_img)) ** 2
+        total_mask_2d = curr_mask | goal_mask
+        total_mask = total_mask_2d.repeat(1,3,1,1)
+        img_diff[total_mask] = 0 # set robot region to 0
+        if len(img_diff.shape) == 4: # batch x |img|
+            sum_diff = torch.sum(img_diff, (1, 2, 3)) # sum up across image dimensions
+        elif len(img_diff.shape) == 3: # img only
+            sum_diff = torch.sum(img_diff) 
+        else:
+            raise NotImplementedError(f"Tensor shape {img_diff.shape} not supported")
+        dist = sum_diff.sqrt()
+        num_world_pixels = torch.sum(~total_mask_2d, (1,2,3))
+        dist /= num_world_pixels
+        dist = dist.cpu().numpy()
+        return -dist
 
     def _call(self, curr_img, goal_img, curr_mask, goal_mask):
         if curr_img is None or goal_img is None:
             return 0
-        # TODO: check for tensor vs np array
         curr_img = curr_img.astype(np.float)
         goal_img = goal_img.astype(np.float)
 

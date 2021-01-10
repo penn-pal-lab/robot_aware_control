@@ -48,6 +48,7 @@ def generate_model_rollouts(
     goal_imgs = torch.stack(
         [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in goal.imgs]
     ).to(dev)
+    goal_masks = torch.stack([torch.from_numpy(g) for g in goal.masks]).to(dev)
     start_mask = torch.from_numpy(start_state.mask).unsqueeze_(0)
     optimal_sum_cost = 0
     if not suppress_print:
@@ -94,7 +95,7 @@ def generate_model_rollouts(
             goal_robot = goal.robots[goal_idx]
             goal_mask = None
             if goal.masks is not None:
-                goal_mask = goal.masks[goal_idx]
+                goal_mask = goal_masks[goal_idx]
             goal_state = State(img=goal_img, robot=goal_robot, mask=goal_mask)
             curr_state = State(img=next_img, robot=curr_robot, mask=curr_mask)
             rew = 0
@@ -126,6 +127,7 @@ def generate_model_rollouts(
     if ret_step_cost:
         rollouts["step_cost"] = torch.stack(all_step_cost).transpose(0, 1).cpu().numpy()
     return rollouts
+
 
 def generate_env_rollouts(
     cfg,
