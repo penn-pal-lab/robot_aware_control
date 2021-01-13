@@ -18,14 +18,15 @@ class BaxterEnv(RobotEnv):
         # set camera position
         # run qpos trajectory
         gif = []
-        # import ipdb; ipdb.set_trace()
         while True:
-            for qpos in data:
+            for i, qpos in enumerate(data):
                 self.sim.data.qpos[7:] = qpos
                 self.sim.forward()
-                img = self.render("rgb_array", width=320, height=240, camera_name="main_cam")[::-1, :, :]
+                img = self.render("rgb_array", width=320, height=240, camera_name="aux_cam")
                 # self.render("human")
-                gif.append(img)
+                real_img = imageio.imread(f"robonet_images/penn_baxter_left_traj14_{i}.png")
+                comparison = np.concatenate([img, real_img], axis=1)
+                gif.append(comparison)
             imageio.mimwrite("scene.gif", gif)
             break
 
