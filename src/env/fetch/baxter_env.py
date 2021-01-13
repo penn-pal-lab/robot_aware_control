@@ -67,13 +67,16 @@ class BaxterEnv(RobotEnv):
         return mask
 
 if __name__ == "__main__":
+
     """
-    press tab to cycle through cameras. There is the default camera, and the main_cam which we set the pose of in baxter/robot.xml
+    Compares the simulated scene, real scene, and robot mask
     """
-    # GENERATE GIF
     env = BaxterEnv()
     env.compare_traj()
 
-    # CAMERA VISUALIZATION
+    """
+    Scene Visualization
+    press tab to cycle through cameras. There is the default camera, and the main_cam which we set the pose of in baxter/robot.xml
+    """
     # while True:
     #     env.render("human")
