@@ -3,7 +3,7 @@
   <compiler angle="radian" meshdir="../stls/baxter"></compiler>
   <asset>
     <texture type="skybox" builtin="gradient" rgb1="0.2 0.2 0.2" rgb2="0.46 0.87 0.58" width="32" height="32"></texture>
-    <material name="floor_mat" specular="0" shininess="0.5" reflectance="0" rgba="0.2 0.2 0.2 1"></material>
+    <material name="floor_mat" specular="0" shininess="0.5" reflectance="0" rgba="0.8 0.8 0.8 1"></material>
     <mesh name="base_link" file="torso/base_link.stl" />
     <mesh name="base_link_collision" file="torso/base_link_collision.stl" />
     <mesh name="H0" file="head/H0.stl" />
@@ -42,11 +42,10 @@
     <body name="base" pos="0 0 0">
       <!-- robot view -->
     <camera fovy="43.3" name="main_cam" pos="1.59074811 0.2689595  0.4451598" quat="-0.35759175 0.63418852  0.60459815 -0.32310082"></camera>
-    <geom rgba="1 0 0 1" name="main_cam_site" pos="1.59074811 0.2689595  0.4451598" quat="-0.35759175 0.63418852  0.60459815 -0.32310082" type="box" size="0.05 0.05 0.1"></geom>
+    <geom rgba="1 0 0 1" name="main_cam_site" pos="1.59074811 0.2689595  0.4451598" quat="-0.35759175 0.63418852  0.60459815 -0.32310082" type="box" size="0.02 0.05 0.1"></geom>
 
-    <camera fovy="43.3" name="aux_cam" pos="1.59074811 0.2689595  0.4451598" euler="0 1.03 1.57"></camera>
-    <geom rgba="0 0 1 1" name="aux_cam_site" pos="1.59074811 0.2689595  0.4451598" euler="0 1.03 1.57" type="box" size="0.05 0.05 0.1"></geom>
-
+    <camera fovy="43.3" name="aux_cam" pos="1.59074811 0.2689595  0.4451598" euler="-0.025 1.0 1.57"></camera>
+    <geom rgba="0 0 1 1" name="aux_cam_site" pos="1.59074811 0.2689595  0.4451598" euler="-0.025 1.0 1.57" type="box" size="0.02 0.05 0.1"></geom>
 
       <inertial pos="0 0 0" mass="10" diaginertia="0.001 0.001 0.001" />
       <!-- mount attached here -->
