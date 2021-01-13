@@ -5,8 +5,8 @@ import numpy as np
 import gym
 from gym import error, spaces
 import os
-from src.utils.mujoco import get_mujoco_py
-
+# from src.utils.mujoco import get_mujoco_py
+import mujoco_py
 DEFAULT_SIZE = 500
 DEVICE_ID = -1
 # if "SLURM_JOB_GPUS" in os.environ:
@@ -24,7 +24,6 @@ class RobotEnv(gym.GoalEnv):
             fullpath = os.path.join(os.path.dirname(__file__), "assets", model_path)
         if not os.path.exists(fullpath):
             raise IOError("File {} does not exist".format(fullpath))
-        mujoco_py = self.mujoco_py = get_mujoco_py()
         model = mujoco_py.load_model_from_path(fullpath)
         self.mj_const = mujoco_py.const
         self.sim = mujoco_py.MjSim(model, nsubsteps=n_substeps)
@@ -137,9 +136,9 @@ class RobotEnv(gym.GoalEnv):
         self.viewer = self._viewers.get(mode)
         if self.viewer is None:
             if mode == "human":
-                self.viewer = self.mujoco_py.MjViewer(self.sim)
+                self.viewer = mujoco_py.MjViewer(self.sim)
             elif mode == "rgb_array":
-                self.viewer = self.mujoco_py.MjRenderContextOffscreen(
+                self.viewer = mujoco_py.MjRenderContextOffscreen(
                     self.sim, device_id=-1
                 )
             self._viewer_setup()
