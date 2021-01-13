@@ -8,8 +8,8 @@ class BaxterEnv(RobotEnv):
     def __init__(self):
         model_path = os.path.join("baxter", "robot.xml")
         initial_qpos = None
-        n_actions = 5
-        n_substeps = 5
+        n_actions = 1
+        n_substeps = 1
         seed = None
         super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
         # load the joint configuration and eef position
@@ -17,16 +17,17 @@ class BaxterEnv(RobotEnv):
         data = np.load(path)
         # set camera position
         # run qpos trajectory
-        import ipdb; ipdb.set_trace()
         gif = []
+        # import ipdb; ipdb.set_trace()
         while True:
             for qpos in data:
                 self.sim.data.qpos[7:] = qpos
                 self.sim.forward()
-                # img = self.render("rgb_array", width=320, height=240, camera_name="main_cam")[::-1, :, :]
-                self.render("human")
-                # gif.append(img)
-            # imageio.mimwrite("scene.gif", gif)
+                img = self.render("rgb_array", width=320, height=240, camera_name="main_cam")[::-1, :, :]
+                # self.render("human")
+                gif.append(img)
+            imageio.mimwrite("scene.gif", gif)
+            break
 
     def _sample_goal(self):
         pass

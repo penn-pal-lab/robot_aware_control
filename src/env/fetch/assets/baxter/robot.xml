@@ -41,8 +41,8 @@
     <geom name="floor0" pos="0 0 0" size="0.85 0.70 1" type="plane" condim="3" material="floor_mat"></geom>
     <body name="base" pos="0 0 0">
       <!-- robot view -->
-      <camera fovy="43.3" name="main_cam" pos="1.59074811 0.2689595  0.4451598" quat="0.60459815 -0.32310082 -0.35759175 0.63418852"></camera>
-      <geom rgba="1 0 0 1" name="main_cam_site" pos="1.59074811 0.2689595  0.4451598" quat="0.63418852  0.60459815 -0.32310082 -0.35759175" type="box" size="0.05 0.05 0.1"></geom>
+    <camera fovy="43.3" name="main_cam" pos="1.59074811 0.2689595  0.4451598" quat="-0.35759175 0.63418852  0.60459815 -0.32310082"></camera>
+    <geom rgba="1 0 0 1" name="main_cam_site" pos="1.59074811 0.2689595  0.4451598" quat="-0.35759175 0.63418852  0.60459815 -0.32310082" type="box" size="0.05 0.05 0.1"></geom>
       <inertial pos="0 0 0" mass="10" diaginertia="0.001 0.001 0.001" />
       <!-- mount attached here -->
       <body name="collision_head_link_1" pos="0.11 0 0.75">
@@ -190,9 +190,6 @@
         </body>
       </body>
     </body>
-    <camera fovy="43.3" name="main_cam" pos="1.59074811 0.2689595  0.4451598" quat="0.60459815 -0.32310082 -0.35759175 0.63418852"></camera>
-    <geom rgba="1 0 0 1" name="main_cam_site" pos="1.59074811 0.2689595  0.4451598" quat="0.63418852  0.60459815 -0.32310082 -0.35759175" type="box" size="0.05 0.05 0.1"></geom>
-
   </worldbody>
 
   <actuator>
