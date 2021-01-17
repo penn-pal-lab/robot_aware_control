@@ -6,6 +6,7 @@ data
 *.out
 inpaintobs.gif
 *.pt
+robonet_images/
 
 # IDE
 *.swp
