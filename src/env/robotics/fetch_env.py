@@ -1,8 +1,8 @@
 import numpy as np
 
-from src.env.fetch.rotations import mat2euler
-from src.env.fetch.robot_env import RobotEnv
-import src.env.fetch.utils as utils
+from src.env.robotics.rotations import mat2euler
+from src.env.robotics.robot_env import RobotEnv
+import src.env.robotics.utils as utils
 
 
 def goal_distance(goal_a, goal_b):

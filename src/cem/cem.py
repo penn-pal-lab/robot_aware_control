@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import wandb
-from src.env.fetch.fetch_push import FetchPushEnv
+from src.env.robotics.fetch_push import FetchPushEnv
 
-# from src.env.fetch.clutter_push import ClutterPushEnv
+# from src.env.robotics.clutter_push import ClutterPushEnv
 from src.prediction.losses import InpaintBlurCost, mse_criterion
 from src.prediction.models.dynamics import DynamicsModel
 from src.utils.plot import save_gif

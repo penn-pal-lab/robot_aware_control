@@ -6,12 +6,12 @@ import numpy as np
 from gym import spaces, utils
 from scipy.spatial.transform import Rotation as R
 from skimage.filters import gaussian
-from src.env.fetch.collision import CollisionSphere
-from src.env.fetch.fetch_env import FetchEnv
-from src.env.fetch.inverse_transform import getHomogenousT, pixel_coord_np
-from src.env.fetch.planar_rrt import PlanarRRT
-from src.env.fetch.rotations import mat2euler
-from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
+from src.env.robotics.collision import CollisionSphere
+from src.env.robotics.fetch_env import FetchEnv
+from src.env.robotics.inverse_transform import getHomogenousT, pixel_coord_np
+from src.env.robotics.planar_rrt import PlanarRRT
+from src.env.robotics.rotations import mat2euler
+from src.env.robotics.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
 
 MODEL_XML_PATH = os.path.join("fetch", "clutterpush.xml")
 RED_MODEL_XML_PATH = os.path.join("fetch", "red_clutterpush.xml")
@@ -1161,7 +1161,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             history["pushed_obj"] = obj
             self.straight_push(history, object=obj, noise=noise)
         return history
-        
+
 if __name__ == "__main__":
     from src.config import argparser
     from src.utils.mujoco import init_mjrender_device

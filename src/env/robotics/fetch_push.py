@@ -7,9 +7,9 @@ from gym import spaces, utils
 from mujoco_py.generated import const
 from PIL import Image, ImageFilter
 from skimage.filters import gaussian
-from src.env.fetch.fetch_env import FetchEnv
-from src.env.fetch.rotations import mat2euler
-from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
+from src.env.robotics.fetch_env import FetchEnv
+from src.env.robotics.rotations import mat2euler
+from src.env.robotics.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
 
 MODEL_XML_PATH = os.path.join("fetch", "push.xml")
 LARGE_MODEL_XML_PATH = os.path.join("fetch", "large_push.xml")

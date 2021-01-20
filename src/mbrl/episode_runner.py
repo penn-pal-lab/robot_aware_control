@@ -16,7 +16,7 @@ from numpy.linalg import norm
 from tqdm import trange
 from src.cem.demo_cem import DemoCEMPolicy
 from src.utils.state import State, DemoGoalState
-from src.env.fetch.clutter_push import ClutterPushEnv
+from src.env.robotics.clutter_push import ClutterPushEnv
 from src.prediction.losses import RobotWorldCost
 from src.utils.plot import putText
 from torchvision.datasets.folder import has_file_allowed_extension

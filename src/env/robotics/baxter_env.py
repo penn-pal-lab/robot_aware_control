@@ -1,8 +1,8 @@
 import os
 
 from scipy.spatial.transform.rotation import Rotation
-from src.env.fetch.rotations import euler2quat, mat2quat, quat2euler
-from src.env.fetch.robot_env import RobotEnv
+from src.env.robotics.rotations import euler2quat, mat2quat, quat2euler
+from src.env.robotics.robot_env import RobotEnv
 import numpy as np
 import time
 import imageio

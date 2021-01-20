@@ -5,8 +5,8 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.env.fetch.collision import CollisionBox, CollisionSphere
-from src.env.fetch.rrt import RRT
+from src.env.robotics.collision import CollisionBox, CollisionSphere
+from src.env.robotics.rrt import RRT
 
 
 class PlanarRRT(RRT):
