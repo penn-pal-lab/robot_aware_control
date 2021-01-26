@@ -2,7 +2,7 @@ import pickle
 
 import numpy as np
 import torch
-from src.env.fetch.fetch_push import FetchPushEnv
+from src.env.robotics.fetch_push import FetchPushEnv
 from src.prediction.models.dynamics import DynamicsModel
 from src.utils.plot import save_gif
 from torchvision.transforms import ToTensor
