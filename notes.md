@@ -30,5 +30,7 @@ Pixel CEM: 0 lol
 - got the weighted cost function with alpha weighting
 - running initial weighted pixel CEM vs pixel CEM
 
-### 9/4/20
--
+### 1/21/21
+- need to sample 100 trajectories from baxter left and baxter right and baxter and check their masks.
+
+- need to sample 100 trajectories from sawyer and check their masks.

@@ -5,6 +5,7 @@ import numpy as np
 import gym
 from gym import error, spaces
 import os
+
 # from src.utils.mujoco import get_mujoco_py
 import mujoco_py
 DEFAULT_SIZE = 500
