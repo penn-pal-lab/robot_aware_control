@@ -1,7 +1,14 @@
+# suppress tensorflow warnings
+import os
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+from warnings import simplefilter # disable tensorflow warnings
+simplefilter(action='ignore', category=FutureWarning)
+
 try:
-    from robonet.video_prediction.training import GIFLogger
-    from robonet.video_prediction.training import get_trainable as vpred_trainable
-    from robonet.inverse_model.training import get_trainable as inverse_trainable
+    from robonet.robonet.video_prediction.training import GIFLogger
+    from robonet.robonet.video_prediction.training import get_trainable as vpred_trainable
+    from robonet.robonet.inverse_model.training import get_trainable as inverse_trainable
 except:
     print('could not import trainables!')
 
@@ -14,4 +21,3 @@ def get_trainable(class_name):
         except NotImplementedError:
             pass
     raise NotImplementedError
-
