@@ -1,3 +1,4 @@
+from src.utils.mujoco import get_mjrender_device
 import numpy as np
 from src.env.robotics.robot_env import RobotEnv
 from scipy.spatial.transform.rotation import Rotation
@@ -22,13 +23,17 @@ class MaskEnv(RobotEnv):
         self.sim.forward()
 
     def render(self, mode, segmentation=False):
+        if not hasattr(self, "_render_device"):
+            # TODO: assumes we always pass in gpu 0. need to read in gpu from config dict in the future.
+            self._render_device = get_mjrender_device(0)
         if mode == "rgb_array":
-            out = super().render(
+            out = self.sim.render(
                 mode,
                 width=self._img_width,
                 height=self._img_height,
                 camera_name=self._camera_name,
                 segmentation=segmentation,
+                device_id=self._render_device,
             )
             return out[::-1, ::-1]
         elif mode == "human":
