@@ -28,14 +28,13 @@ class MaskEnv(RobotEnv):
             self._render_device = get_mjrender_device(0)
         if mode == "rgb_array":
             out = self.sim.render(
-                mode,
-                width=self._img_width,
-                height=self._img_height,
+                self._img_width,
+                self._img_height,
                 camera_name=self._camera_name,
                 segmentation=segmentation,
                 device_id=self._render_device,
             )
-            return out[::-1, ::-1]
+            return out[:, ::-1]
         elif mode == "human":
             super().render(mode)
 

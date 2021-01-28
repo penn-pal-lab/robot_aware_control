@@ -12,7 +12,7 @@ from robonet.robonet.datasets.util.hdf5_loader import default_loader_hparams, lo
 from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
 from tqdm import tqdm
 
-robonet_root = "/mnt/beegfs/edward/scratch/hdf5"
+robonet_root = "/scratch/edward/hdf5"
 metadata_path = os.path.join(robonet_root, "meta_data.pkl")
 
 def generate_baxter_data():
@@ -68,8 +68,8 @@ def generate_baxter_data():
     hdf5_list = baxter_subset.index
     generate_robot_masks(env, baxter_df, hdf5_list, hparams)
 
-    # hdf5_list = baxter_subset.sample(5).index
-    # check_robot_masks(baxter_df, hdf5_list, hparams)
+    hdf5_list = baxter_subset.sample(5).index
+    check_robot_masks(baxter_df, hdf5_list, hparams)
 
 def generate_sawyer_data():
     hparams = tf.contrib.training.HParams(**default_loader_hparams())
@@ -94,8 +94,8 @@ def generate_sawyer_data():
     hdf5_list = sawyer_subset.index
     generate_robot_masks(env, sawyer_df, hdf5_list, hparams)
 
-    # hdf5_list = sawyer_subset.sample(5).index
-    # check_robot_masks(sawyer_df, hdf5_list, hparams)
+    hdf5_list = sawyer_subset.sample(5).index
+    check_robot_masks(sawyer_df, hdf5_list, hparams)
 
 def generate_widowx_data():
     hparams = tf.contrib.training.HParams(**default_loader_hparams())
@@ -120,8 +120,8 @@ def generate_widowx_data():
     hdf5_list = widowx_subset.index
     generate_robot_masks(env, widowx_df, hdf5_list, hparams)
 
-    # hdf5_list = widowx_subset.sample(5).index
-    # check_robot_masks(widowx_df, hdf5_list, hparams)
+    hdf5_list = widowx_subset.sample(5).index
+    check_robot_masks(widowx_df, hdf5_list, hparams)
 
 
 
