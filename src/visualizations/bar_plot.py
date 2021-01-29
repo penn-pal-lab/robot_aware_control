@@ -20,60 +20,6 @@ def load_stats(path, num):
     name_dist = zip(names, final_obj_dist)
     return sorted(name_dist, key=lambda x: x[0])
 
-def main(method_1, method_2, path_1, path_2, num_demos):
-    stats_1 = load_stats(path_1, num_demos)
-    stats_2 = load_stats(path_2, num_demos)
-    labels = []
-    values_1 = []
-    values_2 = []
-    for s1, s2 in zip(stats_1, stats_2):
-        assert s1[0] == s2[0]
-        labels.append(s1[0])
-        values_1.append(round(s1[1] * 100, 2))
-        values_2.append(round(s2[1] * 100, 2))
-
-    x = np.arange(len(labels))  # the label locations
-    width = 0.35  # the width of the bars
-
-    fig, ax = plt.subplots()
-    rects1 = ax.bar(x - width / 2, values_1, width, label=method_1)
-    rects2 = ax.bar(x + width / 2, values_2, width, label=method_2)
-
-    # Add some text for labels, title and custom x-axis tick labels, etc.
-    ax.set_ylabel("Goal Error (cm)")
-    ax.set_title("Goal Error Per Demonstration")
-    ax.set_xticks(x)
-    for index, label in enumerate(ax.xaxis.get_ticklabels()):
-        if index % 10 != 0:
-            label.set_visible(False)
-    # ax.set_xticklabels(labels)
-    ax.set_xlabel("Demonstration ID")
-    ax.tick_params(axis='x', labelsize=8)
-    ax.legend()
-
-
-    # def autolabel(rects):
-    #     """Attach a text label above each bar in *rects*, displaying its height."""
-    #     for rect in rects:
-    #         height = rect.get_height()
-    #         ax.annotate(
-    #             "{}".format(height),
-    #             xy=(rect.get_x() + rect.get_width() / 2, height),
-    #             xytext=(0, 3),  # 3 points vertical offset
-    #             textcoords="offset points",
-    #             ha="center",
-    #             va="bottom",
-    #         )
-
-
-    # autolabel(rects1)
-    # autolabel(rects2)
-
-    # fig.tight_layout()
-    fig.set_figheight(5)
-    fig.set_figwidth(20)
-    plt.savefig("comparison.pdf")
-
 def bar_plot(ax, data, colors=None, total_width=0.8, single_width=1, legend=True):
     """Draws a bar plot with multiple bars per data point.
 
@@ -138,12 +84,9 @@ def bar_plot(ax, data, colors=None, total_width=0.8, single_width=1, legend=True
     # Draw legend if we need
     if legend:
         ax.legend(bars, data.keys())
-    fig.set_figheight(2.5)
-    fig.set_figwidth(5)
     ax.set_xlabel("Demonstration ID")
     ax.set_ylabel("Goal Error (cm)")
     ax.set_title("Goal Error Per Demonstration")
-    plt.savefig("comparison.pdf")
 
 def load_all_stats(data):
     """Loads all stat files into a list
@@ -171,17 +114,29 @@ def load_all_stats(data):
 
 if __name__ == "__main__":
     methods = {
-        "noinpaint": "noinpaint_stats.pkl",
-        "inpaint": "inpaint_stats.pkl",
-        "dontcare": "dontcare_stats.pkl"
+        "noinpaint": "noip_stats.pkl",
+        # "inpaint": "inpaint_stats.pkl",
+        "dontcare": "dc_stats.pkl"
     }
+    success_threshold = 3.0 # in cm
 
-    # num_demos = 100
+    num_demos = 100
     # main("inpaint", "noinpaint", path_1, path_2, num_demos)
 
     # store data in list of tuples [a, b, c, d]
     # where a is the baseline error, b, c, d are the other methods errors
     # sort the tuples by value of a
     data = load_all_stats(methods) # |p| x 100 
+    # measure success rate
+    for method, errors in data.items():
+        method_errors = np.asarray(errors)
+        num_success = np.sum(method_errors <= success_threshold)
+        success_percent = num_success / len(method_errors)
+        print(f"{method} success: {success_percent:.2f}")
     fig, ax = plt.subplots()
     bar_plot(ax, data, total_width=.8, single_width=.9)
+    fig.set_figheight(2.5)
+    fig.set_figwidth(5)
+    plt.margins(x=0)
+    # plt.hlines(success_threshold, 0, num_demos, colors="black", linestyles="dashed")
+    plt.savefig("comparison.pdf")
