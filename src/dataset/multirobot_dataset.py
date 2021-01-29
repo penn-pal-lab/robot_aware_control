@@ -38,7 +38,7 @@ class RobotDataset(data.Dataset):
 
     def preload_ram(self):
         # load everything into memory
-        for i in trange(len(self._traj_names), f"loading {self.robot_name} into RAM"):
+        for i in trange(len(self._traj_names), desc=f"loading {self.robot_name} into RAM"):
             self._memory[i] = self.__getitem__(i)
 
     def __getitem__(self, idx):
