@@ -19,6 +19,7 @@ from src.prediction.models.lstm import LSTM, GaussianLSTM
 from src.utils.plot import save_gif, save_tensors_image
 from torch import cat, optim
 from tqdm import tqdm
+from time import time
 
 
 class MultiRobotPredictionTrainer(object):
@@ -338,8 +339,17 @@ class MultiRobotPredictionTrainer(object):
                 model.train()
             epoch_losses = defaultdict(float)
             for _ in range(cf.epoch_size):
+                start = time()
                 data = next(self.training_batch_generator)
+                end = time()
+                data_time = end - start
+                print("data loading time", data_time)
+
+                start = time()
                 info = self._train_step(data)
+                end = time()
+                update_time = end - start
+                print("network update time", update_time)
                 for k, v in info.items():
                     epoch_losses[f"train/epoch_{k}"] += v
                 info["sample_schedule"] = self._schedule_prob()[0]
@@ -649,7 +659,7 @@ def make_log_folder(config):
 if __name__ == "__main__":
     import torch.multiprocessing as mp
     from src.config import argparser
-    
+
     mp.set_start_method("spawn")
     config, _ = argparser()
     make_log_folder(config)
