@@ -7,7 +7,7 @@ import h5py
 import imageio
 import numpy as np
 from src.config import argparser
-from src.env.fetch.clutter_push import ClutterPushEnv
+from src.env.robotics.clutter_push import ClutterPushEnv
 from tqdm import tqdm
 
 

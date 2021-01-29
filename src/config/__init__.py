@@ -65,7 +65,7 @@ def add_method_arguments(parser: ArgumentParser):
 
     # training
     parser.add_argument("--gpu", type=int, default=None)
-    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--num_episodes", type=int, default=100)
     parser.add_argument("--record_trajectory", type=str2bool, default=False)
     parser.add_argument("--record_trajectory_interval", type=int, default=5)
@@ -217,6 +217,11 @@ def add_dataset_arguments(parser):
         default="object_inpaint_demo",
         choices=["object_inpaint_demo", "robot_demo", "object_only_demo"],
     )
+    # robonet video prediction dataset arguments
+    parser.add_argument("--video_length", type=int, default=31, help="min length of the robot video")
+    parser.add_argument("--impute_autograsp_action", type=str2bool, default=True)
+    parser.add_argument("--preload_ram", type=str2bool, default=False)
+
 
 
 # CEM Hyperparameters

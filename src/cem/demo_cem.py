@@ -1,4 +1,4 @@
-from src.env.fetch.clutter_push import ClutterPushEnv
+from src.env.robotics.clutter_push import ClutterPushEnv
 import imageio
 import numpy as np
 import torch
