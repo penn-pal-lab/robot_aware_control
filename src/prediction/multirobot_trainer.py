@@ -31,6 +31,8 @@ class MultiRobotPredictionTrainer(object):
         self._config = config
         use_cuda = torch.cuda.is_available()
         device = torch.device("cuda" if use_cuda else "cpu")
+        print("using device for training", device)
+
         self._device = device
         self._init_models(config)
         self._scheduled_sampling = config.scheduled_sampling
@@ -645,8 +647,10 @@ def make_log_folder(config):
 
 
 if __name__ == "__main__":
+    import torch.multiprocessing as mp
     from src.config import argparser
-
+    
+    mp.set_start_method("spawn")
     config, _ = argparser()
     make_log_folder(config)
     trainer = MultiRobotPredictionTrainer(config)
