@@ -14,6 +14,7 @@ import numpy as np
 from ipdb import set_trace as st
 import pandas as pd
 import torch
+from torch.utils.data.dataset import Subset
 import torchvision.transforms as tf
 import torch.utils.data as data
 from src.utils.dataloader import inf_loop_dataloader
@@ -307,7 +308,10 @@ class MultiRobotDataset:
         loaders = []
         self._robot_names = []
         for d in datasets:
-            self._robot_names.append(d.robot_name)
+            if isinstance(d, Subset):
+                self._robot_names.append(d.dataset.robot_name)
+            elif isinstance(d, RobotDataset):
+                self._robot_names.append(d.robot_name)
             l = DataLoader(d,
                 num_workers=self._config.data_threads,
                 batch_size=self._batch_size,
