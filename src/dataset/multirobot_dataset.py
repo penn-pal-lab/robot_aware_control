@@ -288,7 +288,6 @@ class MultiRobotDataset:
         else:
             self._robots = self._init_dataloaders(robot_datasets)
         self._num_robots = len(self._robots)
-        assert self._batch_size % self._num_robots == 0, "multirobot batch size must be multiple of |robots|"
 
     def _create_robot_dataloaders(self, config):
         """
@@ -311,7 +310,7 @@ class MultiRobotDataset:
             self._robot_names.append(d.robot_name)
             l = DataLoader(d,
                 num_workers=self._config.data_threads,
-                batch_size=self._batch_size // len(datasets),
+                batch_size=self._batch_size,
                 shuffle=True,
                 drop_last=True,
                 pin_memory=True
