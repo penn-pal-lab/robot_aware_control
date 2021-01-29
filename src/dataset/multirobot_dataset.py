@@ -17,6 +17,7 @@ import torch
 import torchvision.transforms as tf
 import torch.utils.data as data
 from src.utils.dataloader import inf_loop_dataloader
+from tqdm import trange
 
 
 class RobotDataset(data.Dataset):
@@ -33,18 +34,12 @@ class RobotDataset(data.Dataset):
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
         )
         self._rng = random.Random(config.seed)
+        self._memory = {}
 
-    # def infinite_loop(self):
-    #     """
-    #     Infinitely loops through the hdf5 files, shuffling after
-    #     each epoch.
-    #     """
-    #     file_idxs = list(range(len(self._traj_names)))
-    #     while True:
-    #         self._rng.shuffle(file_idxs)
-    #         for idx in file_idxs:
-    #             data = self.__getitem__(idx)
-    #             yield data
+    def preload_ram(self):
+        # load everything into memory
+        for i in trange(len(self._traj_names), f"loading {self.robot_name} into RAM"):
+            self._memory[i] = self.__getitem__(i)
 
     def __getitem__(self, idx):
         """
@@ -54,6 +49,8 @@ class RobotDataset(data.Dataset):
         img_dims = [64, 85]  # TODO: hyperparameter
         robonet_root = self._data_root
         name = self._traj_names[idx]
+        if idx in self._memory:
+            return self._memory[idx]
 
         hdf5_path = os.path.join(robonet_root, name)
         with h5py.File(hdf5_path, "r") as hf:
@@ -309,7 +306,9 @@ class MultiRobotDataset:
 
     def _init_dataloaders(self, datasets):
         loaders = []
+        self._robot_names = []
         for d in datasets:
+            self._robot_names.append(d.robot_name)
             l = DataLoader(d,
                 num_workers=self._config.data_threads,
                 batch_size=self._batch_size // len(datasets),
@@ -321,8 +320,11 @@ class MultiRobotDataset:
         return loaders
 
     def __iter__(self):
+        generator = self._get_video()
         while True:
-            yield self._make_batch()
+            yield next(generator)
+
+
 
     def _make_batch(self):
         """
@@ -362,7 +364,8 @@ class MultiRobotDataset:
         Cycles through each robot, getting one video per robot
         """
         while True:
-            for robot_dataloader in self._robots:
+            for i, robot_dataloader in enumerate(self._robots):
+                self.current_robot = self._robot_names[i]
                 yield next(robot_dataloader)
 
 if __name__ == "__main__":
@@ -377,7 +380,6 @@ if __name__ == "__main__":
     config.action_dim = 5
     data = MultiRobotDataset(config)
 
-    i = 0
     for i, batch in enumerate(data):
         imgs, states, actions, masks = batch
         for robot_imgs, robot_masks in zip(imgs, masks):
@@ -387,9 +389,9 @@ if __name__ == "__main__":
             img_gif = np.uint8(img_gif * 255)
             robot_masks = robot_masks.cpu().numpy().squeeze().astype(bool)
             img_gif[robot_masks] = (0, 255, 255)
-            imageio.mimwrite(f"test.gif", img_gif)
+            imageio.mimwrite(f"test{i}.gif", img_gif)
             break
 
         print()
-        if i >= 0:
+        if i >= 8:
             break

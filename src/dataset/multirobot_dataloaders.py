@@ -29,6 +29,9 @@ def create_split(config):
     baxter_train, baxter_val = random_split(
         baxter_dataset, lengths, generator=torch.Generator().manual_seed(config.seed)
     )
+    if config.preload_ram:
+        baxter_train.preload_ram()
+        baxter_val.preload_ram()
 
     # widowx files
     widowx_dataset = WidowXDataset(metadata, config)
@@ -38,6 +41,9 @@ def create_split(config):
     widowx_train, widowx_val = random_split(
         widowx_dataset, lengths, generator=torch.Generator().manual_seed(config.seed)
     )
+    if config.preload_ram:
+        widowx_train.preload_ram()
+        widowx_val.preload_ram()
 
     # sawyer files
     sawyer_dataset = SawyerDataset(metadata, config)
@@ -47,6 +53,9 @@ def create_split(config):
     sawyer_train, sawyer_val = random_split(
         sawyer_dataset, lengths, generator=torch.Generator().manual_seed(config.seed)
     )
+    if config.preload_ram:
+        sawyer_train.preload_ram()
+        sawyer_val.preload_ram()
 
 
     train_robots = [baxter_train, widowx_train, sawyer_train]
