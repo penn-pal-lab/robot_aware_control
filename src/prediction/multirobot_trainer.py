@@ -500,12 +500,13 @@ class MultiRobotPredictionTrainer(object):
                 self.posterior.hidden = self.posterior.init_hidden()
                 self.prior.hidden = self.prior.init_hidden()
             # first frame of all videos
+            if self._config.reconstruction_loss == "dontcare_mse":
+                self._zero_robot_region(mask[0], x[0])
             gen_seq[s].append(x[0])
             x_in = x[0]
             for i in range(1, cf.n_eval):
                 # zero out robot pixels in input for norobot cost
                 if self._config.reconstruction_loss == "dontcare_mse":
-                    self._zero_robot_region(mask[i-1], x_in)
                     self._zero_robot_region(mask[i], x[i])
                 h = self.encoder(cat([x_in, mask[i - 1]], dim=1))
                 r = self.robot_enc(robot[i - 1])
@@ -535,6 +536,8 @@ class MultiRobotPredictionTrainer(object):
                     else:
                         h = self.frame_predictor(cat([a, r, h], 1))
                     x_in = self.decoder([h, skip])
+                    if self._config.reconstruction_loss == "dontcare_mse":
+                        self._zero_robot_region(mask[i], x_in)
                     gen_seq[s].append(x_in)
 
         to_plot = []
@@ -597,12 +600,12 @@ class MultiRobotPredictionTrainer(object):
         if cf.stoch:
             self.posterior.hidden = self.posterior.init_hidden()
         gen_seq = []
+        if self._config.reconstruction_loss == "dontcare_mse":
+            self._zero_robot_region(mask[0], x[0])
         gen_seq.append(x[0])
         for i in range(1, cf.n_past + cf.n_future):
             # zero out robot pixels in input for norobot cost
             if self._config.reconstruction_loss == "dontcare_mse":
-                if i == 1:
-                    self._zero_robot_region(mask[i-1], x[i-1])
                 self._zero_robot_region(mask[i], x[i])
             h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
@@ -625,6 +628,8 @@ class MultiRobotPredictionTrainer(object):
             else:
                 h_pred = self.frame_predictor(embed)
                 x_pred = self.decoder([h_pred, skip]).detach()
+                if self._config.reconstruction_loss == "dontcare_mse":
+                    self._zero_robot_region(mask[i], x_pred)
                 gen_seq.append(x_pred)
 
         to_plot = []
