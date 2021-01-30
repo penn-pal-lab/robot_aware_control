@@ -12,7 +12,7 @@ import ipdb
 import numpy as np
 import torch
 import wandb
-from src.dataset.multirobot_dataloaders import create_loaders, get_batch
+from src.dataset.new_multirobot_dataloaders import create_loaders, get_batch
 from src.prediction.losses import dontcare_mse_criterion, kl_criterion, mse_criterion, l1_criterion, robot_mse_criterion, world_mse_criterion
 from src.prediction.models.base import MLPEncoder, init_weights
 from src.prediction.models.lstm import LSTM, GaussianLSTM
@@ -135,8 +135,9 @@ class MultiRobotPredictionTrainer(object):
     def _schedule_prob(self):
         """Returns probability of using ground truth"""
         # assume 400k max training steps
+        # https://www.desmos.com/calculator/bo4aoyqje1
         k = 10000
-        use_truth = k / (k + np.exp(self._step / 18000))
+        use_truth = k / (k + np.exp(self._step / 10000))
         use_model = 1 - use_truth
         return [use_truth, use_model]
 
@@ -239,7 +240,7 @@ class MultiRobotPredictionTrainer(object):
 
     def _eval_epoch(self):
         losses = defaultdict(list)
-        for data in tqdm(self.test_loader, "evaluating epoch"):
+        for data, _ in tqdm(self.test_loader, "evaluating epoch"):
             # transpose from (B, L, C, W, H) to (L, B, C, W, H)
             frames, robots, actions, masks = data
             frames = frames.transpose_(1, 0).to(self._device)
@@ -339,17 +340,17 @@ class MultiRobotPredictionTrainer(object):
                 model.train()
             epoch_losses = defaultdict(float)
             for _ in range(cf.epoch_size):
-                start = time()
+                # start = time()
                 data = next(self.training_batch_generator)
-                end = time()
-                data_time = end - start
-                print("data loading time", data_time)
+                # end = time()
+                # data_time = end - start
+                # print("data loading time", data_time)
 
-                start = time()
+                # start = time()
                 info = self._train_step(data)
-                end = time()
-                update_time = end - start
-                print("network update time", update_time)
+                # end = time()
+                # update_time = end - start
+                # print("network update time", update_time)
                 for k, v in info.items():
                     epoch_losses[f"train/epoch_{k}"] += v
                 info["sample_schedule"] = self._schedule_prob()[0]

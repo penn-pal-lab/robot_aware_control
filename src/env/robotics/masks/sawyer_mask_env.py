@@ -14,8 +14,8 @@ class SawyerMaskEnv(MaskEnv):
         n_substeps = 1
         seed = None
         super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
-        self._img_width = 160
-        self._img_height = 120
+        self._img_width = 85
+        self._img_height = 64
         self._camera_name = "main_cam"
         self._joints = [f"right_j{i}" for i in range(7)]
 

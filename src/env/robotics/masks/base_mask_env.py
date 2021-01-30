@@ -38,7 +38,7 @@ class MaskEnv(RobotEnv):
         elif mode == "human":
             super().render(mode)
 
-    def get_robot_mask(self):
+    def get_robot_mask(self, width=None, height=None):
         """
         Return binary img mask where 1 = robot and 0 = world pixel.
         robot_mask_with_obj means the robot mask is computed with object occlusions.
@@ -49,7 +49,10 @@ class MaskEnv(RobotEnv):
         ids = seg[:, :, 1]
         geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
-        mask_dim = [self._img_height, self._img_width]
+        if width is None or height is None:
+            mask_dim = [self._img_height, self._img_width]
+        else:
+            mask_dim = [height, width]
         mask = np.zeros(mask_dim, dtype=np.bool)
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
@@ -66,13 +69,13 @@ class MaskEnv(RobotEnv):
     def _is_robot_geom(self, name):
         return NotImplementedError()
 
-    def generate_masks(self,  qpos_data):
+    def generate_masks(self,  qpos_data, width=None, height=None):
         joint_references = [self.sim.model.get_joint_qpos_addr(x) for x in self._joints]
         masks = []
         for qpos in qpos_data:
             self.sim.data.qpos[joint_references] = qpos
             self.sim.forward()
-            mask = self.get_robot_mask()
+            mask = self.get_robot_mask(width, height)
             masks.append(mask)
         masks = np.asarray(masks, dtype=np.bool)
         return masks

@@ -17,8 +17,8 @@ class WidowXMaskEnv(MaskEnv):
         n_substeps = 1
         seed = None
         super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
-        self._img_width = 160
-        self._img_height = 120
+        self._img_width = 85
+        self._img_height = 64
         self._camera_name = "main_cam"
         self._joints = [f"joint_{i}" for i in range(1, 6)]
         self._joints.append("gripper_revolute_joint")
@@ -45,7 +45,7 @@ class WidowXMaskEnv(MaskEnv):
             gif.append(comparison)
         imageio.mimwrite(f"{traj_name}_mask.gif", gif)
 
-    def get_robot_mask(self):
+    def get_robot_mask(self, width=None, height=None):
         """
         Return binary img mask where 1 = robot and 0 = world pixel.
         robot_mask_with_obj means the robot mask is computed with object occlusions.
@@ -56,7 +56,10 @@ class WidowXMaskEnv(MaskEnv):
         ids = seg[:, :, 1]
         geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
-        mask_dim = [self._img_height, self._img_width]
+        if width is None or height is None:
+            mask_dim = [self._img_height, self._img_width]
+        else:
+            mask_dim = [height, width]
         mask = np.zeros(mask_dim, dtype=np.bool)
         ignore_parts = {"base_link_vis", "base_link_col", "head_vis"}
         for i in geoms_ids:

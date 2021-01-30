@@ -16,8 +16,8 @@ class BaxterMaskEnv(MaskEnv):
         n_substeps = 1
         seed = None
         super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
-        self._img_width = 160
-        self._img_height = 120
+        self._img_width = 85
+        self._img_height = 64
         self._camera_name = "main_cam"
         self._joints = ["s0", "s1", "e0", "e1", "w0", "w1", "w2"]
         self._r_gripper_joints = [
@@ -30,7 +30,7 @@ class BaxterMaskEnv(MaskEnv):
         ]
         self.arm = "right"
 
-    def generate_masks(self,  qpos_data):
+    def generate_masks(self,  qpos_data, width=None, height=None):
         joint_references = [
             self.sim.model.get_joint_qpos_addr(f"{self.arm}_{x}") for x in self._joints
         ]
@@ -38,7 +38,7 @@ class BaxterMaskEnv(MaskEnv):
         for qpos in qpos_data:
             self.sim.data.qpos[joint_references] = qpos
             self.sim.forward()
-            mask = self.get_robot_mask()
+            mask = self.get_robot_mask(width=width, height=height)
             masks.append(mask)
         masks = np.asarray(masks, dtype=np.bool)
         return masks
@@ -125,7 +125,7 @@ class BaxterMaskEnv(MaskEnv):
     def _get_obs(self):
         return {"observation": np.array([0])}
 
-    def get_robot_mask(self):
+    def get_robot_mask(self, width=None, height=None):
         """
         Return binary img mask where 1 = robot and 0 = world pixel.
         robot_mask_with_obj means the robot mask is computed with object occlusions.
@@ -136,7 +136,10 @@ class BaxterMaskEnv(MaskEnv):
         ids = seg[:, :, 1]
         geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
-        mask_dim = [self._img_height, self._img_width]
+        if width is None or height is None:
+            mask_dim = [self._img_height, self._img_width]
+        else:
+            mask_dim = [height, width]
         mask = np.zeros(mask_dim, dtype=np.bool)
         ignore_parts = {"base_link_vis", "base_link_col", "head_vis"}
         for i in geoms_ids:
