@@ -360,7 +360,7 @@ class MultiRobotPredictionTrainer(object):
             for model in self.all_models:
                 model.train()
             epoch_losses = defaultdict(float)
-            for _ in range(cf.epoch_size):
+            for i in range(cf.epoch_size):
                 # start = time()
                 data = next(self.training_batch_generator)
                 # end = time()
@@ -376,6 +376,10 @@ class MultiRobotPredictionTrainer(object):
                     epoch_losses[f"train/epoch_{k}"] += v
                 info["sample_schedule"] = self._schedule_prob()[0]
                 self._step += 1
+
+                if i == cf.epoch_size - 1:
+                    self.plot(data, epoch, "train")
+                    self.plot_rec(data, epoch, "train")
 
                 wandb.log({f"train/{k}": v for k, v in info.items()}, step=self._step)
                 progress.update()
@@ -400,8 +404,8 @@ class MultiRobotPredictionTrainer(object):
             # self.decoder.eval()
             self._eval_epoch()
             test_data = next(self.testing_batch_generator)
-            self.plot(test_data, epoch)
-            self.plot_rec(test_data, epoch)
+            self.plot(test_data, epoch, "test")
+            self.plot_rec(test_data, epoch, "test")
 
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
@@ -480,7 +484,7 @@ class MultiRobotPredictionTrainer(object):
         self.testing_batch_generator = get_batch(self.test_loader, self._device)
 
     @torch.no_grad()
-    def plot(self, data, epoch):
+    def plot(self, data, epoch, name):
         """
         Plot the generation with learned prior. Autoregressive output.
         """
@@ -576,14 +580,14 @@ class MultiRobotPredictionTrainer(object):
                     row.append(gen_seq[s][t][i])
                 gifs[t].append(row)
 
-        fname = os.path.join(cf.plot_dir, f"sample_{epoch}.png")
+        fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.png")
         save_tensors_image(fname, to_plot)
 
-        fname = os.path.join(cf.plot_dir, f"sample_{epoch}.gif")
+        fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.gif")
         save_gif(fname, gifs)
 
     @torch.no_grad()
-    def plot_rec(self, data, epoch):
+    def plot_rec(self, data, epoch, name):
         """
         Plot the 1 step reconstruction with posterior instead of learned prior
         """
@@ -630,7 +634,7 @@ class MultiRobotPredictionTrainer(object):
             for t in range(cf.n_past + cf.n_future):
                 row.append(gen_seq[t][i])
             to_plot.append(row)
-        fname = os.path.join(cf.plot_dir, f"rec_{epoch}.png")
+        fname = os.path.join(cf.plot_dir, f"{name}_rec_{epoch}.png")
         save_tensors_image(fname, to_plot)
 
 
@@ -688,10 +692,10 @@ def make_log_folder(config):
 
 
 if __name__ == "__main__":
-    import torch.multiprocessing as mp
+    # import torch.multiprocessing as mp
     from src.config import argparser
 
-    mp.set_start_method("spawn")
+    # mp.set_start_method("spawn")
     config, _ = argparser()
     make_log_folder(config)
     trainer = MultiRobotPredictionTrainer(config)
