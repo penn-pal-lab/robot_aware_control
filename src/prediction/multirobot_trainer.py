@@ -284,13 +284,17 @@ class MultiRobotPredictionTrainer(object):
 
         losses = defaultdict(float)
         x, robot, ac, mask = data
+        x_pred = None
         for i in range(1, cf.n_past + cf.n_future):
+            if i > 1:
+                input_token = x[i - 1] if self._use_true_token() else x_pred.detach()
+            else:
+                input_token = x[i - 1]
             # zero out robot pixels in input for norobot cost
             if self._config.reconstruction_loss == "dontcare_mse":
-                if i == 1:
-                    self._zero_robot_region(mask[i-1], x[i-1])
+                self._zero_robot_region(mask[i-1], input_token)
                 self._zero_robot_region(mask[i], x[i])
-            h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
+            h = self.encoder(cat([input_token, mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
             a = self.action_enc(ac[i - 1])
             h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
@@ -478,7 +482,7 @@ class MultiRobotPredictionTrainer(object):
     @torch.no_grad()
     def plot(self, data, epoch):
         """
-        Plot the generation with learned prior
+        Plot the generation with learned prior. Autoregressive output.
         """
         cf = self._config
         x, robot, ac, mask = data
