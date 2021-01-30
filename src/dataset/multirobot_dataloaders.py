@@ -38,7 +38,7 @@ def create_loaders(config):
     class_weight = {}
     for robot, count in zip(robots, counts):
         class_weight[robot] = count
-    # scale weights so we sample uniformly
+    # scale weights so we sample uniformly by class
     train_weights = torch.DoubleTensor([ 1/(len(robots) * class_weight[robot]) for robot in y_train])
     train_sampler = WeightedRandomSampler(
         train_weights,
