@@ -159,6 +159,14 @@ class MultiRobotPredictionTrainer(object):
             return dontcare_mse_criterion(prediction, target, mask, robot_weight)
         else:
             raise NotImplementedError(f"{self._config.reconstruction_loss}")
+    
+    def _zero_robot_region(self, mask, image):
+        """
+        Set the robot region to zero
+        """
+        robot_mask = mask.type(torch.bool)
+        robot_mask = robot_mask.repeat(1,3,1,1)
+        image[robot_mask] = 0
 
     def _train_step(self, data):
         """Forward and Backward pass of models
@@ -183,6 +191,10 @@ class MultiRobotPredictionTrainer(object):
                 input_token = x[i - 1] if self._use_true_token() else x_pred.detach()
             else:
                 input_token = x[i - 1]
+            # zero out robot pixels in input for norobot cost
+            if self._config.reconstruction_loss == "dontcare_mse":
+                self._zero_robot_region(mask[i-1], input_token)
+                self._zero_robot_region(mask[i], x[i])
             h = self.encoder(cat([input_token, mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
             a = self.action_enc(ac[i - 1])
@@ -272,8 +284,17 @@ class MultiRobotPredictionTrainer(object):
 
         losses = defaultdict(float)
         x, robot, ac, mask = data
+        x_pred = None
         for i in range(1, cf.n_past + cf.n_future):
-            h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
+            if i > 1:
+                input_token = x[i - 1] if self._use_true_token() else x_pred.detach()
+            else:
+                input_token = x[i - 1]
+            # zero out robot pixels in input for norobot cost
+            if self._config.reconstruction_loss == "dontcare_mse":
+                self._zero_robot_region(mask[i-1], input_token)
+                self._zero_robot_region(mask[i], x[i])
+            h = self.encoder(cat([input_token, mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
             a = self.action_enc(ac[i - 1])
             h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
@@ -461,7 +482,7 @@ class MultiRobotPredictionTrainer(object):
     @torch.no_grad()
     def plot(self, data, epoch):
         """
-        Plot the generation with learned prior
+        Plot the generation with learned prior. Autoregressive output.
         """
         cf = self._config
         x, robot, ac, mask = data
@@ -478,6 +499,10 @@ class MultiRobotPredictionTrainer(object):
             gen_seq[s].append(x[0])
             x_in = x[0]
             for i in range(1, cf.n_eval):
+                # zero out robot pixels in input for norobot cost
+                if self._config.reconstruction_loss == "dontcare_mse":
+                    self._zero_robot_region(mask[i-1], x_in)
+                    self._zero_robot_region(mask[i], x[i])
                 h = self.encoder(cat([x_in, mask[i - 1]], dim=1))
                 r = self.robot_enc(robot[i - 1])
                 a = self.action_enc(ac[i - 1])
@@ -488,7 +513,7 @@ class MultiRobotPredictionTrainer(object):
                 h = h.detach()
                 if i < cf.n_past:
                     r_target = self.robot_enc(robot[i])
-                    h_target = self.encoder(cat([x[i], mask[i - 1]], dim=1))
+                    h_target = self.encoder(cat([x[i], mask[i]], dim=1))
                     h_target = h_target[0]
                     if cf.stoch:
                         z_t, _, _ = self.posterior(cat([r_target, h_target], 1))
@@ -570,6 +595,11 @@ class MultiRobotPredictionTrainer(object):
         gen_seq = []
         gen_seq.append(x[0])
         for i in range(1, cf.n_past + cf.n_future):
+            # zero out robot pixels in input for norobot cost
+            if self._config.reconstruction_loss == "dontcare_mse":
+                if i == 1:
+                    self._zero_robot_region(mask[i-1], x[i-1])
+                self._zero_robot_region(mask[i], x[i])
             h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
             a = self.action_enc(ac[i - 1])
