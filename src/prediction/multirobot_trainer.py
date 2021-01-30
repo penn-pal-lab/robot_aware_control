@@ -195,8 +195,6 @@ class MultiRobotPredictionTrainer(object):
             if self._config.reconstruction_loss == "dontcare_mse":
                 self._zero_robot_region(mask[i-1], input_token)
                 self._zero_robot_region(mask[i], x[i])
-                import ipdb; ipdb.set_trace()
-                assert torch.sum(x[i][mask[i].type(bool).repeat(1,3,1,1)]) == 0
             h = self.encoder(cat([input_token, mask[i - 1]], dim=1))
             r = self.robot_enc(robot[i - 1])
             a = self.action_enc(ac[i - 1])
