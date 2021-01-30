@@ -12,7 +12,7 @@ import ipdb
 import numpy as np
 import torch
 import wandb
-from src.dataset.new_multirobot_dataloaders import create_loaders, get_batch
+from src.dataset.multirobot_dataloaders import create_loaders, get_batch
 from src.prediction.losses import dontcare_mse_criterion, kl_criterion, mse_criterion, l1_criterion, robot_mse_criterion, world_mse_criterion
 from src.prediction.models.base import MLPEncoder, init_weights
 from src.prediction.models.lstm import LSTM, GaussianLSTM
