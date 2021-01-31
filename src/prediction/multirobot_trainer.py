@@ -137,7 +137,7 @@ class MultiRobotPredictionTrainer(object):
         # assume 400k max training steps
         # https://www.desmos.com/calculator/bo4aoyqje1
         k = 10000
-        use_truth = k / (k + np.exp(self._step / 10000))
+        use_truth = k / (k + np.exp(self._step / 2600))
         use_model = 1 - use_truth
         return [use_truth, use_model]
 
@@ -589,6 +589,7 @@ class MultiRobotPredictionTrainer(object):
 
         fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.gif")
         save_gif(fname, gifs)
+        wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
 
     @torch.no_grad()
     def plot_rec(self, data, epoch, name):
