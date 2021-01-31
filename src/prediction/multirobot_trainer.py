@@ -166,7 +166,7 @@ class MultiRobotPredictionTrainer(object):
         """
         robot_mask = mask.type(torch.bool)
         robot_mask = robot_mask.repeat(1,3,1,1)
-        image[robot_mask] = 0
+        image[robot_mask] *= 0
 
     def _train_step(self, data):
         """Forward and Backward pass of models
@@ -188,7 +188,7 @@ class MultiRobotPredictionTrainer(object):
         x_pred = None
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
-                input_token = x[i - 1] if self._use_true_token() else x_pred.detach()
+                input_token = x[i - 1] if self._use_true_token() else x_pred.clone().detach()
             else:
                 input_token = x[i - 1]
             # zero out robot pixels in input for norobot cost
@@ -287,7 +287,7 @@ class MultiRobotPredictionTrainer(object):
         x_pred = None
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
-                input_token = x[i - 1] if self._use_true_token() else x_pred.detach()
+                input_token = x[i - 1] if self._use_true_token() else x_pred.clone().detach()
             else:
                 input_token = x[i - 1]
             # zero out robot pixels in input for norobot cost
@@ -368,6 +368,7 @@ class MultiRobotPredictionTrainer(object):
                 # print("data loading time", data_time)
 
                 # start = time()
+                # with torch.autograd.set_detect_anomaly(True):
                 info = self._train_step(data)
                 # end = time()
                 # update_time = end - start
