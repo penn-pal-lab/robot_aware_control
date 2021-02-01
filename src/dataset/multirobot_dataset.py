@@ -30,7 +30,7 @@ class RobotDataset(data.Dataset):
         self._traj_robots = robot_list
         self._config = config
         self._data_root = config.data_root
-        self._video_length = config.video_length
+        self._video_length = config.n_past + config.n_future
         self._action_dim = config.action_dim
         self._impute_autograsp_action = config.impute_autograsp_action
         self._img_transform = tf.Compose(

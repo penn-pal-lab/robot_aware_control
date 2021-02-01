@@ -275,6 +275,7 @@ class MultiRobotPredictionTrainer(object):
 
     @torch.no_grad()
     def _eval_step(self, data):
+        # one step evaluation loss
         cf = self._config
         # initialize the recurrent states
         self.frame_predictor.hidden = self.frame_predictor.init_hidden()
@@ -286,10 +287,7 @@ class MultiRobotPredictionTrainer(object):
         x, robot, ac, mask = data
         x_pred = None
         for i in range(1, cf.n_past + cf.n_future):
-            if i > 1:
-                input_token = x[i - 1] if self._use_true_token() else x_pred.clone().detach()
-            else:
-                input_token = x[i - 1]
+            input_token = x[i - 1]
             # zero out robot pixels in input for norobot cost
             if self._config.reconstruction_loss == "dontcare_mse":
                 self._zero_robot_region(mask[i-1], input_token)
