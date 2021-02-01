@@ -212,6 +212,44 @@ class RobotDataset(data.Dataset):
         return states
 
     def _preprocess_actions(self, actions):
+        if self._config.training_regime == "singlerobot":
+            # train on sawyer, convert actions to camera space
+            # first, convert x,y,z to camera frame
+            # then,get rotation matrix from yaw value
+            # http://planning.cs.uiuc.edu/node102.html
+            world_to_cam = np.array(
+                [
+                    [-0.01290487, 0.62117762, -0.78356355, 1.21061856],
+                    [1, 0.00660994, -0.01122798, 0.01680913],
+                    [-0.00179526, -0.78364193, -0.62121019, 0.47401633],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
+            # actions is N x 5
+            # convert positions to homogenous coordinates
+            world_displacement = np.zeros((4, len(actions))) # 4 x N
+            world_displacement[:3, :] = actions[:, :3].T # 3 x N
+            world_displacement[3, :] = 1
+            cam_displacement = world_to_cam @ world_displacement # 4 x N
+            actions[:, :3] = cam_displacement[:3, :].T
+        elif self._config.training_regime == "finetune":
+            # finetune on baxter, convert to camera frame
+            # Assumes the arm is right arm!
+            world_to_cam = np.array(
+                [
+                    [0.59474902, -0.48560866, 0.64066983, 0.00593267],
+                    [-0.80250365, -0.40577623, 0.4374169, -0.84046503],
+                    [0.04755516, -0.77429315, -0.63103774, 0.45875102],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
+            # actions is N x 5
+            # convert positions to homogenous coordinates
+            world_displacement = np.zeros((4, len(actions))) # 4 x N
+            world_displacement[:3, :] = actions[:, :3].T # 3 x N
+            world_displacement[3, :] = 1
+            cam_displacement = world_to_cam @ world_displacement # 4 x N
+            actions[:, :3] = cam_displacement[:3, :].T
         return torch.from_numpy(actions)
 
     def _preprocess_masks(self, masks):
