@@ -489,9 +489,9 @@ class MultiRobotPredictionTrainer(object):
         if self._config.training_regime == "multirobot":
             from src.dataset.multirobot_dataloaders import create_loaders, get_batch
         elif self._config.training_regime == "singlerobot":
-            from src.dataset.finetune_multirobot_daloaders import create_loaders, get_batch
+            from src.dataset.finetune_multirobot_dataloaders import create_loaders, get_batch
         elif self._config.training_regime == "finetune":
-            from src.dataset.finetune_multirobot_daloaders import create_finetune_loaders, get_batch
+            from src.dataset.finetune_multirobot_dataloaders import create_finetune_loaders as create_loaders, get_batch
         else:
             raise NotImplementedError(self._config.training_regime)
         train_loader, self.test_loader = create_loaders(self._config)
