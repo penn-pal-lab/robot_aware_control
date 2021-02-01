@@ -21,14 +21,11 @@ def create_finetune_loaders(config):
     robots = ["baxter"]
     for d in os.scandir(config.data_root):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            robot = None
             for r in robots:
                 if r in d.path:
-                    robot = r
                     files.append(d.path)
                     file_labels.append(r)
                     break
-            assert robot is not None, d.path
 
     data = RobotDataset(files, file_labels, config)
     train_num = int(len(data) * config.train_val_split)
