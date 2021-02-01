@@ -208,8 +208,9 @@ class MultiRobotPredictionTrainer(object):
 
             if cf.stoch:
                 z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
-                _, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
-                h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
+                z_p, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
+                z = z_p if i > 1 else z_t
+                h_pred = self.frame_predictor(cat([a, r, h, z], 1))
             else:
                 h_pred = self.frame_predictor(cat([a, r, h], 1))
             x_pred = self.decoder([h_pred, skip])  # N x C x H x W
@@ -263,18 +264,23 @@ class MultiRobotPredictionTrainer(object):
             info = self._eval_step(data)
             for k, v in info.items():
                 losses[k].append(v)
+            info = self._eval_step(data, autoregressive=True)
+            for k, v in info.items():
+                losses[k].append(v)
 
         avg_loss = {f"test/{k}": np.mean(v) for k, v in losses.items()}
-        epoch_loss = {f"test/epoch_{k}": np.sum(v) for k, v in losses.items()}
+        # epoch_loss = {f"test/epoch_{k}": np.sum(v) for k, v in losses.items()}
         log_str = ""
-        for k, v in epoch_loss.items():
+        for k, v in avg_loss.items():
             log_str += f"{k}: {v}, "
         self._logger.info(log_str)
-        epoch_loss.update(avg_loss)
-        wandb.log(epoch_loss, step=self._step)
+        wandb.log(avg_loss, step=self._step)
 
     @torch.no_grad()
-    def _eval_step(self, data):
+    def _eval_step(self, data, autoregressive=False):
+        """
+        autoregressive: use model's outputs as input for next timestep
+        """
         # one step evaluation loss
         cf = self._config
         # initialize the recurrent states
@@ -286,8 +292,12 @@ class MultiRobotPredictionTrainer(object):
         losses = defaultdict(float)
         x, robot, ac, mask = data
         x_pred = None
+        prefix = "autoreg" if autoregressive else "1step"
         for i in range(1, cf.n_past + cf.n_future):
-            input_token = x[i - 1]
+            if autoregressive and i > 1:
+                input_token = x_pred.clone().detach()
+            else:
+                input_token = x[i - 1]
             # zero out robot pixels in input for norobot cost
             if self._config.reconstruction_loss == "dontcare_mse":
                 self._zero_robot_region(mask[i-1], input_token)
@@ -323,23 +333,23 @@ class MultiRobotPredictionTrainer(object):
                     robot_mse_scalar = robot_mse.cpu().item()
                     world_mse = world_mse_criterion(view_pred, view, view_mask)
                     world_mse_scalar = world_mse.cpu().item()
-                    losses[f"view_{n}_robot"] += robot_mse_scalar
-                    losses[f"view_{n}_world"] += world_mse_scalar
-                    losses[f"view_{n}_recon"] += view_loss_scalar
-                    losses["total_recon_loss"] += view_loss_scalar
-                    losses["total_robot_loss"] += robot_mse_scalar
-                    losses["total_world_loss"] += world_mse_scalar
+                    losses[f"{prefix}_view_{n}_robot"] += robot_mse_scalar
+                    losses[f"{prefix}_view_{n}_world"] += world_mse_scalar
+                    losses[f"{prefix}_view_{n}_recon"] += view_loss_scalar
+                    losses[f"{prefix}_total_recon_loss"] += view_loss_scalar
+                    losses[f"{prefix}_total_robot_loss"] += robot_mse_scalar
+                    losses[f"{prefix}_total_world_loss"] += world_mse_scalar
             else:
                 view_loss = self._recon_loss(x_pred, x[i], mask[i])
                 robot_mse = robot_mse_criterion(x_pred, x[i], mask[i])
                 world_mse = world_mse_criterion(x_pred, x[i], mask[i])
-                losses["total_recon_loss"] += view_loss.cpu().item()
-                losses["total_robot_loss"] += robot_mse.cpu().item()
-                losses["total_world_loss"] += world_mse.cpu().item()
+                losses[f"{prefix}_recon_loss"] += view_loss.cpu().item()
+                losses[f"{prefix}_robot_loss"] += robot_mse.cpu().item()
+                losses[f"{prefix}_world_loss"] += world_mse.cpu().item()
 
             if cf.stoch:
                 kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
-                losses["kld"] += kl.cpu().item()
+                losses["{prefix}_kld"] += kl.cpu().item()
 
         for k, v in losses.items():
             losses[k] = v / (cf.n_past + cf.n_future)
