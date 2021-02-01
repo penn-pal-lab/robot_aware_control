@@ -220,6 +220,7 @@ def add_dataset_arguments(parser):
     # robonet video prediction dataset arguments
     parser.add_argument("--impute_autograsp_action", type=str2bool, default=True)
     parser.add_argument("--preload_ram", type=str2bool, default=False)
+    parser.add_argument("--training_regime", type=str, choices=["multirobot", "singlerobot", "finetune"], default="multirobot")
 
 
 

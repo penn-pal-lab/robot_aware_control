@@ -29,7 +29,7 @@ def create_loaders(config):
             file_labels.append(robot)
 
     X_train, X_test, y_train, y_test = train_test_split(
-        files, file_labels, test_size=0.2, stratify=file_labels
+        files, file_labels, test_size=1 - config.train_val_split, stratify=file_labels
     )
     train_data = RobotDataset(X_train, y_train, config)
     test_data = RobotDataset(X_test, y_test, config)
@@ -39,7 +39,9 @@ def create_loaders(config):
     for robot, count in zip(robots, counts):
         class_weight[robot] = count
     # scale weights so we sample uniformly by class
-    train_weights = torch.DoubleTensor([ 1/(len(robots) * class_weight[robot]) for robot in y_train])
+    train_weights = torch.DoubleTensor(
+        [1 / (len(robots) * class_weight[robot]) for robot in y_train]
+    )
     train_sampler = WeightedRandomSampler(
         train_weights,
         len(y_train),
@@ -55,7 +57,9 @@ def create_loaders(config):
         sampler=train_sampler,
     )
 
-    test_weights = torch.DoubleTensor([1/(len(robots) * class_weight[robot]) for robot in y_test])
+    test_weights = torch.DoubleTensor(
+        [1 / (len(robots) * class_weight[robot]) for robot in y_test]
+    )
     test_sampler = WeightedRandomSampler(
         test_weights,
         len(y_test),

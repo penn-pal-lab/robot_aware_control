@@ -12,7 +12,6 @@ import ipdb
 import numpy as np
 import torch
 import wandb
-from src.dataset.multirobot_dataloaders import create_loaders, get_batch
 from src.prediction.losses import dontcare_mse_criterion, kl_criterion, mse_criterion, l1_criterion, robot_mse_criterion, world_mse_criterion
 from src.prediction.models.base import MLPEncoder, init_weights
 from src.prediction.models.lstm import LSTM, GaussianLSTM
@@ -159,7 +158,7 @@ class MultiRobotPredictionTrainer(object):
             return dontcare_mse_criterion(prediction, target, mask, robot_weight)
         else:
             raise NotImplementedError(f"{self._config.reconstruction_loss}")
-    
+
     def _zero_robot_region(self, mask, image):
         """
         Set the robot region to zero
@@ -487,7 +486,15 @@ class MultiRobotPredictionTrainer(object):
         """
         Setup the dataset and dataloaders
         """
-        train_loader, self.test_loader = create_loaders(config)
+        if self._config.training_regime == "multirobot":
+            from src.dataset.multirobot_dataloaders import create_loaders, get_batch
+        elif self._config.training_regime == "singlerobot":
+            from src.dataset.finetune_multirobot_daloaders import create_loaders, get_batch
+        elif self._config.training_regime == "finetune":
+            from src.dataset.finetune_multirobot_daloaders import create_finetune_loaders, get_batch
+        else:
+            raise NotImplementedError(self._config.training_regime)
+        train_loader, self.test_loader = create_loaders(self._config)
          # for infinite batching
         self.training_batch_generator = get_batch(train_loader, self._device)
         self.testing_batch_generator = get_batch(self.test_loader, self._device)
