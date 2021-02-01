@@ -62,14 +62,11 @@ def create_loaders(config):
     robots = ["sawyer"]
     for d in os.scandir(config.data_root):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            files.append(d.path)
-            robot = None
             for r in robots:
                 if r in d.path:
-                    robot = r
+                    files.append(d.path)
+                    file_labels.append(r)
                     break
-            assert robot is not None, d.path
-            file_labels.append(robot)
 
     X_train, X_test, y_train, y_test = train_test_split(
         files, file_labels, test_size=1 - config.train_val_split, stratify=file_labels
