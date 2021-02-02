@@ -18,6 +18,7 @@ import torchvision.transforms as tf
 import torch.utils.data as data
 from tqdm import trange
 from time import time
+from src.utils.camera_calibration import world_to_camera_dict
 
 
 class RobotDataset(data.Dataset):
@@ -71,7 +72,7 @@ class RobotDataset(data.Dataset):
             # actions = hf["actions"][start:end - 1].astype(np.float32)
             low = hf["low_bound"][:]
             high = hf["high_bound"][:]
-            actions = self._load_actions(hf, low, high, start, end-1)
+            actions = self._load_actions(hf, low, high, start, end - 1)
             masks = hf["mask"][start:end].astype(np.float32)
 
             assert (
@@ -83,97 +84,16 @@ class RobotDataset(data.Dataset):
             masks = self._preprocess_masks(masks)
 
             states = self._preprocess_states(states, low, high)
-            actions = self._preprocess_actions(actions)
+            actions = self._preprocess_actions(states, actions, idx)
             robot = hf.attrs["robot"]
         return (images, states, actions, masks), robot
-
-    def _load_camera_imgs(
-        self,
-        cam_index,
-        file_pointer,
-        file_metadata,
-        target_dims,
-        start_time=0,
-        n_load=None,
-    ):
-        cam_group = file_pointer["env"][f"cam{cam_index}_video"]
-        old_dims = file_metadata["frame_dim"]
-        length = file_metadata["img_T"]
-        encoding = file_metadata["img_encoding"]
-        image_format = file_metadata["image_format"]
-
-        if n_load is None:
-            n_load = length
-
-        old_height, old_width = old_dims
-        target_height, target_width = target_dims
-        resize_method = cv2.INTER_CUBIC
-        if target_height * target_width < old_height * old_width:
-            resize_method = cv2.INTER_AREA
-
-        images = np.zeros((n_load, target_height, target_width, 3), dtype=np.uint8)
-        if encoding == "mp4":
-            buf = io.BytesIO(cam_group["frames"][:].tobytes())
-            img_buffer = [
-                img
-                for t, img in enumerate(imageio.get_reader(buf, format="mp4"))
-                if start_time <= t < n_load + start_time
-            ]
-        elif encoding == "jpg":
-            img_buffer = [
-                cv2.imdecode(cam_group[f"frame{t}"][:], cv2.IMREAD_COLOR)[:, :, ::-1]
-                for t in range(start_time, start_time + n_load)
-            ]
-        else:
-            raise ValueError("encoding not supported")
-
-        for t, img in enumerate(img_buffer):
-            if (old_height, old_width) == (target_height, target_width):
-                images[t] = img
-            else:
-                images[t] = cv2.resize(
-                    img, (target_width, target_height), interpolation=resize_method
-                )
-
-        if image_format == "RGB":
-            return images
-        elif image_format == "BGR":
-            return images[:, :, :, ::-1]
-        raise NotImplementedError
-
-    def _load_masks(self, file_pointer, cam_index, target_dims, start, end):
-        masks = file_pointer["env"][f"cam{cam_index}_mask"][start:end]
-        old_dims = masks.shape[-2:]
-        old_height, old_width = old_dims
-        target_height, target_width = target_dims
-        resize_method = cv2.INTER_CUBIC
-        if target_height * target_width < old_height * old_width:
-            resize_method = cv2.INTER_AREA
-        if (old_height, old_width) == (target_height, target_width):
-            return masks
-
-        resized_masks = []
-        for img in masks:
-            rs_mask = (
-                cv2.resize(
-                    255.0 * img,
-                    (target_width, target_height),
-                    interpolation=resize_method,
-                )
-                / 255.0
-            ).astype(np.float32)
-            resized_masks.append(rs_mask)
-        return resized_masks
 
     def _load_actions(self, file_pointer, low, high, start, end):
         actions = file_pointer["actions"][:].astype(np.float32)
         a_T, adim = actions.shape[0], actions.shape[1]
         if self._action_dim == adim:
-            return actions[start : end]
-        elif (
-            self._impute_autograsp_action
-            and adim + 1 == self._action_dim
-        ):
+            return actions[start:end]
+        elif self._impute_autograsp_action and adim + 1 == self._action_dim:
             action_append, old_actions = (
                 np.zeros((a_T, 1)),
                 actions,
@@ -211,45 +131,75 @@ class RobotDataset(data.Dataset):
         states[:, 4] = (states[:, 4] - force_min) / (force_max - force_min)
         return states
 
-    def _preprocess_actions(self, actions):
-        if self._config.training_regime == "singlerobot":
+    def _convert_world_to_camera_pos(self, state, w_to_c):
+        e_to_w = np.eye(4)
+        # compute rotation matrix of end effector
+        # http://planning.cs.uiuc.edu/node102.html
+        a = state[3]
+        yaw = np.array([ [np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
+        rot = yaw
+        e_to_w[:3, :3] = rot
+        e_to_w[:3, 3] = state[:3]
+        e_to_c = w_to_c @ e_to_w
+
+        pos_c = e_to_c[:3, 3]
+        return pos_c
+
+    def _impute_camera_actions(self, states, actions, w_to_c):
+        """
+        Just calculate the true offset between states instead of using  the recorded actions.
+        """
+        for t in range(len(actions)):
+            state = states[t]
+            pos_c = self._convert_world_to_camera_pos(state, w_to_c)
+            next_state = states[t+1]
+            next_pos_c = self._convert_world_to_camera_pos(next_state, w_to_c)
+            true_offset_c = next_pos_c - pos_c
+            actions[t][:3] = true_offset_c
+
+    def _impute_true_actions(self, states, actions):
+        """
+        Set the action to what happened between states, not recorded actions.
+        """
+        for t in range(len(actions)):
+            state = states[t][:3]
+            next_state = states[t+1][:3]
+            true_offset_c = next_state - state
+            actions[t][:3] = true_offset_c
+
+    def _preprocess_actions(self, states, actions, idx):
+        strategy = self._config.preprocess_action
+        if strategy == "raw":
+            return torch.from_numpy(actions)
+
+        elif strategy == "state_infer":
+            self._impute_true_actions(states, actions)
+            return torch.from_numpy(actions)
+        else:
+            if strategy != "camera_state_infer":
+                raise NotImplementedError(strategy)
+        # if actions are in camera frame...
+        if self._config.training_regime == "multirobot":
+            # convert everything to camera coordinates.
+            filename = self._traj_names[idx]
+            robot_type = self._traj_robots[idx]
+            if robot_type == "sawyer":
+                world2cam = world_to_camera_dict["sawyer_verdi0"]
+            elif robot_type == "widowx":
+                world2cam = world_to_camera_dict["widowx1"]
+            elif robot_type == "baxter":
+                arm = "left" if "left" in filename else "right"
+                world2cam = world_to_camera_dict[f"baxter_{arm}"]
+
+        elif self._config.training_regime == "singlerobot":
             # train on sawyer, convert actions to camera space
-            # first, convert x,y,z to camera frame
-            # then,get rotation matrix from yaw value
-            # http://planning.cs.uiuc.edu/node102.html
-            world_to_cam = np.array(
-                [
-                    [-0.01290487, 0.62117762, -0.78356355, 1.21061856],
-                    [1, 0.00660994, -0.01122798, 0.01680913],
-                    [-0.00179526, -0.78364193, -0.62121019, 0.47401633],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
-            )
-            # actions is N x 5
-            # convert positions to homogenous coordinates
-            world_displacement = np.zeros((4, len(actions))) # 4 x N
-            world_displacement[:3, :] = actions[:, :3].T # 3 x N
-            world_displacement[3, :] = 1
-            cam_displacement = world_to_cam @ world_displacement # 4 x N
-            actions[:, :3] = cam_displacement[:3, :].T
+            world2cam = world_to_camera_dict["sawyer_vedri0"]
         elif self._config.training_regime == "finetune":
             # finetune on baxter, convert to camera frame
-            # Assumes the arm is right arm!
-            world_to_cam = np.array(
-                [
-                    [0.59474902, -0.48560866, 0.64066983, 0.00593267],
-                    [-0.80250365, -0.40577623, 0.4374169, -0.84046503],
-                    [0.04755516, -0.77429315, -0.63103774, 0.45875102],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
-            )
-            # actions is N x 5
-            # convert positions to homogenous coordinates
-            world_displacement = np.zeros((4, len(actions))) # 4 x N
-            world_displacement[:3, :] = actions[:, :3].T # 3 x N
-            world_displacement[3, :] = 1
-            cam_displacement = world_to_cam @ world_displacement # 4 x N
-            actions[:, :3] = cam_displacement[:3, :].T
+            # Assumes the baxter arm is right arm!
+            world2cam = world_to_camera_dict["baxter_right"]
+
+        self._impute_camera_actions(states, actions, world2cam)
         return torch.from_numpy(actions)
 
     def _preprocess_masks(self, masks):
@@ -272,18 +222,20 @@ if __name__ == "__main__":
     config.num_workers = 2
     config.action_dim = 5
 
-    hdf5_list =  [
+    hdf5_list = [
         d.path
         for d in os.scandir(config.data_root)
         if d.is_file() and has_file_allowed_extension(d.path, "hdf5")
     ]
     dataset = RobotDataset(hdf5_list, config)
-    test_loader = DataLoader(dataset,
-                num_workers=config.data_threads,
-                batch_size=config.batch_size,
-                shuffle=True,
-                drop_last=True,
-                pin_memory=True)
+    test_loader = DataLoader(
+        dataset,
+        num_workers=config.data_threads,
+        batch_size=config.batch_size,
+        shuffle=True,
+        drop_last=True,
+        pin_memory=True,
+    )
     test_it = iter(test_loader)
 
     for i in range(10):

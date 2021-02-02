@@ -221,6 +221,8 @@ def add_dataset_arguments(parser):
     parser.add_argument("--impute_autograsp_action", type=str2bool, default=True)
     parser.add_argument("--preload_ram", type=str2bool, default=False)
     parser.add_argument("--training_regime", type=str, choices=["multirobot", "singlerobot", "finetune"], default="multirobot")
+    parser.add_argument("--preprocess_action", type=str, choices=["raw", "state_infer", "camera_state_infer"], default="raw")
+
 
 
 
