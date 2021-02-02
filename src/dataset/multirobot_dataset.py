@@ -82,9 +82,9 @@ class RobotDataset(data.Dataset):
             # preprocessing
             images = self._preprocess_images(images)
             masks = self._preprocess_masks(masks)
-
-            states = self._preprocess_states(states, low, high)
             actions = self._preprocess_actions(states, actions, low, high, idx)
+            states = self._preprocess_states(states, low, high)
+
             robot = hf.attrs["robot"]
         return (images, states, actions, masks), robot
 
@@ -133,8 +133,6 @@ class RobotDataset(data.Dataset):
 
     def _convert_world_to_camera_pos(self, state, w_to_c):
         e_to_w = np.eye(4)
-        rot = yaw
-        e_to_w[:3, :3] = rot
         e_to_w[:3, 3] = state[:3]
         e_to_c = w_to_c @ e_to_w
         pos_c = e_to_c[:3, 3]
@@ -145,7 +143,7 @@ class RobotDataset(data.Dataset):
         states = states + low
         return states
 
-    def _convert_actions(self, states, actions, low, high):
+    def _convert_actions(self, states, actions, w_to_c, low, high):
         """
         Concert raw actions to camera frame displacements
         """
@@ -160,7 +158,7 @@ class RobotDataset(data.Dataset):
             true_offset_c = next_pos_c - pos_c
             actions[t][:3] = true_offset_c
 
-    def _impute_camera_actions(self, states, actions, w_to_c):
+    def _impute_camera_actions(self, states, actions, w_to_c, low, high):
         """
         Just calculate the true offset between states instead of using  the recorded actions.
         """
@@ -188,16 +186,10 @@ class RobotDataset(data.Dataset):
         strategy = self._config.preprocess_action
         if strategy == "raw":
             return torch.from_numpy(actions)
-        elif strategy == "camera_raw":
-            self._convert_actions(states, actions, low, high)
-            return torch.from_numpy(actions)
-
         elif strategy == "state_infer":
-            self._impute_true_actions(states,  actions, low, high,)
+            states = states.copy()
+            self._impute_true_actions(states, actions, low, high)
             return torch.from_numpy(actions)
-        else:
-            if strategy != "camera_state_infer":
-                raise NotImplementedError(strategy)
         # if actions are in camera frame...
         if self._config.training_regime == "multirobot":
             # convert everything to camera coordinates.
@@ -219,7 +211,11 @@ class RobotDataset(data.Dataset):
             # Assumes the baxter arm is right arm!
             world2cam = world_to_camera_dict["baxter_right"]
 
-        self._impute_camera_actions(states, actions, world2cam)
+        states = states.copy()
+        if strategy == "camera_raw":
+            self._convert_actions(states, actions, world2cam, low, high)
+        elif strategy == "camera_state_infer":
+            self._impute_camera_actions(states, actions, world2cam, low, high)
         return torch.from_numpy(actions)
 
     def _preprocess_masks(self, masks):
