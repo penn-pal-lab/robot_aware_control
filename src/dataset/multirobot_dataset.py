@@ -84,7 +84,7 @@ class RobotDataset(data.Dataset):
             masks = self._preprocess_masks(masks)
 
             states = self._preprocess_states(states, low, high)
-            actions = self._preprocess_actions(states, actions, idx)
+            actions = self._preprocess_actions(states, actions, low, high, idx)
             robot = hf.attrs["robot"]
         return (images, states, actions, masks), robot
 
@@ -133,22 +133,38 @@ class RobotDataset(data.Dataset):
 
     def _convert_world_to_camera_pos(self, state, w_to_c):
         e_to_w = np.eye(4)
-        # compute rotation matrix of end effector
-        # http://planning.cs.uiuc.edu/node102.html
-        a = state[3]
-        yaw = np.array([ [np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
         rot = yaw
         e_to_w[:3, :3] = rot
         e_to_w[:3, 3] = state[:3]
         e_to_c = w_to_c @ e_to_w
-
         pos_c = e_to_c[:3, 3]
         return pos_c
+
+    def _denormalize(self, states, low, high):
+        states = states * (high - low)
+        states = states + low
+        return states
+
+    def _convert_actions(self, states, actions, low, high):
+        """
+        Concert raw actions to camera frame displacements
+        """
+        states[:, :3] = self._denormalize(states[:, :3], low[:3], high[:3])
+        old_actions = actions.copy()
+        for t in range(len(actions)):
+            state = states[t]
+            pos_c = self._convert_world_to_camera_pos(state, w_to_c)
+            next_state = states[t].copy()
+            next_state[:4] += old_actions[t][:4]
+            next_pos_c = self._convert_world_to_camera_pos(next_state, w_to_c)
+            true_offset_c = next_pos_c - pos_c
+            actions[t][:3] = true_offset_c
 
     def _impute_camera_actions(self, states, actions, w_to_c):
         """
         Just calculate the true offset between states instead of using  the recorded actions.
         """
+        states[:, :3] = self._denormalize(states[:, :3], low[:3], high[:3])
         for t in range(len(actions)):
             state = states[t]
             pos_c = self._convert_world_to_camera_pos(state, w_to_c)
@@ -157,23 +173,27 @@ class RobotDataset(data.Dataset):
             true_offset_c = next_pos_c - pos_c
             actions[t][:3] = true_offset_c
 
-    def _impute_true_actions(self, states, actions):
+    def _impute_true_actions(self, states,  actions, low, high):
         """
         Set the action to what happened between states, not recorded actions.
         """
+        states[:, :3] = self._denormalize(states[:, :3], low[:3], high[:3])
         for t in range(len(actions)):
             state = states[t][:3]
             next_state = states[t+1][:3]
             true_offset_c = next_state - state
             actions[t][:3] = true_offset_c
 
-    def _preprocess_actions(self, states, actions, idx):
+    def _preprocess_actions(self, states, actions, low, high, idx):
         strategy = self._config.preprocess_action
         if strategy == "raw":
             return torch.from_numpy(actions)
+        elif strategy == "camera_raw":
+            self._convert_actions(states, actions, low, high)
+            return torch.from_numpy(actions)
 
         elif strategy == "state_infer":
-            self._impute_true_actions(states, actions)
+            self._impute_true_actions(states,  actions, low, high,)
             return torch.from_numpy(actions)
         else:
             if strategy != "camera_state_infer":
@@ -184,7 +204,7 @@ class RobotDataset(data.Dataset):
             filename = self._traj_names[idx]
             robot_type = self._traj_robots[idx]
             if robot_type == "sawyer":
-                world2cam = world_to_camera_dict["sawyer_verdi0"]
+                world2cam = world_to_camera_dict["sawyer_vedri0"]
             elif robot_type == "widowx":
                 world2cam = world_to_camera_dict["widowx1"]
             elif robot_type == "baxter":
