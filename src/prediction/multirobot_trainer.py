@@ -228,8 +228,13 @@ class MultiRobotPredictionTrainer(object):
                     losses["recon_loss"] += view_loss_scalar
             else:
                 view_loss = self._recon_loss(x_pred, x[i], mask[i])
+                with torch.no_grad():
+                    robot_mse = robot_mse_criterion(x_pred, x[i], mask[i])
+                    world_mse = world_mse_criterion(x_pred, x[i], mask[i])
                 recon_loss += view_loss
                 losses["recon_loss"] += view_loss.cpu().item()
+                losses["robot_loss"] += robot_mse.cpu().item()
+                losses["world_loss"] += world_mse.cpu().item()
 
             if cf.stoch:
                 kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
