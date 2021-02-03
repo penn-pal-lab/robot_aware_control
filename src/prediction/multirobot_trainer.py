@@ -358,7 +358,7 @@ class MultiRobotPredictionTrainer(object):
         """Training, Evaluation, Checkpointing loop"""
         cf = self._config
         # load models and dataset
-        self._step = self._load_checkpoint()
+        self._step = self._load_checkpoint(cf.dynamics_model_ckpt)
         self._setup_data()
 
         # start training
@@ -477,9 +477,12 @@ class MultiRobotPredictionTrainer(object):
                 step = ckpt["step"]
                 return step
         else:
+            print(f"Loading ckpt {ckpt_path}")
             ckpt = torch.load(ckpt_path)
             load_models(ckpt)
             step = ckpt["step"]
+            if self._config.training_regime == "finetune":
+                step = 0
             return step
 
     def _setup_data(self):
@@ -565,26 +568,27 @@ class MultiRobotPredictionTrainer(object):
             for t in range(cf.n_eval):
                 row.append(gt_seq[t][i])
             to_plot.append(row)
-
-            # best sequence
-            min_mse = 1e7
-            for s in range(nsample):
-                mse = 0
-                for t in range(cf.n_eval):
-                    mse += torch.sum(
-                        (gt_seq[t][i].data.cpu() - gen_seq[s][t][i].data.cpu()) ** 2
-                    )
-                if mse < min_mse:
-                    min_mse = mse
-                    min_idx = s
-
-            s_list = [
-                min_idx,
-                np.random.randint(nsample),
-                np.random.randint(nsample),
-                np.random.randint(nsample),
-                np.random.randint(nsample),
-            ]
+            if self._config.stoch:
+                # best sequence
+                min_mse = 1e7
+                for s in range(nsample):
+                    mse = 0
+                    for t in range(cf.n_eval):
+                        mse += torch.sum(
+                            (gt_seq[t][i].data.cpu() - gen_seq[s][t][i].data.cpu()) ** 2
+                        )
+                    if mse < min_mse:
+                        min_mse = mse
+                        min_idx = s
+                    s_list = [
+                        min_idx,
+                        np.random.randint(nsample),
+                        np.random.randint(nsample),
+                        np.random.randint(nsample),
+                        np.random.randint(nsample),
+                    ]
+            else:
+                s_list = [0]
             for ss in range(len(s_list)):
                 s = s_list[ss]
                 row = []

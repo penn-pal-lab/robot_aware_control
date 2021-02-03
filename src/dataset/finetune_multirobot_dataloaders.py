@@ -14,7 +14,7 @@ import ipdb
 
 
 def create_finetune_loaders(config):
-    # finetune on baxter data
+    # finetune on baxter left data
     file_type = "hdf5"
     files = []
     file_labels = []
@@ -22,11 +22,15 @@ def create_finetune_loaders(config):
     for d in os.scandir(config.data_root):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             for r in robots:
-                if r in d.path:
+                if f"{r}_left" in d.path:
                     files.append(d.path)
                     file_labels.append(r)
                     break
-
+    # only use 500 videos (400 training) like robonet
+    random.seed(config.seed)
+    random.shuffle(files)
+    files = files[:500]
+    file_labels = ["baxter"] * 500
     data = RobotDataset(files, file_labels, config)
     train_num = int(len(data) * config.train_val_split)
     val_num = len(data) - train_num
