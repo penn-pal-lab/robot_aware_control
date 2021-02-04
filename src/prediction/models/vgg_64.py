@@ -16,7 +16,7 @@ class vgg_layer(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, dim, nc=1, multiview=False):
+    def __init__(self, dim, nc=1, multiview=False, dropout=None):
         super(Encoder, self).__init__()
         self._multiview = multiview
         self.dim = dim
@@ -60,12 +60,19 @@ class Encoder(nn.Module):
                 nn.Conv2d(512, dim, 4, 1, 0), nn.BatchNorm2d(dim), nn.Tanh()
             )
         self.mp = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
+        
+        self._dropout = dropout
+        if dropout is not None:
+            self._dropout = nn.Dropout2d(p=dropout)
 
     def forward(self, input):
-        h1 = self.c1(input)  # 64 -> 32
-        h2 = self.c2(self.mp(h1))  # 32 -> 16
-        h3 = self.c3(self.mp(h2))  # 16 -> 8
-        h4 = self.c4(self.mp(h3))  # 8 -> 4
+        dropout = lambda x: x
+        if self._dropout is not None:
+            dropout = self._dropout
+        h1 = dropout(self.c1(input))  # 64 -> 32
+        h2 = dropout(self.c2(self.mp(h1)))  # 32 -> 16
+        h3 = dropout(self.c3(self.mp(h2)))  # 16 -> 8
+        h4 = dropout(self.c4(self.mp(h3)))  # 8 -> 4
         if self._multiview:
             h5 = self.c5_multiview(self.mp(h4))
         else:

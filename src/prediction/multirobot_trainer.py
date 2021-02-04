@@ -95,7 +95,7 @@ class MultiRobotPredictionTrainer(object):
             from src.prediction.models.vgg import Decoder, Encoder
 
         # RGB + mask channel
-        self.encoder = enc = Encoder(cf.g_dim, cf.channels + 1, cf.multiview).to(
+        self.encoder = enc = Encoder(cf.g_dim, cf.channels + 1, cf.multiview, cf.dropout).to(
             self._device
         )
         self.decoder = dec = Decoder(cf.g_dim, cf.channels, cf.multiview).to(
@@ -293,7 +293,30 @@ class MultiRobotPredictionTrainer(object):
         # epoch_loss = {f"test/epoch_{k}": np.sum(v) for k, v in losses.items()}
         log_str = ""
         for k, v in avg_loss.items():
-            log_str += f"{k}: {v}, "
+            log_str += f"{k}: {v:.5f}, "
+        self._logger.info(log_str)
+        wandb.log(avg_loss, step=self._step)
+
+    def _eval_transfer(self):
+        losses = defaultdict(list)
+        for data, robot_name in tqdm(self.transfer_loader, "evaluating transfer"):
+            # transpose from (B, L, C, W, H) to (L, B, C, W, H)
+            frames, robots, actions, masks = data
+            frames = frames.transpose_(1, 0).to(self._device)
+            robots = robots.transpose_(1, 0).to(self._device)
+            actions = actions.transpose_(1, 0).to(self._device)
+            masks = masks.transpose_(1, 0).to(self._device)
+            data = (frames, robots, actions, masks), robot_name
+            info = self._eval_step(data)
+            for k, v in info.items():
+                losses[k].append(v)
+            info = self._eval_step(data, autoregressive=True)
+            for k, v in info.items():
+                losses[k].append(v)
+        avg_loss = {f"transfer/{k}": np.mean(v) for k, v in losses.items()}
+        log_str = ""
+        for k, v in avg_loss.items():
+            log_str += f"{k}: {v:.5f}, "
         self._logger.info(log_str)
         wandb.log(avg_loss, step=self._step)
 
@@ -440,18 +463,19 @@ class MultiRobotPredictionTrainer(object):
                 self._save_checkpoint()
 
             # plot and evaluate on test set
-            self.frame_predictor.eval()
-            if cf.stoch:
-                self.posterior.eval()
-                self.prior.eval()
-            # self.encoder.eval()
-            # self.decoder.eval()
+            for model in self.all_models:
+                model.eval()
             self._eval_epoch()
             test_data = next(self.testing_batch_generator)
             self.plot(test_data, epoch, "test")
             self.plot_rec(test_data, epoch, "test")
             comp_data = next(self.comp_batch_generator)
             self.plot(comp_data, epoch, "comparison")
+
+            if self._config.training_regime == "singlerobot":
+                self._eval_transfer()
+                transfer_data = next(self.transfer_batch_generator)
+                self.plot(transfer_data, epoch, "transfer")
 
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
@@ -530,7 +554,10 @@ class MultiRobotPredictionTrainer(object):
         if self._config.training_regime == "multirobot":
             from src.dataset.multirobot_dataloaders import create_loaders, get_batch, get_train_batch
         elif self._config.training_regime == "singlerobot":
-            from src.dataset.finetune_multirobot_dataloaders import create_loaders, get_batch, get_train_batch
+            from src.dataset.finetune_multirobot_dataloaders import create_loaders, get_batch, get_train_batch, create_transfer_loader
+            # measure zero shot performance on transfer data
+            self.transfer_loader = create_transfer_loader(self._config)
+            self.transfer_batch_generator = get_batch(self.transfer_loader, self._device)
         elif self._config.training_regime == "finetune":
             from src.dataset.finetune_multirobot_dataloaders import create_finetune_loaders as create_loaders, get_batch, get_train_batch
         else:

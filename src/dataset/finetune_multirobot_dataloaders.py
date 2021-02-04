@@ -67,22 +67,40 @@ def create_finetune_loaders(config):
     comp_loader = DataLoader(comp_data, num_workers=0, batch_size=num_gifs, shuffle=False)
     return train_loader, test_loader, comp_loader
 
-def get_train_batch(loader, device, config):
-    # apply preprocessing before sending out batch for train loader
-    if config.img_augmentation:
-        r = config.color_jitter_range
-        augment = tf.Compose([tf.ColorJitter(r,r,r,r)])
-    while True:
-        for data, _ in loader:
-            # transpose from (B, L, C, W, H) to (L, B, C, W, H)
-            imgs, states, actions, masks = data
-            if config.img_augmentation:
-                imgs = augment(imgs)
-            frames = imgs.transpose_(1, 0).to(device)
-            robots = states.transpose_(1, 0).to(device)
-            actions = actions.transpose_(1, 0).to(device)
-            masks = masks.transpose_(1, 0).to(device)
-            yield frames, robots, actions, masks
+
+def create_transfer_loader(config):
+    """
+    For evaluating zero shot performance on the transfer set
+    """
+    # finetune on baxter left data
+    file_type = "hdf5"
+    files = []
+    file_labels = []
+    robots = ["baxter"]
+    for d in os.scandir(config.data_root):
+        if d.is_file() and has_file_allowed_extension(d.path, file_type):
+            for r in robots:
+                if f"{r}_left" in d.path:
+                    files.append(d.path)
+                    file_labels.append(r)
+                    break
+    files = sorted(files)
+    random.seed(config.seed)
+    random.shuffle(files)
+
+    # only use 500 videos (400 training) like robonet
+    files = files[:500]
+    file_labels = ["baxter"] * len(files)
+    data = RobotDataset(files, file_labels, config)
+    loader = DataLoader(
+        data,
+        num_workers=config.data_threads,
+        batch_size=config.batch_size,
+        shuffle=True,
+        drop_last=True,
+        pin_memory=True,
+    )
+    return loader
 
 def create_loaders(config):
     # create sawyer training data
