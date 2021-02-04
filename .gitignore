@@ -7,6 +7,7 @@ data
 inpaintobs.gif
 *.pt
 robonet_images/
+visualize_actions.pkl
 
 # IDE
 *.swp
