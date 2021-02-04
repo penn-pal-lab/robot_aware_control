@@ -1,6 +1,4 @@
-import io
 import os
-import random
 
 from dataclasses import dataclass
 
@@ -37,7 +35,10 @@ class RobotDataset(data.Dataset):
         self._img_transform = tf.Compose(
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
         )
-        self._rng = random.Random(config.seed)
+        self._mask_transform = tf.Compose(
+            [tf.ToTensor(), tf.CenterCrop(config.image_width)]
+        )
+        self._rng = np.random.RandomState(config.seed)
         self._memory = {}
         if config.preload_ram:
             self.preload_ram()
@@ -64,7 +65,7 @@ class RobotDataset(data.Dataset):
             end = ep_len
             if ep_len > self._video_length:
                 offset = ep_len - self._video_length
-                start = np.random.randint(0, offset + 1)
+                start = self._rng.randint(0, offset + 1)
                 end = start + self._video_length
 
             images = hf["frames"][start:end]
@@ -166,19 +167,19 @@ class RobotDataset(data.Dataset):
         for t in range(len(actions)):
             state = states[t]
             pos_c = self._convert_world_to_camera_pos(state, w_to_c)
-            next_state = states[t+1]
+            next_state = states[t + 1]
             next_pos_c = self._convert_world_to_camera_pos(next_state, w_to_c)
             true_offset_c = next_pos_c - pos_c
             actions[t][:3] = true_offset_c
 
-    def _impute_true_actions(self, states,  actions, low, high):
+    def _impute_true_actions(self, states, actions, low, high):
         """
         Set the action to what happened between states, not recorded actions.
         """
         states[:, :3] = self._denormalize(states[:, :3], low[:3], high[:3])
         for t in range(len(actions)):
             state = states[t][:3]
-            next_state = states[t+1][:3]
+            next_state = states[t + 1][:3]
             true_offset_c = next_state - state
             actions[t][:3] = true_offset_c
 
@@ -219,7 +220,7 @@ class RobotDataset(data.Dataset):
         return torch.from_numpy(actions)
 
     def _preprocess_masks(self, masks):
-        mask_tensor = torch.stack([self._img_transform(i) for i in masks])
+        mask_tensor = torch.stack([self._mask_transform(i) for i in masks])
         return mask_tensor
 
     def __len__(self):

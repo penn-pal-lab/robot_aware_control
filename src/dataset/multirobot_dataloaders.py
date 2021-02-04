@@ -1,15 +1,15 @@
 import os
 import random
 
-import numpy as np
-from torch.utils.data.sampler import WeightedRandomSampler
-
-from src.dataset.multirobot_dataset import RobotDataset
-from torchvision.datasets.folder import has_file_allowed_extension
-from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split
-import torch
 import ipdb
+import numpy as np
+import torch
+import torchvision.transforms as tf
+from sklearn.model_selection import train_test_split
+from src.dataset.multirobot_dataset import RobotDataset
+from torch.utils.data import DataLoader
+from torch.utils.data.sampler import WeightedRandomSampler
+from torchvision.datasets.folder import has_file_allowed_extension
 
 
 def create_loaders(config):
@@ -27,9 +27,21 @@ def create_loaders(config):
                     break
             assert robot is not None, d.path
             file_labels.append(robot)
+    
+    # create a small deterministic dataloader for comparison across runs
+    # because train / test loaders have multiple workers, RNG is tricky.
+    num_gifs = config.batch_size
+    file_and_labels = zip(files, file_labels)
+    file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
+    random.seed(config.seed)
+    random.shuffle(file_and_labels)
 
+    files = [x[0] for x in file_and_labels]
+    file_labels = [x[1] for x in file_and_labels]
+
+    split_rng = np.random.RandomState(config.seed)
     X_train, X_test, y_train, y_test = train_test_split(
-        files, file_labels, test_size=1 - config.train_val_split, stratify=file_labels
+        files, file_labels, test_size=1 - config.train_val_split, stratify=file_labels, random_state=split_rng
     )
     train_data = RobotDataset(X_train, y_train, config)
     test_data = RobotDataset(X_test, y_test, config)
@@ -74,24 +86,57 @@ def create_loaders(config):
         pin_memory=True,
         sampler=test_sampler,
     )
-    return train_loader, test_loader
+
+    # get 5 of each robot in the test set
+    count = {r: 5 for r in robots}
+    comp_files = []
+    comp_file_labels = []
+    for x, y in zip(X_test, y_test):
+        if y in count and count[y] > 0:
+            count[y] -= 1
+            comp_files.append(x)
+            comp_file_labels.append(y)
+        if sum(count.values()) == 0:
+            break
+
+    comp_data = RobotDataset(comp_files, comp_file_labels, config)
+    comp_loader = DataLoader(comp_data, num_workers=0, batch_size=num_gifs, shuffle=False)
+        
+    return train_loader, test_loader, comp_loader
+
+def get_train_batch(loader, device, config):
+    # apply preprocessing before sending out batch for train loader
+    if config.img_augmentation:
+        r = config.color_jitter_range
+        augment = tf.Compose([tf.ColorJitter(r,r,r,r)])
+    while True:
+        for data, robot_name in loader:
+            # transpose from (B, L, C, W, H) to (L, B, C, W, H)
+            imgs, states, actions, masks = data
+            if config.img_augmentation:
+                imgs = augment(imgs)
+            frames = imgs.transpose_(1, 0).to(device)
+            robots = states.transpose_(1, 0).to(device)
+            actions = actions.transpose_(1, 0).to(device)
+            masks = masks.transpose_(1, 0).to(device)
+            yield (frames, robots, actions, masks), robot_name
 
 def get_batch(loader, device):
     while True:
-        for data, _ in loader:
+        for data, robot_name in loader:
             # transpose from (B, L, C, W, H) to (L, B, C, W, H)
             imgs, states, actions, masks = data
             frames = imgs.transpose_(1, 0).to(device)
             robots = states.transpose_(1, 0).to(device)
             actions = actions.transpose_(1, 0).to(device)
             masks = masks.transpose_(1, 0).to(device)
-            yield frames, robots, actions, masks
+            yield (frames, robots, actions, masks), robot_name
 
 
 if __name__ == "__main__":
+    import imageio
     from src.config import argparser
     from torch.multiprocessing import set_start_method
-    import imageio
 
     set_start_method("spawn")
     config, _ = argparser()

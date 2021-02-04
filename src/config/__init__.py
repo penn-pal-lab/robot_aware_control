@@ -222,7 +222,8 @@ def add_dataset_arguments(parser):
     parser.add_argument("--preload_ram", type=str2bool, default=False)
     parser.add_argument("--training_regime", type=str, choices=["multirobot", "singlerobot", "finetune"], default="multirobot")
     parser.add_argument("--preprocess_action", type=str, choices=["raw", "camera_raw", "state_infer", "camera_state_infer"], default="raw")
-
+    parser.add_argument("--img_augmentation", type=str2bool, default=False)
+    parser.add_argument("--color_jitter_range", type=float, default=0.1)
 
 
 

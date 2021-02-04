@@ -50,6 +50,7 @@ class MultiRobotPredictionTrainer(object):
             entity=config.wandb_entity,
         )
         self._logger = colorlog.getLogger("file/console")
+        self._img_augmentation = config.img_augmentation
 
     def _init_models(self, cf):
         """Initialize models and optimizers
@@ -183,7 +184,9 @@ class MultiRobotPredictionTrainer(object):
 
         losses = defaultdict(float)  # log loss metrics
         recon_loss = kld = 0
-        x, robot, ac, mask = data
+        (x, robot, ac, mask), robot_name = data
+        robot_name = np.array(robot_name)
+        all_robots = set(robot_name)
         x_pred = None
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
@@ -228,13 +231,27 @@ class MultiRobotPredictionTrainer(object):
                     losses["recon_loss"] += view_loss_scalar
             else:
                 view_loss = self._recon_loss(x_pred, x[i], mask[i])
+                recon_loss += view_loss # accumulate for backprop
+                losses["recon_loss"] += view_loss.cpu().item()
+
+                # for logging metrics            
                 with torch.no_grad():
                     robot_mse = robot_mse_criterion(x_pred, x[i], mask[i])
                     world_mse = world_mse_criterion(x_pred, x[i], mask[i])
-                recon_loss += view_loss
-                losses["recon_loss"] += view_loss.cpu().item()
-                losses["robot_loss"] += robot_mse.cpu().item()
-                losses["world_loss"] += world_mse.cpu().item()
+                    losses["robot_loss"] += robot_mse.cpu().item()
+                    losses["world_loss"] += world_mse.cpu().item()    
+                    # robot specific metrics
+                    for r in all_robots:
+                        if len(all_robots) == 1:
+                            break
+                        r_idx = r == robot_name
+                        r_pred = x_pred[r_idx]
+                        r_img = x[i][r_idx]
+                        r_mask = mask[i][r_idx]
+                        r_robot_mse = robot_mse_criterion(r_pred, r_img, r_mask)
+                        r_world_mse = world_mse_criterion(r_pred, r_img, r_mask)
+                        losses[f"{r}_robot_loss"] += r_robot_mse.cpu().item()
+                        losses[f"{r}_world_loss"] += r_world_mse.cpu().item()
 
             if cf.stoch:
                 kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
@@ -257,14 +274,14 @@ class MultiRobotPredictionTrainer(object):
 
     def _eval_epoch(self):
         losses = defaultdict(list)
-        for data, _ in tqdm(self.test_loader, "evaluating epoch"):
+        for data, robot_name in tqdm(self.test_loader, "evaluating epoch"):
             # transpose from (B, L, C, W, H) to (L, B, C, W, H)
             frames, robots, actions, masks = data
             frames = frames.transpose_(1, 0).to(self._device)
             robots = robots.transpose_(1, 0).to(self._device)
             actions = actions.transpose_(1, 0).to(self._device)
             masks = masks.transpose_(1, 0).to(self._device)
-            data = (frames, robots, actions, masks)
+            data = (frames, robots, actions, masks), robot_name
             info = self._eval_step(data)
             for k, v in info.items():
                 losses[k].append(v)
@@ -294,7 +311,9 @@ class MultiRobotPredictionTrainer(object):
             self.prior.hidden = self.prior.init_hidden()
 
         losses = defaultdict(float)
-        x, robot, ac, mask = data
+        (x, robot, ac, mask), robot_name = data
+        robot_name = np.array(robot_name)
+        all_robots = set(robot_name)
         x_pred = None
         prefix = "autoreg" if autoregressive else "1step"
         for i in range(1, cf.n_past + cf.n_future):
@@ -345,11 +364,23 @@ class MultiRobotPredictionTrainer(object):
                     losses[f"{prefix}_total_world_loss"] += world_mse_scalar
             else:
                 view_loss = self._recon_loss(x_pred, x[i], mask[i])
+                losses[f"{prefix}_recon_loss"] += view_loss.cpu().item()
                 robot_mse = robot_mse_criterion(x_pred, x[i], mask[i])
                 world_mse = world_mse_criterion(x_pred, x[i], mask[i])
-                losses[f"{prefix}_recon_loss"] += view_loss.cpu().item()
                 losses[f"{prefix}_robot_loss"] += robot_mse.cpu().item()
                 losses[f"{prefix}_world_loss"] += world_mse.cpu().item()
+                # robot specific metrics
+                for r in all_robots:
+                    if len(all_robots) == 1:
+                        break
+                    r_idx = r == robot_name
+                    r_pred = x_pred[r_idx]
+                    r_img = x[i][r_idx]
+                    r_mask = mask[i][r_idx]
+                    r_robot_mse = robot_mse_criterion(r_pred, r_img, r_mask)
+                    r_world_mse = world_mse_criterion(r_pred, r_img, r_mask)
+                    losses[f"{r}_robot_loss"] += r_robot_mse.cpu().item()
+                    losses[f"{r}_world_loss"] += r_world_mse.cpu().item()
 
             if cf.stoch:
                 kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
@@ -419,6 +450,8 @@ class MultiRobotPredictionTrainer(object):
             test_data = next(self.testing_batch_generator)
             self.plot(test_data, epoch, "test")
             self.plot_rec(test_data, epoch, "test")
+            comp_data = next(self.comp_batch_generator)
+            self.plot(comp_data, epoch, "comparison")
 
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
@@ -495,17 +528,18 @@ class MultiRobotPredictionTrainer(object):
         Setup the dataset and dataloaders
         """
         if self._config.training_regime == "multirobot":
-            from src.dataset.multirobot_dataloaders import create_loaders, get_batch
+            from src.dataset.multirobot_dataloaders import create_loaders, get_batch, get_train_batch
         elif self._config.training_regime == "singlerobot":
-            from src.dataset.finetune_multirobot_dataloaders import create_loaders, get_batch
+            from src.dataset.finetune_multirobot_dataloaders import create_loaders, get_batch, get_train_batch
         elif self._config.training_regime == "finetune":
-            from src.dataset.finetune_multirobot_dataloaders import create_finetune_loaders as create_loaders, get_batch
+            from src.dataset.finetune_multirobot_dataloaders import create_finetune_loaders as create_loaders, get_batch, get_train_batch
         else:
             raise NotImplementedError(self._config.training_regime)
-        train_loader, self.test_loader = create_loaders(self._config)
+        train_loader, self.test_loader, comp_loader = create_loaders(self._config)
          # for infinite batching
-        self.training_batch_generator = get_batch(train_loader, self._device)
+        self.training_batch_generator = get_train_batch(train_loader, self._device, config)
         self.testing_batch_generator = get_batch(self.test_loader, self._device)
+        self.comp_batch_generator = get_batch(comp_loader, self._device)
 
     @torch.no_grad()
     def plot(self, data, epoch, name):
@@ -513,16 +547,16 @@ class MultiRobotPredictionTrainer(object):
         Plot the generation with learned prior. Autoregressive output.
         """
         cf = self._config
-        x, robot, ac, mask = data
-
+        (x, robot, ac, mask), robot_name = data
         nsample = 1
         gen_seq = [[] for i in range(nsample)]
         gt_seq = [x[i] for i in range(len(x))]
+        b = x.shape[1]
         for s in range(nsample):
-            self.frame_predictor.hidden = self.frame_predictor.init_hidden()
+            self.frame_predictor.hidden = self.frame_predictor.init_hidden(b)
             if self._config.stoch:
-                self.posterior.hidden = self.posterior.init_hidden()
-                self.prior.hidden = self.prior.init_hidden()
+                self.posterior.hidden = self.posterior.init_hidden(b)
+                self.prior.hidden = self.prior.init_hidden(b)
             # first frame of all videos
             if self._config.reconstruction_loss == "dontcare_mse":
                 self._zero_robot_region(mask[0], x[0])
@@ -566,7 +600,7 @@ class MultiRobotPredictionTrainer(object):
 
         to_plot = []
         gifs = [[] for t in range(cf.n_eval)]
-        nrow = min(cf.batch_size, 10)
+        nrow = b
         for i in range(nrow):
             # ground truth sequence
             row = []
@@ -621,7 +655,7 @@ class MultiRobotPredictionTrainer(object):
         Plot the 1 step reconstruction with posterior instead of learned prior
         """
         cf = self._config
-        x, robot, ac, mask = data
+        (x, robot, ac, mask), robot_name = data
         self.frame_predictor.hidden = self.frame_predictor.init_hidden()
         if cf.stoch:
             self.posterior.hidden = self.posterior.init_hidden()
