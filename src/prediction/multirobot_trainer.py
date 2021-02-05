@@ -425,7 +425,7 @@ class MultiRobotPredictionTrainer(object):
         for epoch in range(cf.niter):
             for model in self.all_models:
                 model.train()
-            epoch_losses = defaultdict(float)
+            # epoch_losses = defaultdict(float)
             for i in range(cf.epoch_size):
                 # start = time()
                 data = next(self.training_batch_generator)
@@ -439,8 +439,8 @@ class MultiRobotPredictionTrainer(object):
                 # end = time()
                 # update_time = end - start
                 # print("network update time", update_time)
-                for k, v in info.items():
-                    epoch_losses[f"train/epoch_{k}"] += v
+                # for k, v in info.items():
+                #     epoch_losses[f"train/epoch_{k}"] += v
                 info["sample_schedule"] = self._schedule_prob()[0]
                 self._step += 1
 
@@ -452,11 +452,11 @@ class MultiRobotPredictionTrainer(object):
                 progress.update()
 
             # log epoch statistics
-            wandb.log(epoch_losses, step=self._step)
-            epoch_log_str = ""
-            for k, v in epoch_losses.items():
-                epoch_log_str += f"{k}: {v}, "
-            self._logger.info(epoch_log_str)
+            # wandb.log(epoch_losses, step=self._step)
+            # epoch_log_str = ""
+            # for k, v in epoch_losses.items():
+            #     epoch_log_str += f"{k}: {v}, "
+            # self._logger.info(epoch_log_str)
             # checkpoint
             if epoch % cf.checkpoint_interval == 0 and epoch > 0:
                 self._logger.info(f"Saving checkpoint {epoch}")
