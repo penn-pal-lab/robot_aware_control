@@ -137,7 +137,7 @@ class MultiRobotPredictionTrainer(object):
         # assume 400k max training steps
         # https://www.desmos.com/calculator/bo4aoyqje1
         k = 10000
-        use_truth = k / (k + np.exp(self._step / 2600))
+        use_truth = k / (k + np.exp(self._step / 3900))
         use_model = 1 - use_truth
         return [use_truth, use_model]
 
@@ -402,8 +402,8 @@ class MultiRobotPredictionTrainer(object):
                     r_mask = mask[i][r_idx]
                     r_robot_mse = robot_mse_criterion(r_pred, r_img, r_mask)
                     r_world_mse = world_mse_criterion(r_pred, r_img, r_mask)
-                    losses[f"{r}_robot_loss"] += r_robot_mse.cpu().item()
-                    losses[f"{r}_world_loss"] += r_world_mse.cpu().item()
+                    losses[f"{prefix}_{r}_robot_loss"] += r_robot_mse.cpu().item()
+                    losses[f"{prefix}_{r}_world_loss"] += r_world_mse.cpu().item()
 
             if cf.stoch:
                 kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
