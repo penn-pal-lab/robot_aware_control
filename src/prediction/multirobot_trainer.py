@@ -210,9 +210,9 @@ class MultiRobotPredictionTrainer(object):
 
             if cf.stoch:
                 z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
-                z_p, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
-                z = z_p if i > 1 else z_t
-                h_pred = self.frame_predictor(cat([a, r, h, z], 1))
+                _, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
+                # use z_t from posterior for training stability.
+                h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
             else:
                 h_pred = self.frame_predictor(cat([a, r, h], 1))
             x_pred = self.decoder([h_pred, skip])  # N x C x H x W
