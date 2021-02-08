@@ -19,6 +19,8 @@ from src.utils.plot import save_gif, save_tensors_image
 from torch import cat, optim
 from tqdm import tqdm
 from time import time
+from math import floor
+import imageio
 
 
 class MultiRobotPredictionTrainer(object):
@@ -41,13 +43,15 @@ class MultiRobotPredictionTrainer(object):
         if not config.wandb:
             os.environ["WANDB_MODE"] = "dryrun"
         os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
-        exclude = ["device"]
         wandb.init(
             resume=config.jobname,
             project=config.wandb_project,
-            config={k: v for k, v in config.__dict__.items() if k not in exclude},
+            config=config,
             dir=config.log_dir,
             entity=config.wandb_entity,
+            group=config.wandb_group,
+            job_type=config.wandb_job_type,
+            config_exclude_keys=["device"]
         )
         self._logger = colorlog.getLogger("file/console")
         self._img_augmentation = config.img_augmentation
@@ -234,12 +238,12 @@ class MultiRobotPredictionTrainer(object):
                 recon_loss += view_loss # accumulate for backprop
                 losses["recon_loss"] += view_loss.cpu().item()
 
-                # for logging metrics            
+                # for logging metrics
                 with torch.no_grad():
                     robot_mse = robot_mse_criterion(x_pred, x[i], mask[i])
                     world_mse = world_mse_criterion(x_pred, x[i], mask[i])
                     losses["robot_loss"] += robot_mse.cpu().item()
-                    losses["world_loss"] += world_mse.cpu().item()    
+                    losses["world_loss"] += world_mse.cpu().item()
                     # robot specific metrics
                     for r in all_robots:
                         if len(all_robots) == 1:
@@ -272,6 +276,141 @@ class MultiRobotPredictionTrainer(object):
             losses[k] = v / (cf.n_past + cf.n_future)
         return losses
 
+    def _epoch_save_fid_images(self, random_snippet=False):
+        """
+        Save all model outputs and test set into a folder for FID calculations.
+        """
+        if random_snippet:
+            self._snippet_rng = np.random.RandomState(self._config.seed)
+
+        for i, (data, robot_name) in enumerate(tqdm(self.test_loader, "FID calculation")):
+            # transpose from (B, L, C, W, H) to (L, B, C, W, H)
+            frames, robots, actions, masks = data
+            frames = frames.transpose_(1, 0).to(self._device)
+            robots = robots.transpose_(1, 0).to(self._device)
+            actions = actions.transpose_(1, 0).to(self._device)
+            masks = masks.transpose_(1, 0).to(self._device)
+            data = (frames, robots, actions, masks), robot_name
+            self._video_save_fid(i, data, autoregressive=True, random_snippet=random_snippet)
+
+    def _video_save_fid(self, idx,  data, autoregressive=False, random_snippet=False):
+        """Evaluates over an entire video
+        data: video data from dataloader
+        autoregressive: use model's outputs as input for next timestep
+        """
+        (x, r, a, m), name = data
+        T = len(x)
+        window = self._config.n_past + self._config.n_future
+        fid_folder = os.path.join(self._config.log_dir, "fid")
+        target_folder = os.path.join(fid_folder, f"target_{self._step}")
+        pred_folder = os.path.join(fid_folder, f"pred_{self._step}")
+        os.makedirs(fid_folder, exist_ok=True)
+        os.makedirs(target_folder, exist_ok=True)
+        os.makedirs(pred_folder, exist_ok=True)
+        if random_snippet:
+            start = np.random.randint(0, floor(T/window))
+            s = start * window
+            e = (start+1) * window
+            batch = (x[s:e], r[s:e], a[s:e-1], m[s:e]), name
+            preds = self._get_preds_from_snippet(batch, autoregressive)
+            # save the target images
+            for j, imgs in enumerate(x[s+1:e]):
+                # imgs is (T x B x C x W x H), T is window length - 1
+                for t, img in enumerate(imgs):
+                    img_name = f"vid_{idx}_snip_{s}_batch_{j}_time_{t}.png"
+                    img_path = os.path.join(target_folder, img_name)
+                    # convert image to H x W x C, [0,255] uint8
+                    img = (255 * img.permute(1, 2, 0).cpu().numpy()).astype(np.uint8)
+                    imageio.imwrite(img_path, img)
+
+                    pred_img_name = f"vid_{idx}_snip_{s}_batch_{j}_time_{t}.png"
+                    pred_img_path = os.path.join(pred_folder, pred_img_name)
+                    # ipdb.set_trace()
+                    pred_img = preds[0][j][t]
+                    pred_img = (255 * pred_img.permute(1, 2, 0).cpu().numpy()).astype(np.uint8)
+                    imageio.imwrite(pred_img_path, pred_img)
+        else:
+            for i in range(floor(T/window)):
+                s = i * window
+                e = (i+1) * window
+                batch = (x[s:e], r[s:e], a[s:e-1], m[s:e]), name
+                preds = self._get_preds_from_snippet(batch, autoregressive)
+                # save the target images
+                for j, imgs in enumerate(x[s+1:e]):
+                    # imgs is (T x B x C x W x H), T is window length - 1
+                    for t, img in enumerate(imgs):
+                        img_name = f"vid_{idx}_snip_{s}_batch_{j}_time_{t}.png"
+                        img_path = os.path.join(target_folder, img_name)
+                        # convert image to H x W x C, [0,255] uint8
+                        img = (255 * img.permute(1, 2, 0).cpu().numpy()).astype(np.uint8)
+                        imageio.imwrite(img_path, img)
+
+                        pred_img_name = f"vid_{idx}_snip_{s}_batch_{j}_time_{t}.png"
+                        pred_img_path = os.path.join(target_folder, pred_img_name)
+                        # ipdb.set_trace()
+                        pred_img = preds[0][j][t]
+                        pred_img = (255 * pred_img.permute(1, 2, 0).cpu().numpy()).astype(np.uint8)
+                        imageio.imwrite(pred_img_path, pred_img)
+
+    @torch.no_grad()
+    def _get_preds_from_snippet(self, data, autoregressive=False):
+        """
+        Gets model predictions from a snippet of video of length n_past + n_future
+        autoregressive: use model's outputs as input for next timestep
+        Returns a dictionary where key is viewpoint, value is model outputs
+        """
+        # one step evaluation loss
+        cf = self._config
+        bs = cf.test_batch_size
+        # initialize the recurrent states
+        self.frame_predictor.hidden = self.frame_predictor.init_hidden(bs)
+        if cf.stoch:
+            self.posterior.hidden = self.posterior.init_hidden(bs)
+            self.prior.hidden = self.prior.init_hidden(bs)
+        (x, robot, ac, mask), robot_name = data
+        robot_name = np.array(robot_name)
+        all_preds = defaultdict(list)
+        x_pred = None
+        for i in range(1, cf.n_past + cf.n_future):
+            if autoregressive and i > 1:
+                input_token = x_pred.clone().detach()
+            else:
+                input_token = x[i - 1]
+            # zero out robot pixels in input for norobot cost
+            if self._config.reconstruction_loss == "dontcare_mse":
+                self._zero_robot_region(mask[i-1], input_token)
+                self._zero_robot_region(mask[i], x[i])
+            h = self.encoder(cat([input_token, mask[i - 1]], dim=1))
+            r = self.robot_enc(robot[i - 1])
+            a = self.action_enc(ac[i - 1])
+            h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
+            r_target = self.robot_enc(robot[i])
+            # if n_past is 1, then we need to manually set skip var
+            if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
+                h, skip = h
+            else:
+                h = h[0]
+
+            if cf.stoch:
+                z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
+                _, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
+                h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
+            else:
+                h_pred = self.frame_predictor(cat([a, r, h], 1))
+            x_pred = self.decoder([h_pred, skip])
+            if cf.multiview:
+                num_views = x_pred.shape[2] // cf.image_width
+                for n in range(num_views):
+                    start, end = n * cf.image_width, (n + 1) * cf.image_width
+                    view_pred = x_pred[:, :, start:end, :]
+                    # view = x[i][:, :, start:end, :]
+                    # view_mask = mask[i][:, :, start:end, :]
+                    all_preds[n].append(view_pred)
+            else:
+                all_preds[0].append(x_pred)
+        return all_preds
+
+
     def _eval_epoch(self):
         losses = defaultdict(list)
         for data, robot_name in tqdm(self.test_loader, "evaluating epoch"):
@@ -282,10 +421,10 @@ class MultiRobotPredictionTrainer(object):
             actions = actions.transpose_(1, 0).to(self._device)
             masks = masks.transpose_(1, 0).to(self._device)
             data = (frames, robots, actions, masks), robot_name
-            info = self._eval_step(data)
+            info = self._eval_video(data)
             for k, v in info.items():
                 losses[k].append(v)
-            info = self._eval_step(data, autoregressive=True)
+            info = self._eval_video(data, autoregressive=True)
             for k, v in info.items():
                 losses[k].append(v)
 
@@ -307,10 +446,10 @@ class MultiRobotPredictionTrainer(object):
             actions = actions.transpose_(1, 0).to(self._device)
             masks = masks.transpose_(1, 0).to(self._device)
             data = (frames, robots, actions, masks), robot_name
-            info = self._eval_step(data)
+            info = self._eval_video(data)
             for k, v in info.items():
                 losses[k].append(v)
-            info = self._eval_step(data, autoregressive=True)
+            info = self._eval_video(data, autoregressive=True)
             for k, v in info.items():
                 losses[k].append(v)
         avg_loss = {f"transfer/{k}": np.mean(v) for k, v in losses.items()}
@@ -320,18 +459,38 @@ class MultiRobotPredictionTrainer(object):
         self._logger.info(log_str)
         wandb.log(avg_loss, step=self._step)
 
+    def _eval_video(self, data, autoregressive=False):
+        """Evaluates over an entire video
+        data: video data from dataloader
+        autoregressive: use model's outputs as input for next timestep
+        """
+        (x, r, a, m), name = data
+        T = len(x)
+        window = self._config.n_past + self._config.n_future
+        all_losses = defaultdict(float)
+        for i in range(floor(T/window)):
+            s = i * window
+            e = (i+1) * window
+            batch = (x[s:e], r[s:e], a[s:e-1], m[s:e]), name
+            losses = self._eval_step(batch, autoregressive)
+            for k, v in losses.items():
+                all_losses[k] += v / floor(T/window)
+        return all_losses
+
     @torch.no_grad()
     def _eval_step(self, data, autoregressive=False):
         """
+        Evals over a snippet of video of length n_past + n_future
         autoregressive: use model's outputs as input for next timestep
         """
         # one step evaluation loss
         cf = self._config
+        bs = cf.test_batch_size
         # initialize the recurrent states
-        self.frame_predictor.hidden = self.frame_predictor.init_hidden()
+        self.frame_predictor.hidden = self.frame_predictor.init_hidden(bs)
         if cf.stoch:
-            self.posterior.hidden = self.posterior.init_hidden()
-            self.prior.hidden = self.prior.init_hidden()
+            self.posterior.hidden = self.posterior.init_hidden(bs)
+            self.prior.hidden = self.prior.init_hidden(bs)
 
         losses = defaultdict(float)
         (x, robot, ac, mask), robot_name = data
@@ -458,24 +617,25 @@ class MultiRobotPredictionTrainer(object):
             #     epoch_log_str += f"{k}: {v}, "
             # self._logger.info(epoch_log_str)
             # checkpoint
+            # self._epoch_save_fid_images(random_snippet=True)
             if epoch % cf.checkpoint_interval == 0 and epoch > 0:
                 self._logger.info(f"Saving checkpoint {epoch}")
                 self._save_checkpoint()
+            if epoch % cf.eval_interval == 0:
+                # plot and evaluate on test set
+                for model in self.all_models:
+                    model.eval()
+                self._eval_epoch()
+                test_data = next(self.testing_batch_generator)
+                self.plot(test_data, epoch, "test")
+                self.plot_rec(test_data, epoch, "test")
+                comp_data = next(self.comp_batch_generator)
+                self.plot(comp_data, epoch, "comparison")
 
-            # plot and evaluate on test set
-            for model in self.all_models:
-                model.eval()
-            self._eval_epoch()
-            test_data = next(self.testing_batch_generator)
-            self.plot(test_data, epoch, "test")
-            self.plot_rec(test_data, epoch, "test")
-            comp_data = next(self.comp_batch_generator)
-            self.plot(comp_data, epoch, "comparison")
-
-            if self._config.training_regime == "singlerobot":
-                self._eval_transfer()
-                transfer_data = next(self.transfer_batch_generator)
-                self.plot(transfer_data, epoch, "transfer")
+                if self._config.training_regime == "singlerobot":
+                    self._eval_transfer()
+                    transfer_data = next(self.transfer_batch_generator)
+                    self.plot(transfer_data, epoch, "transfer")
 
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
@@ -574,11 +734,16 @@ class MultiRobotPredictionTrainer(object):
         Plot the generation with learned prior. Autoregressive output.
         """
         cf = self._config
-        (x, robot, ac, mask), robot_name = data
+        (x, robot, ac, mask), _ = data
         nsample = 1
         gen_seq = [[] for i in range(nsample)]
         gt_seq = [x[i] for i in range(len(x))]
-        b = x.shape[1]
+        b = min(x.shape[1], 10)
+        # truncate batch
+        x = x[:, :b]
+        robot = robot[:, :b]
+        ac = ac[:, :b]
+        mask = mask[:, :b]
         for s in range(nsample):
             self.frame_predictor.hidden = self.frame_predictor.init_hidden(b)
             if self._config.stoch:
@@ -682,10 +847,17 @@ class MultiRobotPredictionTrainer(object):
         Plot the 1 step reconstruction with posterior instead of learned prior
         """
         cf = self._config
-        (x, robot, ac, mask), robot_name = data
-        self.frame_predictor.hidden = self.frame_predictor.init_hidden()
+        (x, robot, ac, mask), _ = data
+        b = min(x.shape[1], 10)
+        # truncate batch
+        x = x[:, :b]
+        robot = robot[:, :b]
+        ac = ac[:, :b]
+        mask = mask[:, :b]
+
+        self.frame_predictor.hidden = self.frame_predictor.init_hidden(b)
         if cf.stoch:
-            self.posterior.hidden = self.posterior.init_hidden()
+            self.posterior.hidden = self.posterior.init_hidden(b)
         gen_seq = []
         if self._config.reconstruction_loss == "dontcare_mse":
             self._zero_robot_region(mask[0], x[0])

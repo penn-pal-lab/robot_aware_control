@@ -27,7 +27,7 @@ def create_loaders(config):
                     break
             assert robot is not None, d.path
             file_labels.append(robot)
-    
+
     # create a small deterministic dataloader for comparison across runs
     # because train / test loaders have multiple workers, RNG is tricky.
     num_gifs = config.batch_size
@@ -43,8 +43,8 @@ def create_loaders(config):
     X_train, X_test, y_train, y_test = train_test_split(
         files, file_labels, test_size=1 - config.train_val_split, stratify=file_labels, random_state=split_rng
     )
-    train_data = RobotDataset(X_train, y_train, config)
-    test_data = RobotDataset(X_test, y_test, config)
+    train_data = RobotDataset(X_train, y_train, config, "train")
+    test_data = RobotDataset(X_test, y_test, config, "test")
     # stratified sampler
     robots, counts = np.unique(file_labels, return_counts=True)
     class_weight = {}
@@ -80,7 +80,7 @@ def create_loaders(config):
     test_loader = DataLoader(
         test_data,
         num_workers=config.data_threads,
-        batch_size=config.batch_size,
+        batch_size=config.test_batch_size,
         shuffle=False,
         drop_last=True,
         pin_memory=True,
@@ -101,7 +101,7 @@ def create_loaders(config):
 
     comp_data = RobotDataset(comp_files, comp_file_labels, config)
     comp_loader = DataLoader(comp_data, num_workers=0, batch_size=num_gifs, shuffle=False)
-        
+
     return train_loader, test_loader, comp_loader
 
 def get_train_batch(loader, device, config):

@@ -33,16 +33,15 @@ def create_finetune_loaders(config):
     # only use 500 videos (400 training) like robonet
     files = files[:500]
     file_labels = ["baxter"] * len(files)
-    data = RobotDataset(files, file_labels, config)
-    train_num = int(len(data) * config.train_val_split)
-    val_num = len(data) - train_num
-    lengths = [train_num, val_num]
-    train, test = random_split(
-        data, lengths=lengths, generator=torch.Generator().manual_seed(config.seed)
+    split_rng = np.random.RandomState(config.seed)
+    X_train, X_test, y_train, y_test = train_test_split(
+        files, file_labels, test_size=1 - config.train_val_split, random_state=split_rng
     )
+    train_data = RobotDataset(X_train, y_train, config, "train")
+    test_data = RobotDataset(X_test, y_test, config, "test")
 
     train_loader = DataLoader(
-        train,
+        train_data,
         num_workers=config.data_threads,
         batch_size=config.batch_size,
         shuffle=True,
@@ -50,7 +49,7 @@ def create_finetune_loaders(config):
         pin_memory=True,
     )
     test_loader = DataLoader(
-        test,
+        test_data,
         num_workers=config.data_threads,
         batch_size=config.batch_size,
         shuffle=True,
@@ -61,10 +60,13 @@ def create_finetune_loaders(config):
     # create a small deterministic dataloader for comparison across runs
     # because train / test loaders have multiple workers, RNG is tricky.
     num_gifs = min(config.batch_size, 10)
-    comp_files = [files[i] for i in test.indices[:num_gifs]]
+    comp_files = [f for f in X_test[:num_gifs]]
     comp_file_labels = ["baxter"] * len(comp_files)
-    comp_data = RobotDataset(comp_files, comp_file_labels, config)
-    comp_loader = DataLoader(comp_data, num_workers=0, batch_size=num_gifs, shuffle=False)
+    # set to train so we get random snippet from videos
+    comp_data = RobotDataset(comp_files, comp_file_labels, config, "train")
+    comp_loader = DataLoader(
+        comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
+    )
     return train_loader, test_loader, comp_loader
 
 
@@ -91,7 +93,7 @@ def create_transfer_loader(config):
     # only use 500 videos (400 training) like robonet
     files = files[:500]
     file_labels = ["baxter"] * len(files)
-    data = RobotDataset(files, file_labels, config)
+    data = RobotDataset(files, file_labels, config, "test")
     loader = DataLoader(
         data,
         num_workers=config.data_threads,
@@ -115,14 +117,18 @@ def create_loaders(config):
                     files.append(d.path)
                     file_labels.append(r)
                     break
-    
+
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
 
     split_rng = np.random.RandomState(config.seed)
     X_train, X_test, y_train, y_test = train_test_split(
-        files, file_labels, test_size=1 - config.train_val_split, stratify=file_labels, random_state=split_rng
+        files,
+        file_labels,
+        test_size=1 - config.train_val_split,
+        stratify=file_labels,
+        random_state=split_rng,
     )
     train_data = RobotDataset(X_train, y_train, config)
     test_data = RobotDataset(X_test, y_test, config)
@@ -174,14 +180,17 @@ def create_loaders(config):
     comp_files = X_test[:num_gifs]
     comp_file_labels = ["baxter"] * len(comp_files)
     comp_data = RobotDataset(comp_files, comp_file_labels, config)
-    comp_loader = DataLoader(comp_data, num_workers=0, batch_size=num_gifs, shuffle=False)
+    comp_loader = DataLoader(
+        comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
+    )
     return train_loader, test_loader, comp_loader
+
 
 def get_train_batch(loader, device, config):
     # apply preprocessing before sending out batch for train loader
     if config.img_augmentation:
         r = config.color_jitter_range
-        augment = tf.Compose([tf.ColorJitter(r,r,r,r)])
+        augment = tf.Compose([tf.ColorJitter(r, r, r, r)])
     while True:
         for data, robot_name in loader:
             # transpose from (B, L, C, W, H) to (L, B, C, W, H)
@@ -193,6 +202,7 @@ def get_train_batch(loader, device, config):
             actions = actions.transpose_(1, 0).to(device)
             masks = masks.transpose_(1, 0).to(device)
             yield (frames, robots, actions, masks), robot_name
+
 
 def get_batch(loader, device):
     while True:

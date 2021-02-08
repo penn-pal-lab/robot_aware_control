@@ -34,6 +34,9 @@ def create_parser():
     parser.add_argument("--wandb", type=str2bool, default=False)
     parser.add_argument("--wandb_entity", type=str, default="pal")
     parser.add_argument("--wandb_project", type=str, default="roboaware")
+    parser.add_argument("--wandb_group", type=str, default=None)
+    parser.add_argument("--wandb_job_type", type=str, default=None)
+
     add_method_arguments(parser)
 
     return parser
@@ -130,6 +133,7 @@ def add_prediction_arguments(parser):
         "--beta1", default=0.9, type=float, help="momentum term for adam"
     )
     parser.add_argument("--batch_size", default=100, type=int, help="batch size")
+    parser.add_argument("--test_batch_size", default=128, type=int, help="test batch size")
     parser.add_argument("--optimizer", default="adam", help="optimizer to train with")
     parser.add_argument(
         "--niter", type=int, default=300, help="number of epochs to train for"
@@ -156,6 +160,7 @@ def add_prediction_arguments(parser):
         "--n_eval", type=int, default=10, help="number of frames to predict during eval"
     )
     parser.add_argument("--checkpoint_interval", type=int, default=5)
+    parser.add_argument("--eval_interval", type=int, default=5)
     parser.add_argument(
         "--rnn_size", type=int, default=256, help="dimensionality of hidden layer"
     )
@@ -218,6 +223,7 @@ def add_dataset_arguments(parser):
         choices=["object_inpaint_demo", "robot_demo", "object_only_demo"],
     )
     # robonet video prediction dataset arguments
+    parser.add_argument("--video_length", type=int, default=31, help="max length of the video, used for evaluation dataloader")
     parser.add_argument("--impute_autograsp_action", type=str2bool, default=True)
     parser.add_argument("--preload_ram", type=str2bool, default=False)
     parser.add_argument("--training_regime", type=str, choices=["multirobot", "singlerobot", "finetune"], default="multirobot")

@@ -20,16 +20,20 @@ from src.utils.camera_calibration import world_to_camera_dict
 
 
 class RobotDataset(data.Dataset):
-    def __init__(self, hdf5_list, robot_list, config) -> None:
+    def __init__(self, hdf5_list, robot_list, config, split="train") -> None:
         """
         hdf5_list: list of hdf5 files to load
         robot_list: list of robot type for each hdf5 file
+        split: load a random snippet, or the entire video depending on split.
         """
         self._traj_names = hdf5_list
         self._traj_robots = robot_list
         self._config = config
         self._data_root = config.data_root
-        self._video_length = config.n_past + config.n_future
+
+        self._video_length = config.video_length
+        if split == "train":
+            self._video_length = config.n_past + config.n_future
         self._action_dim = config.action_dim
         self._impute_autograsp_action = config.impute_autograsp_action
         self._img_transform = tf.Compose(
