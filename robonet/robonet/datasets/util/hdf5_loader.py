@@ -24,7 +24,7 @@ class STATE_MISMATCH:
 
 def default_loader_hparams():
     return {
-        'target_adim': 4,
+        'target_adim': 5,
         'target_sdim': 5,
         'state_mismatch': STATE_MISMATCH.ERROR,     # TODO make better flag parsing
         'action_mismatch': ACTION_MISMATCH.ERROR,   # TODO make better flag parsing
@@ -127,6 +127,7 @@ def load_actions(file_pointer, meta_data, hparams):
         return file_pointer['policy']['actions'][:][:, :hparams.target_adim]
 
     else:
+        print(meta_data["primitives"])
         raise ValueError("file adim - {}, target adim - {}, pad behavior - {}".format(adim,
                                                                                       hparams.target_adim,
                                                                                       hparams.action_mismatch))

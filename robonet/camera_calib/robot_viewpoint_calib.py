@@ -5,12 +5,12 @@ import argparse
 import imageio
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
+import ipdb
 
 from robonet.camera_calib.robonet_calibration import display_annotation
 
 
 tip_coord = []
-use_for_calibration = ["penn_kuka_traj0", "penn_kuka_traj1", "penn_kuka_traj10"]
 
 SCALE = 4  # how much larger to display the image
 VISUAL_REPROJ = True
@@ -86,6 +86,15 @@ def calibrate_directory():
     calibrate(args, target_dir)
 
 def calibrate(args, target_dir):
+    use_for_calibration = []
+    for f in os.scandir(args.calibrate_dir):
+        if not f.name[-3:] == "gif":
+            continue
+        parts = f.name.split(".")
+        name = parts[0]
+        use_for_calibration.append(name)
+    use_for_calibration = use_for_calibration[:1]
+    print("calibrating", use_for_calibration)
     if not args.direct_calibrate:
         all_pixel_coords = []
         all_3d_pos = []
@@ -144,8 +153,8 @@ def calibrate(args, target_dir):
                                 [0, 320.75, 120],
                                 [0, 0, 1]])
     img_shape = (240, 320)
-    # flags = cv2.CALIB_USE_INTRINSIC_GUESS + cv2.CALIB_FIX_PRINCIPAL_POINT + cv2.CALIB_FIX_FOCAL_LENGTH
-    flags = cv2.CALIB_USE_INTRINSIC_GUESS
+    flags = cv2.CALIB_USE_INTRINSIC_GUESS + cv2.CALIB_FIX_PRINCIPAL_POINT + cv2.CALIB_FIX_FOCAL_LENGTH
+    # flags = cv2.CALIB_USE_INTRINSIC_GUESS
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
         [all_3d_pos], [all_pixel_coords],
         img_shape, intrinsic_guess, None, flags=flags)

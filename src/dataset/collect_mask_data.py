@@ -11,9 +11,10 @@ import tensorflow as tf
 from robonet.robonet.datasets.util.hdf5_loader import default_loader_hparams, load_actions, load_camera_imgs, load_qpos, load_states
 from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
 from tqdm import tqdm
+from src.utils.camera_calibration import world_to_camera_dict
 
-robonet_root = "/home/ed/hdf5"
-new_robonet_root = "/home/ed/new_hdf5"
+
+robonet_root = "/home/ed/Robonet/hdf5"
 metadata_path = os.path.join(robonet_root, "meta_data.pkl")
 
 def generate_baxter_data():
@@ -72,31 +73,35 @@ def generate_baxter_data():
     # hdf5_list = baxter_subset.sample(5).index
     # check_robot_masks(baxter_df, hdf5_list, hparams)
 
-def generate_sawyer_data():
+def generate_sawyer_data(cam_config, cam_idx):
     hparams = tf.contrib.training.HParams(**default_loader_hparams())
     hparams.img_size = [64, 85]
-    hparams.cams_to_load = [0]
+    hparams.cams_to_load = [cam_idx]
+
+    new_robonet_root = f"/home/ed/Robonet/{cam_config}_c{hparams.cams_to_load[0]}_hdf5"
+    os.makedirs(new_robonet_root, exist_ok=True)
 
     df = pd.read_pickle(metadata_path, compression="gzip")
     sawyer_df = df.loc["sawyer" == df["robot"]]
-    sawyer_subset = sawyer_df["sudri0" == sawyer_df["camera_configuration"]]
+    sawyer_subset = sawyer_df[f"{cam_config}" == sawyer_df["camera_configuration"]]
 
-    camera_extrinsics = np.array(
-        [
-            [-0.01290487, 0.62117762, -0.78356355, 1.21061856],
-            [1, 0.00660994, -0.01122798, 0.01680913],
-            [-0.00179526, -0.78364193, -0.62121019, 0.47401633],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
-    )
-
+    camera_extrinsics = world_to_camera_dict[f"sawyer_{cam_config}_{hparams.cams_to_load[0]}"]
     env = SawyerMaskEnv()
     env.set_opencv_camera_pose("main_cam", camera_extrinsics)
-    hdf5_list = sawyer_subset.index
+    hdf5_list = sawyer_subset.sample(100).index
     generate_robot_masks(env, sawyer_df, hdf5_list, hparams, new_robonet_root)
 
     # hdf5_list = sawyer_subset.sample(5).index
-    # check_robot_masks(sawyer_df, hdf5_list, hparams)
+    check_robot_masks(sawyer_df, hdf5_list, hparams, new_robonet_root)
+
+def generate_all_sawyer_data():
+    cam_configs = ["sudri0", "sudri2", "vestri_table2"]
+    cams = [0,1,2]
+    # cam_configs = ["vestri_table2"]
+    # cams = [0,1,2]
+    for config in cam_configs:
+        for i in cams:
+            generate_sawyer_data(config, i)
 
 def generate_widowx_data():
     hparams = tf.contrib.training.HParams(**default_loader_hparams())
@@ -127,20 +132,21 @@ def generate_widowx_data():
 
 
 
-def check_robot_masks(df, hdf5_list, hparams):
+def check_robot_masks(df, hdf5_list, hparams, target_dir):
     """
     Generates mask gifs to check accuracy
     """
     robot = df["robot"][0]
-    for traj_name in tqdm(hdf5_list, f"{robot} masks"):
-        f_metadata = df.loc[traj_name]
-        f_name = os.path.join(robonet_root, traj_name)
-        start_time, n_states = 0, min([f_metadata['state_T'], f_metadata['img_T'], f_metadata['action_T'] + 1])
-
-        with h5py.File(f_name, "r") as f:
-            # TODO: handle for viewpoint
-            masks = f["env/cam0_mask"][:]
-            imgs = load_camera_imgs(0, f, f_metadata, hparams.img_size, start_time, n_states)
+    cam_idx = hparams.cams_to_load[0]
+    for traj_name in tqdm(hdf5_list, f"visualizing {robot} masks"):
+        traj_name_parts = traj_name.split(".")
+        traj_name_parts[-2] += f"_c{cam_idx}"
+        new_traj_name = ".".join(traj_name_parts)
+        new_f_name = os.path.join(target_dir, new_traj_name)
+        # f_name = os.path.join(new_robonet_root, traj_name)
+        with h5py.File(new_f_name, "r") as f:
+            masks = f["mask"][:]
+            imgs = f["frames"][:]
         imgs[masks] = (0, 255, 255)
         imageio.mimwrite(f"{traj_name[:-5]}.gif", imgs)
 
@@ -152,7 +158,7 @@ def generate_robot_masks(env, df, hdf5_list, hparams, target_dir):
     """
     target_dims = [64, 85]
     robot = df["robot"][0]
-    for traj_name in tqdm(hdf5_list, f"{robot} masks"):
+    for traj_name in tqdm(hdf5_list, f"making {robot} masks"):
         f_metadata = df.loc[traj_name]
         f_name = os.path.join(robonet_root, traj_name)
         # save the masks back into the h5py file
@@ -163,13 +169,18 @@ def generate_robot_masks(env, df, hdf5_list, hparams, target_dir):
             actions = load_actions(f, f_metadata, hparams)
             states = load_states(f, f_metadata, hparams)
             # TODO: set camera index from params
-            images = load_camera_imgs(0, f, f_metadata, target_dims)
+            cam_idx = hparams.cams_to_load[0]
+            images = load_camera_imgs(cam_idx, f, f_metadata, target_dims)
         masks = env.generate_masks(qposes, width=target_dims[1], height=target_dims[0])
         # generate new hdf5 file
-        new_f_name = os.path.join(target_dir, traj_name)
+        traj_name_parts = traj_name.split(".")
+        traj_name_parts[-2] += f"_c{cam_idx}"
+        new_traj_name = ".".join(traj_name_parts)
+        new_f_name = os.path.join(target_dir, new_traj_name)
         with h5py.File(new_f_name, "w") as f:
             # TODO create dataset given the viewpoint instead of assuming 0
             f.create_dataset("mask", data=masks, compression="gzip")
+            f.attrs["cam_idx"] = cam_idx
             f.attrs["robot"] = robot
             f.attrs["traj_name"] = traj_name
             f.create_dataset("low_bound", data=low_bound, compression="gzip")
@@ -183,5 +194,6 @@ if __name__ == "__main__":
     Generates masks for each robot, and stores it in the target directory.
     """
     # generate_sawyer_data()
+    generate_all_sawyer_data()
     # generate_baxter_data()
-    generate_widowx_data()
+    # generate_widowx_data()

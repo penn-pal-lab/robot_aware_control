@@ -16,7 +16,7 @@ from robonet.robonet.datasets.util.hdf5_loader import (
 import h5py
 
 # when this number if large enough, we collect all corresponding data
-NUM_VISUAL_PER_VIEW = 1000
+NUM_VISUAL_PER_VIEW = 50
 
 
 def collect_same_viewpoint(robot, directory):
@@ -28,7 +28,7 @@ def collect_same_viewpoint(robot, directory):
 
     for f in os.listdir(directory):
         if robot in f:
-            path = directory + f
+            path = os.path.join(directory, f)
             print(path)
             _, _, _, _, _, viewpoint = load_data_customized(
                 path, meta_data.get_file_metadata(path), hparams
@@ -109,7 +109,8 @@ def generate_viewpoint_calibration_data(args, hparams):
 
             writer = imageio.get_writer(target_folder + "/" + exp_name + ".gif")
             for t in range(imgs.shape[0]):
-                gif_img = np.concatenate([imgs[t, 0], imgs[t, 1], imgs[t, 2]], axis=1)
+                gif_img = imgs[t, 0]
+                # gif_img = np.concatenate([imgs[t, 0], imgs[t, 1], imgs[t, 2]], axis=1)
                 writer.append_data(gif_img)
             writer.close()
 def generate_kuka_calibration(args, hparams):
@@ -129,6 +130,16 @@ def generate_widowx_calibration(args, hparams):
     generate_calibration_data(dataset_dir, target_dir, hdf5_paths, hparams)
 
 
+def generate_sawyer_calibration(args, hparams):
+    hparams.cams_to_load = [2]
+    robonet_root = "/media/ed/hdd/Datasets/Robonet/hdf5/"
+    kuka_paths = ["berkeley_sawyer_traj1151", "berkeley_sawyer_traj23049", "berkeley_sawyer_traj30695"]
+    hdf5_paths = [os.path.join(robonet_root, f"{k}.hdf5") for k in kuka_paths]
+    dataset_dir = args.directory
+    target_dir = f"robonet/sawyer_vestri_table2_c{hparams.cams_to_load[0]}_calibration"
+    generate_calibration_data(dataset_dir, target_dir, hdf5_paths, hparams)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Collect data corresponding to specific robot, and organize them by viewpoints"
@@ -139,9 +150,9 @@ if __name__ == "__main__":
 
     hparams = tf.contrib.training.HParams(**default_loader_hparams())
     hparams.img_size = [240, 320]
-    hparams.cams_to_load = [0]
 
     # generate_video(hparams)
     # generate_viewpoint_calibration_data(args, hparams)
     # generate_kuka_calibration(args, hparams)
-    generate_widowx_calibration(args, hparams)
+    # generate_widowx_calibration(args, hparams)
+    generate_sawyer_calibration(args, hparams)

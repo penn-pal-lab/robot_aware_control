@@ -91,11 +91,13 @@ class SawyerMaskEnv(MaskEnv):
         ignore_parts = {"base_vis", "base_col", "head_vis"}
         if name in ignore_parts:
             return False
+        # return True
         a = "vis" in name
         b = "col" in name
         c = "gripper" in name
         d = "wsg" in name
-        if any([a, b, c, d]):
+        e = "right" in name
+        if any([a, b, c, d, e]):
             geom = True
         return geom
 
@@ -108,6 +110,7 @@ if __name__ == "__main__":
         default_loader_hparams, load_data_customized)
     from robonet.robonet.datasets.util.metadata_helper import load_metadata
     from tqdm import tqdm
+    from src.utils.camera_calibration import world_to_camera_dict
 
     robonet_root = "/media/ed/hdd/Datasets/Robonet/hdf5/"
     metadata_path = "/media/ed/hdd/Datasets/Robonet/hdf5/meta_data.pkl"
@@ -115,22 +118,17 @@ if __name__ == "__main__":
     num_test = 10
     hparams = tf.contrib.training.HParams(**default_loader_hparams())
     hparams.img_size = [120, 160]
-    hparams.cams_to_load = [0]
+    hparams.cams_to_load = [2]
 
     df = pd.read_pickle(metadata_path, compression="gzip")
     sawyer_df = df.loc["sawyer" == df["robot"]]
     sawyer_subset = sawyer_df["sudri0" == sawyer_df["camera_configuration"]]
 
-    camera_extrinsics = np.array(
-        [
-            [-0.01290487, 0.62117762, -0.78356355, 1.21061856],
-            [1, 0.00660994, -0.01122798, 0.01680913],
-            [-0.00179526, -0.78364193, -0.62121019, 0.47401633],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
-    )
+    camera_extrinsics = world_to_camera_dict[f"sawyer_sudri2_{hparams.cams_to_load[0]}"]
     env = SawyerMaskEnv()
     env.set_opencv_camera_pose("main_cam", camera_extrinsics)
+    while True:
+        env.render("human")
     rand_sawyer = sawyer_subset.sample(num_test)
     meta_data = load_metadata(robonet_root)
     # load qpos, gripper states, workspace bounds
