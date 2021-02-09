@@ -3,6 +3,7 @@ import torch.nn as nn
 
 
 class MLPEncoder(nn.Module):
+    name="mlp_encoder"
     """
     Simple 1 layer MLP for the action encoding
     """

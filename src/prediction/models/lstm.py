@@ -10,6 +10,7 @@ class LSTM(nn.Module):
     """
     Vanilla LSTM with embedding layer and output
     """
+    name="lstm"
 
     def __init__(self, input_size, output_size, hidden_size, n_layers, batch_size):
         super(LSTM, self).__init__()
@@ -57,6 +58,7 @@ class GaussianLSTM(nn.Module):
     """
     Outputs latent mean and std P(z | x)
     """
+    name="gaussian_lstm"
 
     def __init__(self, input_size, output_size, hidden_size, n_layers, batch_size):
         super(GaussianLSTM, self).__init__()

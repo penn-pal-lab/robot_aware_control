@@ -16,6 +16,7 @@ class vgg_layer(nn.Module):
 
 
 class Encoder(nn.Module):
+    name = "encoder_64"
     def __init__(self, dim, nc=1, multiview=False, dropout=None):
         super(Encoder, self).__init__()
         self._multiview = multiview
@@ -60,7 +61,7 @@ class Encoder(nn.Module):
                 nn.Conv2d(512, dim, 4, 1, 0), nn.BatchNorm2d(dim), nn.Tanh()
             )
         self.mp = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        
+
         self._dropout = dropout
         if dropout is not None:
             self._dropout = nn.Dropout2d(p=dropout)
@@ -95,6 +96,7 @@ def multiview_upsample(x):
 
 
 class Decoder(nn.Module):
+    name = "deoder_64"
     def __init__(self, dim, nc=1, multiview=False):
         super(Decoder, self).__init__()
         self._multiview = multiview
