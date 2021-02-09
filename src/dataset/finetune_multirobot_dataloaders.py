@@ -54,7 +54,7 @@ def create_finetune_loaders(config):
     test_loader = DataLoader(
         test_data,
         num_workers=config.data_threads,
-        batch_size=config.batch_size,
+        batch_size=config.test_batch_size,
         shuffle=True,
         drop_last=True,
         pin_memory=True,
@@ -100,7 +100,7 @@ def create_transfer_loader(config):
     loader = DataLoader(
         data,
         num_workers=config.data_threads,
-        batch_size=config.batch_size,
+        batch_size=config.test_batch_size,
         shuffle=True,
         drop_last=True,
         pin_memory=True,
