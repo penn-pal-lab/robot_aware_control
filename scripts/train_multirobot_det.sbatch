@@ -5,7 +5,6 @@
 #SBATCH --partition=dinesh-compute
 #SBATCH --qos=dinesh-high
 #SBATCH --job-name=multirobot_det
-
 # NAME="norobot_det_16batch_ss"
 
 # python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root /scratch/edward/new_hdf5 --batch_size 16 --n_future 3 --n_past 1 --n_eval 3 --multiview False --image_width 64 --z_dim 64 --stoch False --epoch_size 1600 --checkpoint_interval 30 --g_dim 256 --reconstruction_loss dontcare_mse --last_frame_skip True --scheduled_sampling True --action_dim 5 --action_enc_dim 5 --robot_dim 5 --robot_enc_dim 10 --data_threads 4 >"${NAME}.out" 2>&1 &
@@ -22,18 +21,18 @@
 
 # Testing Action Strategies
 
-NAME="multibot_norobot_raw_augmentation_v2"
+NAME="multibot_norobot_raw_dropout_v2"
 COST="dontcare_mse"
 ACTION="raw"
 
-python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root /scratch/edward/new_hdf5 --batch_size 16 --n_future 3 --n_past 1 --n_eval 3 --multiview False --image_width 64 --z_dim 64 --stoch False --epoch_size 1600 --checkpoint_interval 5 --g_dim 256 --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling True --action_dim 5 --action_enc_dim 5 --robot_dim 5 --robot_enc_dim 10 --data_threads 4 --preprocess_action $ACTION --img_augmentation True --color_jitter_range 0.1 --dropout 0.5 >"${NAME}.out" 2>&1 &
+python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root /scratch/edward/new_hdf5 --batch_size 16 --n_future 3 --n_past 1 --n_eval 3 --multiview False --image_width 64 --z_dim 64 --stoch False --epoch_size 1600 --checkpoint_interval 5 --g_dim 256 --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling True --action_dim 5 --action_enc_dim 5 --robot_dim 5 --robot_enc_dim 10 --data_threads 4 --preprocess_action $ACTION --img_augmentation True --color_jitter_range 0.1 --dropout 0.1 >"${NAME}.out" 2>&1 &
 
-wait
+# wait
 
-# NAME="multibot_vanilla_raw_augmentation_v2"
+# NAME="multibot_vanilla_raw_dropout_v2"
 # COST="mse"
 # ACTION="raw"
 
-# python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root /scratch/edward/new_hdf5 --batch_size 16 --n_future 3 --n_past 1 --n_eval 3 --multiview False --image_width 64 --z_dim 64 --stoch False --epoch_size 1600 --checkpoint_interval 5 --g_dim 256 --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling True --action_dim 5 --action_enc_dim 5 --robot_dim 5 --robot_enc_dim 10 --data_threads 4 --preprocess_action $ACTION --img_augmentation True --color_jitter_range 0.1 --dropout 0.5 >"${NAME}.out" 2>&1 &
+# python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root /scratch/edward/new_hdf5 --batch_size 16 --n_future 3 --n_past 1 --n_eval 3 --multiview False --image_width 64 --z_dim 64 --stoch False --epoch_size 1600 --checkpoint_interval 5 --g_dim 256 --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling True --action_dim 5 --action_enc_dim 5 --robot_dim 5 --robot_enc_dim 10 --data_threads 4 --preprocess_action $ACTION --img_augmentation True --color_jitter_range 0.1 --dropout 0.1 >"${NAME}.out" 2>&1 &
 
 # wait

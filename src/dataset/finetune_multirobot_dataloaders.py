@@ -102,7 +102,7 @@ def create_transfer_loader(config):
     loader = DataLoader(
         data,
         num_workers=config.data_threads,
-        batch_size=config.test_batch_size,
+        batch_size=config.batch_size,
         shuffle=True,
         drop_last=True,
         pin_memory=True,
@@ -139,7 +139,8 @@ def create_loaders(config):
         stratify=file_labels,
         random_state=split_rng,
     )
-    train_data = RobotDataset(X_train, y_train, config)
+    augment_img = config.img_augmentation
+    train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img, load_snippet=True)
     test_data = RobotDataset(X_test, y_test, config)
     # stratified sampler
     robots, counts = np.unique(file_labels, return_counts=True)

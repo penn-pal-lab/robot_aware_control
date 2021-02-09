@@ -5,6 +5,7 @@
 #SBATCH --partition=dinesh-compute
 #SBATCH --qos=dinesh-high
 #SBATCH --job-name=gen_data
+#SBATCH -w node-2080ti-5
 
 python -um src.dataset.collect_mask_data  --gpu 0 >mask_data.out 2>&1 &
 wait

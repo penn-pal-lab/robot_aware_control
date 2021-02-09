@@ -641,11 +641,8 @@ class MultiRobotPredictionTrainer(object):
 
                 if self._config.training_regime == "singlerobot":
                     self._eval_transfer()
-                    old_batch_size = self.transfer_loader.batch_size
-                    self.transfer_loader.batch_size = 16
                     transfer_data = next(self.transfer_batch_generator)
                     self.plot(transfer_data, epoch, "transfer")
-                    self.transfer_loader.batch_size = old_batch_size
 
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
