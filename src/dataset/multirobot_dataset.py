@@ -149,7 +149,8 @@ class RobotDataset(data.Dataset):
                 crop_img = F.crop(img, i,j,th,tw)
                 crop_mask = F.crop(mask, i,j,th,tw)
                 resized_img = F.resize(crop_img, img_width)
-                resized_mask= F.resize(crop_mask, img_width)
+                # cast back to 0 or 1 value
+                resized_mask= F.resize(crop_mask, img_width).type(torch.bool).type(torch.float32)
                 color_img = jitter(resized_img)
                 aug_imgs.append(color_img)
                 aug_masks.append(resized_mask)
