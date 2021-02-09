@@ -102,7 +102,7 @@ def create_transfer_loader(config):
     loader = DataLoader(
         data,
         num_workers=config.data_threads,
-        batch_size=config.test_batch_size,
+        batch_size=config.batch_size,
         shuffle=True,
         drop_last=True,
         pin_memory=True,
