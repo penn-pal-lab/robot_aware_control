@@ -485,7 +485,8 @@ class MultiRobotPredictionTrainer(object):
         """
         # one step evaluation loss
         cf = self._config
-        bs = cf.test_batch_size
+        (x, robot, ac, mask), robot_name = data
+        bs = min(cf.test_batch_size, x.shape[1])
         # initialize the recurrent states
         self.frame_predictor.hidden = self.frame_predictor.init_hidden(bs)
         if cf.stoch:
@@ -493,7 +494,6 @@ class MultiRobotPredictionTrainer(object):
             self.prior.hidden = self.prior.init_hidden(bs)
 
         losses = defaultdict(float)
-        (x, robot, ac, mask), robot_name = data
         robot_name = np.array(robot_name)
         all_robots = set(robot_name)
         x_pred = None
