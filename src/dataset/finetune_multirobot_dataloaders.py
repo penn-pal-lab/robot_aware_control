@@ -19,7 +19,8 @@ def create_finetune_loaders(config):
     files = []
     file_labels = []
     robots = ["baxter"]
-    for d in os.scandir(config.data_root):
+    data_path = os.path.join(config.data_root, "new_hdf5")
+    for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             for r in robots:
                 if f"{r}_left" in d.path:
@@ -82,7 +83,8 @@ def create_transfer_loader(config):
     files = []
     file_labels = []
     robots = ["baxter"]
-    for d in os.scandir(config.data_root):
+    data_path = os.path.join(config.data_root, "new_hdf5")
+    for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             for r in robots:
                 if f"{r}_left" in d.path:
@@ -114,18 +116,22 @@ def create_loaders(config):
     files = []
     file_labels = []
     robots = ["sawyer"]
-    for d in os.scandir(config.data_root):
-        if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            for r in robots:
-                if r in d.path:
-                    files.append(d.path)
-                    file_labels.append(r)
-                    break
+    data_path = os.path.join(config.data_root, "sawyer_views")
+    for folder in os.scandir(data_path):
+        if folder.is_dir():
+            print(folder.name)
+            for d in os.scandir(folder.path):
+                if d.is_file() and has_file_allowed_extension(d.path, file_type):
+                    for r in robots:
+                        if r in d.path:
+                            files.append(d.path)
+                            file_labels.append(r)
+                            break
 
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
-
+    # for now, with 1 robot, stratify doesn't do anything.
     split_rng = np.random.RandomState(config.seed)
     X_train, X_test, y_train, y_test = train_test_split(
         files,
@@ -208,7 +214,7 @@ if __name__ == "__main__":
 
     set_start_method("spawn")
     config, _ = argparser()
-    config.data_root = "/home/ed/new_hdf5"
+    config.data_root = "/home/ed/"
     config.batch_size = 64  # needs to be multiple of the # of robots
     config.video_length = 31
     config.image_width = 64

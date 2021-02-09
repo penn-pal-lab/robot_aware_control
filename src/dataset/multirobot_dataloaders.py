@@ -17,7 +17,8 @@ def create_loaders(config):
     files = []
     file_labels = []
     robots = ["baxter", "sawyer", "widowx"]
-    for d in os.scandir(config.data_root):
+    data_path = os.path.join(config.data_root, "new_hdf5")
+    for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             files.append(d.path)
             robot = None
@@ -132,7 +133,7 @@ if __name__ == "__main__":
 
     set_start_method("spawn")
     config, _ = argparser()
-    config.data_root = "/home/ed/new_hdf5"
+    config.data_root = "/home/ed/"
     config.batch_size = 64  # needs to be multiple of the # of robots
     config.video_length = 31
     config.image_width = 64
