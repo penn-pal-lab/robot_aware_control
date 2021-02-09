@@ -34,6 +34,7 @@ class MultiRobotPredictionTrainer(object):
         use_cuda = torch.cuda.is_available()
         device = torch.device("cuda" if use_cuda else "cpu")
         print("using device for training", device)
+        self._logger = colorlog.getLogger("file/console")
 
         self._device = device
         self._init_models(config)
@@ -53,7 +54,6 @@ class MultiRobotPredictionTrainer(object):
             job_type=config.wandb_job_type,
             config_exclude_keys=["device"]
         )
-        self._logger = colorlog.getLogger("file/console")
         self._img_augmentation = config.img_augmentation
 
     def _init_models(self, cf):
@@ -114,10 +114,16 @@ class MultiRobotPredictionTrainer(object):
 
         self.all_models.extend([frame_pred, enc, dec, ac, rob])
 
-        # initialize weights
+        # initialize weights and count parameters
+        def count_parameters(model):
+            return sum(p.numel() for p in model.parameters() if p.requires_grad)
+        num_p = 0
         for model in self.all_models:
             model.apply(init_weights)
-
+            p = count_parameters(model)
+            # print(model.name, p)
+            num_p += p
+        self._logger.info(f"total parameters: {num_p}")
         if cf.optimizer == "adam":
             optimizer = partial(optim.Adam, lr=cf.lr, betas=(cf.beta1, 0.999))
         elif cf.optimizer == "rmsprop":
@@ -135,6 +141,7 @@ class MultiRobotPredictionTrainer(object):
         self.decoder_optimizer = optimizer(self.decoder.parameters())
         self.action_encoder_optimizer = optimizer(self.action_enc.parameters())
         self.robot_encoder_optimizer = optimizer(self.robot_enc.parameters())
+
 
     def _schedule_prob(self):
         """Returns probability of using ground truth"""

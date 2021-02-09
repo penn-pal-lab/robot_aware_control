@@ -119,7 +119,6 @@ def create_loaders(config):
     data_path = os.path.join(config.data_root, "sawyer_views")
     for folder in os.scandir(data_path):
         if folder.is_dir():
-            print(folder.name)
             for d in os.scandir(folder.path):
                 if d.is_file() and has_file_allowed_extension(d.path, file_type):
                     for r in robots:
