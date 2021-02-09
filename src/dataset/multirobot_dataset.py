@@ -20,7 +20,9 @@ from src.utils.camera_calibration import world_to_camera_dict
 
 
 class RobotDataset(data.Dataset):
-    def __init__(self, hdf5_list, robot_list, config, split="train") -> None:
+    def __init__(
+        self, hdf5_list, robot_list, config, augment_img=False, load_snippet=False
+    ) -> None:
         """
         hdf5_list: list of hdf5 files to load
         robot_list: list of robot type for each hdf5 file
@@ -32,16 +34,24 @@ class RobotDataset(data.Dataset):
         self._data_root = config.data_root
 
         self._video_length = config.video_length
-        if split == "train":
+        if load_snippet:
             self._video_length = config.n_past + config.n_future
         self._action_dim = config.action_dim
         self._impute_autograsp_action = config.impute_autograsp_action
+        self._augment_img = augment_img
         self._img_transform = tf.Compose(
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
         )
-        self._mask_transform = tf.Compose(
-            [tf.ToTensor(), tf.CenterCrop(config.image_width)]
-        )
+        if self._augment_img:
+            r = config.color_jitter_range
+            self._crop_resize = tf.Compose(
+                [
+                    tf.RandomCrop(config.random_crop_size),
+                    tf.Resize(config.image_width),
+                ]
+            )
+            self._jitter_color = tf.ColorJitter(r,r,r,r)
+
         self._rng = np.random.RandomState(config.seed)
         self._memory = {}
         if config.preload_ram:
@@ -85,8 +95,7 @@ class RobotDataset(data.Dataset):
             ), f"{hdf5_path}, {images.shape}, {states.shape}, {actions.shape}, {masks.shape}"
 
             # preprocessing
-            images = self._preprocess_images(images)
-            masks = self._preprocess_masks(masks)
+            images, masks = self._preprocess_images_masks(images, masks)
             actions = self._preprocess_actions(states, actions, low, high, idx)
             states = self._preprocess_states(states, low, high)
 
@@ -117,12 +126,19 @@ class RobotDataset(data.Dataset):
         else:
             raise ValueError(f"file adim {adim}, target adim {self._action_dim}")
 
-    def _preprocess_images(self, images):
+    def _preprocess_images_masks(self, images, masks):
         """
         Converts numpy image (uint8) [0, 255] to tensor (float) [0, 1].
         """
         video_tensor = torch.stack([self._img_transform(i) for i in images])
-        return video_tensor
+        mask_tensor = torch.stack([self._img_transform(i) for i in masks])
+
+        if self._augment_img:
+            img_mask = torch.cat([video_tensor, mask_tensor], dim=1)
+            img_mask = torch.stack([self._crop_resize(i) for i in img_mask])
+            video_tensor = torch.stack([self._jitter_color(i) for i in img_mask[:,:3]])
+            mask_tensor = img_mask[:, 3].unsqueeze(1)
+        return video_tensor, mask_tensor
 
     def _preprocess_states(self, states, low, high):
         """
@@ -222,10 +238,6 @@ class RobotDataset(data.Dataset):
         elif strategy == "camera_state_infer":
             self._impute_camera_actions(states, actions, world2cam, low, high)
         return torch.from_numpy(actions)
-
-    def _preprocess_masks(self, masks):
-        mask_tensor = torch.stack([self._mask_transform(i) for i in masks])
-        return mask_tensor
 
     def __len__(self):
         return len(self._traj_names)

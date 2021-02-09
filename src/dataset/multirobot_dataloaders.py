@@ -41,10 +41,17 @@ def create_loaders(config):
 
     split_rng = np.random.RandomState(config.seed)
     X_train, X_test, y_train, y_test = train_test_split(
-        files, file_labels, test_size=1 - config.train_val_split, stratify=file_labels, random_state=split_rng
+        files,
+        file_labels,
+        test_size=1 - config.train_val_split,
+        stratify=file_labels,
+        random_state=split_rng,
     )
-    train_data = RobotDataset(X_train, y_train, config, "train")
-    test_data = RobotDataset(X_test, y_test, config, "test")
+    augment_img = config.img_augmentation
+    train_data = RobotDataset(
+        X_train, y_train, config, augment_img=augment_img, load_snippet=True
+    )
+    test_data = RobotDataset(X_test, y_test, config)
     # stratified sampler
     robots, counts = np.unique(file_labels, return_counts=True)
     class_weight = {}
@@ -99,27 +106,12 @@ def create_loaders(config):
         if sum(count.values()) == 0:
             break
 
-    comp_data = RobotDataset(comp_files, comp_file_labels, config)
-    comp_loader = DataLoader(comp_data, num_workers=0, batch_size=num_gifs, shuffle=False)
+    comp_data = RobotDataset(comp_files, comp_file_labels, config, load_snippet=True)
+    comp_loader = DataLoader(
+        comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
+    )
 
     return train_loader, test_loader, comp_loader
-
-def get_train_batch(loader, device, config):
-    # apply preprocessing before sending out batch for train loader
-    if config.img_augmentation:
-        r = config.color_jitter_range
-        augment = tf.Compose([tf.ColorJitter(r,r,r,r)])
-    while True:
-        for data, robot_name in loader:
-            # transpose from (B, L, C, W, H) to (L, B, C, W, H)
-            imgs, states, actions, masks = data
-            if config.img_augmentation:
-                imgs = augment(imgs)
-            frames = imgs.transpose_(1, 0).to(device)
-            robots = states.transpose_(1, 0).to(device)
-            actions = actions.transpose_(1, 0).to(device)
-            masks = masks.transpose_(1, 0).to(device)
-            yield (frames, robots, actions, masks), robot_name
 
 def get_batch(loader, device):
     while True:

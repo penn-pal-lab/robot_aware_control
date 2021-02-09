@@ -712,19 +712,19 @@ class MultiRobotPredictionTrainer(object):
         Setup the dataset and dataloaders
         """
         if self._config.training_regime == "multirobot":
-            from src.dataset.multirobot_dataloaders import create_loaders, get_batch, get_train_batch
+            from src.dataset.multirobot_dataloaders import create_loaders, get_batch
         elif self._config.training_regime == "singlerobot":
-            from src.dataset.finetune_multirobot_dataloaders import create_loaders, get_batch, get_train_batch, create_transfer_loader
+            from src.dataset.finetune_multirobot_dataloaders import create_loaders, get_batch, create_transfer_loader
             # measure zero shot performance on transfer data
             self.transfer_loader = create_transfer_loader(self._config)
             self.transfer_batch_generator = get_batch(self.transfer_loader, self._device)
         elif self._config.training_regime == "finetune":
-            from src.dataset.finetune_multirobot_dataloaders import create_finetune_loaders as create_loaders, get_batch, get_train_batch
+            from src.dataset.finetune_multirobot_dataloaders import create_finetune_loaders as create_loaders, get_batch
         else:
             raise NotImplementedError(self._config.training_regime)
         train_loader, self.test_loader, comp_loader = create_loaders(self._config)
          # for infinite batching
-        self.training_batch_generator = get_train_batch(train_loader, self._device, config)
+        self.training_batch_generator = get_batch(train_loader, self._device)
         self.testing_batch_generator = get_batch(self.test_loader, self._device)
         self.comp_batch_generator = get_batch(comp_loader, self._device)
 
