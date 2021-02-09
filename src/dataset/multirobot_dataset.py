@@ -212,12 +212,15 @@ class RobotDataset(data.Dataset):
             self._impute_true_actions(states, actions, low, high)
             return torch.from_numpy(actions)
         # if actions are in camera frame...
+        filename = self._traj_names[idx]
+        robot_type = self._traj_robots[idx]
         if self._config.training_regime == "multirobot":
             # convert everything to camera coordinates.
             filename = self._traj_names[idx]
             robot_type = self._traj_robots[idx]
             if robot_type == "sawyer":
-                world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
+                # TODO: account for camera config and index
+                world2cam = world_to_camera_dict["sawyer_sudri0_0"]
             elif robot_type == "widowx":
                 world2cam = world_to_camera_dict["widowx1"]
             elif robot_type == "baxter":
@@ -226,11 +229,13 @@ class RobotDataset(data.Dataset):
 
         elif self._config.training_regime == "singlerobot":
             # train on sawyer, convert actions to camera space
-            world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
+            # TODO: account for camera config and index
+            world2cam = world_to_camera_dict["sawyer_sudri0_0"]
         elif self._config.training_regime == "finetune":
             # finetune on baxter, convert to camera frame
             # Assumes the baxter arm is right arm!
-            world2cam = world_to_camera_dict["baxter_right"]
+            arm = "left" if "left" in filename else "right"
+            world2cam = world_to_camera_dict[f"baxter_{arm}"]
 
         states = states.copy()
         if strategy == "camera_raw":
