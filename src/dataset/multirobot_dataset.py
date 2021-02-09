@@ -13,6 +13,7 @@ from ipdb import set_trace as st
 import torch
 from torchvision.datasets.folder import has_file_allowed_extension
 import torchvision.transforms as tf
+import torchvision.transforms.functional as F
 import torch.utils.data as data
 from tqdm import trange
 from time import time
@@ -42,15 +43,15 @@ class RobotDataset(data.Dataset):
         self._img_transform = tf.Compose(
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
         )
-        if self._augment_img:
-            r = config.color_jitter_range
-            self._crop_resize = tf.Compose(
-                [
-                    tf.RandomCrop(config.random_crop_size),
-                    tf.Resize(config.image_width),
-                ]
-            )
-            self._jitter_color = tf.ColorJitter(r,r,r,r)
+        # if self._augment_img:
+        #     r = config.color_jitter_range
+        #     self._crop_resize = tf.Compose(
+        #         [
+        #             tf.RandomCrop(config.random_crop_size),
+        #             tf.Resize(config.image_width),
+        #         ]
+        #     )
+        #     self._jitter_color = tf.ColorJitter(r,r,r,r)
 
         self._rng = np.random.RandomState(config.seed)
         self._memory = {}
@@ -132,12 +133,30 @@ class RobotDataset(data.Dataset):
         """
         video_tensor = torch.stack([self._img_transform(i) for i in images])
         mask_tensor = torch.stack([self._img_transform(i) for i in masks])
-
         if self._augment_img:
             img_mask = torch.cat([video_tensor, mask_tensor], dim=1)
-            img_mask = torch.stack([self._crop_resize(i) for i in img_mask])
-            video_tensor = torch.stack([self._jitter_color(i) for i in img_mask[:,:3]])
-            mask_tensor = img_mask[:, 3].unsqueeze(1)
+            crop_size = [self._config.random_crop_size] * 2
+            i,j,th,tw = tf.RandomCrop.get_params(video_tensor[0], crop_size)
+            brightness = (1-0.2, 1+0.2)
+            contrast = (1-0.2, 1+0.2)
+            saturation = (1-0.2, 1+0.2)
+            hue = (-0.1, 0.1)
+            jitter = tf.ColorJitter.get_params(brightness, contrast, saturation, hue)
+            aug_imgs = []
+            aug_masks = []
+            for img_mask in img_mask:
+                crop_img_mask = F.crop(img_mask, i,j,th,tw)
+                resized_img_mask = F.resize(crop_img_mask, self._config.image_width)
+                color_img = jitter(resized_img_mask[:3])
+                aug_imgs.append(color_img)
+                aug_masks.append(resized_img_mask[3])
+            video_tensor = torch.stack(aug_imgs)
+            mask_tensor = torch.stack(aug_masks).unsqueeze(1)
+            # img_mask = torch.stack([self._crop_resize(i) for i in img_mask])
+            # # get transforms to apply over video sequence
+
+            # video_tensor = torch.stack([self._jitter_color(i) for i in img_mask[:,:3]])
+            # mask_tensor = img_mask[:, 3].unsqueeze(1)
         return video_tensor, mask_tensor
 
     def _preprocess_states(self, states, low, high):

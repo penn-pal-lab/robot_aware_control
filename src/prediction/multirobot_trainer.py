@@ -115,15 +115,15 @@ class MultiRobotPredictionTrainer(object):
         self.all_models.extend([frame_pred, enc, dec, ac, rob])
 
         # initialize weights and count parameters
-        def count_parameters(model):
-            return sum(p.numel() for p in model.parameters() if p.requires_grad)
-        num_p = 0
+        # def count_parameters(model):
+            # return sum(p.numel() for p in model.parameters() if p.requires_grad)
+        # num_p = 0
         for model in self.all_models:
             model.apply(init_weights)
-            p = count_parameters(model)
+            # p = count_parameters(model)
             # print(model.name, p)
-            num_p += p
-        self._logger.info(f"total parameters: {num_p}")
+            # num_p += p
+        # self._logger.info(f"total parameters: {num_p}")
         if cf.optimizer == "adam":
             optimizer = partial(optim.Adam, lr=cf.lr, betas=(cf.beta1, 0.999))
         elif cf.optimizer == "rmsprop":
