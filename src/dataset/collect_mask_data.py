@@ -14,7 +14,7 @@ from tqdm import tqdm
 from src.utils.camera_calibration import world_to_camera_dict
 
 
-robonet_root = "/home/ed/Robonet/hdf5"
+robonet_root = "/scratch/edward/hdf5"
 metadata_path = os.path.join(robonet_root, "meta_data.pkl")
 
 def generate_baxter_data():
@@ -78,7 +78,7 @@ def generate_sawyer_data(cam_config, cam_idx):
     hparams.img_size = [64, 85]
     hparams.cams_to_load = [cam_idx]
 
-    new_robonet_root = f"/home/ed/Robonet/{cam_config}_c{hparams.cams_to_load[0]}_hdf5"
+    new_robonet_root = f"/scratch/edward/{cam_config}_c{hparams.cams_to_load[0]}_hdf5"
     os.makedirs(new_robonet_root, exist_ok=True)
 
     df = pd.read_pickle(metadata_path, compression="gzip")
@@ -88,17 +88,17 @@ def generate_sawyer_data(cam_config, cam_idx):
     camera_extrinsics = world_to_camera_dict[f"sawyer_{cam_config}_{hparams.cams_to_load[0]}"]
     env = SawyerMaskEnv()
     env.set_opencv_camera_pose("main_cam", camera_extrinsics)
-    hdf5_list = sawyer_subset.sample(100).index
+    hdf5_list = sawyer_subset.index
     generate_robot_masks(env, sawyer_df, hdf5_list, hparams, new_robonet_root)
 
     # hdf5_list = sawyer_subset.sample(5).index
-    check_robot_masks(sawyer_df, hdf5_list, hparams, new_robonet_root)
+    # check_robot_masks(sawyer_df, hdf5_list, hparams, new_robonet_root)
 
 def generate_all_sawyer_data():
-    cam_configs = ["sudri0", "sudri2", "vestri_table2"]
-    cams = [0,1,2]
-    # cam_configs = ["vestri_table2"]
+    # cam_configs = ["sudri0", "sudri2", "vestri_table2"]
     # cams = [0,1,2]
+    cam_configs = ["sudri0"]
+    cams = [0,1,2]
     for config in cam_configs:
         for i in cams:
             generate_sawyer_data(config, i)
