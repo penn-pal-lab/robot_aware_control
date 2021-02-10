@@ -573,7 +573,7 @@ class MultiRobotPredictionTrainer(object):
 
             if cf.stoch:
                 kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
-                losses["{prefix}_kld"] += kl.cpu().item()
+                losses[f"{prefix}_kld"] += kl.cpu().item()
 
         for k, v in losses.items():
             losses[k] = v / (cf.n_past + cf.n_future)
