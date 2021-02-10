@@ -128,7 +128,7 @@ def add_fetch_push_arguments(parser: ArgumentParser):
 
 # Video Prediction arguments from SVG
 def add_prediction_arguments(parser):
-    parser.add_argument("--lr", default=0.002, type=float, help="learning rate")
+    parser.add_argument("--lr", default=0.0003, type=float, help="learning rate")
     parser.add_argument(
         "--beta1", default=0.9, type=float, help="momentum term for adam"
     )
