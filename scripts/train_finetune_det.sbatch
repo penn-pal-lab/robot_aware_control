@@ -4,22 +4,24 @@
 #SBATCH --time=40:00:00
 #SBATCH --partition=dinesh-compute
 #SBATCH --qos=dinesh-high
+#SBATCH -w node-2080ti-5
 #SBATCH --job-name=multirobot_det
 
-# Train on sawyer robot for finetuning to baxter later
-# DATA_ROOT="/scratch/edward/Robonet"
-# COST="dontcare_mse"
-# NAME="multiviewsawyer_norobot_raw_imgaug4"
-
-# python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root $DATA_ROOT --batch_size 16 --n_future 3 --n_past 1 --n_eval 3 --multiview False --image_width 64 --z_dim 64 --stoch False --epoch_size 1600 --checkpoint_interval 1 --g_dim 256 --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling False --action_dim 5 --action_enc_dim 5 --robot_dim 5 --robot_enc_dim 10 --data_threads 4 --training_regime singlerobot  --preprocess_action raw --img_augmentation True >"${NAME}.out" 2>&1 &
-
-# wait
-
-
 DATA_ROOT="/scratch/edward/Robonet"
-COST="mse"
-NAME="multiviewsawyer_vanilla_raw_imgaug4"
 
-python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root $DATA_ROOT --batch_size 16 --n_future 3 --n_past 1 --n_eval 3 --multiview False --image_width 64 --z_dim 64 --stoch False --epoch_size 1600 --checkpoint_interval 1 --g_dim 256 --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling False --action_dim 5 --action_enc_dim 5 --robot_dim 5 --robot_enc_dim 10 --data_threads 4 --training_regime singlerobot  --preprocess_action raw --img_augmentation True >"${NAME}.out" 2>&1 &
+# Train on sawyer robot for finetuning to baxter later
+# COST="dontcare_mse"
+# ACTION="raw"
+# NAME="multiviewsawyer_norobot_${ACTION}_imgaug_fixlr"
+
+# python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root $DATA_ROOT  --lr 0.0003 --batch_size 16 --n_future 3 --n_past 1 --n_eval 3 --multiview False --image_width 64 --z_dim 64 --stoch False --epoch_size 1600 --checkpoint_interval 3 --g_dim 256 --reconstruction_loss $COST --last_frame_skip False --scheduled_sampling False --action_dim 5 --action_enc_dim 5 --robot_dim 5 --robot_enc_dim 10 --data_threads 4 --training_regime singlerobot  --preprocess_action $ACTION --img_augmentation True >"${NAME}.out" 2>&1 &
+
+
+
+COST="mse"
+ACTION="raw"
+NAME="multiviewsawyer_vanilla_${ACTION}_imgaug_fixlr"
+
+python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root $DATA_ROOT --lr 0.0003 --batch_size 16 --n_future 3 --n_past 1 --n_eval 3 --multiview False --image_width 64 --z_dim 64 --stoch False --epoch_size 1600 --checkpoint_interval 3 --g_dim 256 --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling False --action_dim 5 --action_enc_dim 5 --robot_dim 5 --robot_enc_dim 10 --data_threads 4 --training_regime singlerobot  --preprocess_action $ACTION --img_augmentation True >"${NAME}.out" 2>&1 &
 
 wait
