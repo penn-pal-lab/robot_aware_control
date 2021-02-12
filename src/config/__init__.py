@@ -189,7 +189,6 @@ def add_prediction_arguments(parser):
     parser.add_argument(
         "--beta", type=float, default=0.0001, help="weighting on KL to prior"
     )
-    parser.add_argument("--model", default="vgg", help="model type (dcgan | vgg)")
 
     parser.add_argument(
         "--last_frame_skip",
@@ -200,6 +199,7 @@ def add_prediction_arguments(parser):
     parser.add_argument(
         "--stoch", type=str2bool, default=True, help="stochastic prediction"
     )
+    parser.add_argument("--model", default="svg", choices=["svg", "det", "copy"])
     parser.add_argument("--reconstruction_loss", default="mse", choices=["mse", "l1", "dontcare_mse"])
     parser.add_argument("--scheduled_sampling", type=str2bool, default=False)
     parser.add_argument(
