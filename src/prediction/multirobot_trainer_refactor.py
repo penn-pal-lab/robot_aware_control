@@ -712,7 +712,7 @@ class MultiRobotPredictionTrainer(object):
             for t in range(cf.n_eval):
                 row.append(gt_seq[t][i])
             to_plot.append(row)
-            if self._cf.model == "svg":
+            if cf.model == "svg":
                 # best sequence
                 min_mse = 1e7
                 for s in range(nsample):
