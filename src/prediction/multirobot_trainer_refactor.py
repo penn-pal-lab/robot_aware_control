@@ -568,16 +568,7 @@ class MultiRobotPredictionTrainer(object):
 
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
-        data = {
-            "encoder": self.encoder,
-            "robot_enc": self.robot_enc,
-            "action_enc": self.action_enc,
-            "decoder": self.decoder,
-            "frame_predictor": self.frame_predictor,
-            "step": self._step,
-        }
-        if self._config.stoch:
-            data.update({"posterior": self.posterior, "prior": self.prior})
+        data = {"model": self.model}
         torch.save(data, path)
 
     def _load_checkpoint(self, ckpt_path=None):
@@ -589,14 +580,7 @@ class MultiRobotPredictionTrainer(object):
         """
 
         def load_models(ckpt):
-            self.frame_predictor = ckpt["frame_predictor"]
-            if self._config.stoch:
-                self.posterior = ckpt["posterior"]
-                self.prior = ckpt["prior"]
-            self.decoder = ckpt["decoder"]
-            self.encoder = ckpt["encoder"]
-            self.robot_enc = ckpt["robot_enc"]
-            self.action_enc = ckpt["action_enc"]
+            self.frame_predictor = ckpt["model"]
 
         def get_recent_ckpt_path(base_dir):
             from glob import glob
@@ -728,7 +712,7 @@ class MultiRobotPredictionTrainer(object):
             for t in range(cf.n_eval):
                 row.append(gt_seq[t][i])
             to_plot.append(row)
-            if self._config.stoch:
+            if self._cf.model == "svg":
                 # best sequence
                 min_mse = 1e7
                 for s in range(nsample):

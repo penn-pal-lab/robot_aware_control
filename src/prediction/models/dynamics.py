@@ -3,7 +3,6 @@ import torch.nn as nn
 from torch import cat
 from src.prediction.models.base import MLPEncoder, init_weights
 from src.prediction.models.lstm import LSTM, GaussianLSTM
-import ipdb
 
 class DynamicsModel:
     def __init__(self, config):
@@ -210,7 +209,3 @@ class SVGModel(DeterministicModel):
         h_pred = self.frame_predictor(cat([a, r, h, z], 1))
         x_pred = self.decoder([h_pred, skip])
         return x_pred, skip, mu, logvar, mu_p, logvar_p
-
-
-if __name__ == "__main__":
-    SVGModel()
