@@ -39,9 +39,7 @@ def create_finetune_loaders(config):
         files, file_labels, test_size=1 - config.train_val_split, random_state=split_rng
     )
     augment_img = config.img_augmentation
-    train_data = RobotDataset(
-        X_train, y_train, config, augment_img=augment_img, load_snippet=True
-    )
+    train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img)
     test_data = RobotDataset(X_test, y_test, config)
 
     train_loader = DataLoader(
@@ -51,6 +49,7 @@ def create_finetune_loaders(config):
         shuffle=True,
         drop_last=True,
         pin_memory=True,
+        generator=torch.Generator().manual_seed(config.seed),
     )
     test_loader = DataLoader(
         test_data,
@@ -59,6 +58,7 @@ def create_finetune_loaders(config):
         shuffle=True,
         drop_last=True,
         pin_memory=True,
+        generator=torch.Generator().manual_seed(config.seed),
     )
 
     # create a small deterministic dataloader for comparison across runs
@@ -102,10 +102,11 @@ def create_transfer_loader(config):
     loader = DataLoader(
         data,
         num_workers=config.data_threads,
-        batch_size=config.batch_size,
+        batch_size=config.test_batch_size,
         shuffle=True,
         drop_last=True,
         pin_memory=True,
+        generator=torch.Generator().manual_seed(config.seed),
     )
     return loader
 
@@ -140,7 +141,7 @@ def create_loaders(config):
         random_state=split_rng,
     )
     augment_img = config.img_augmentation
-    train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img, load_snippet=True)
+    train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img)
     test_data = RobotDataset(X_test, y_test, config)
     # stratified sampler
     robots, counts = np.unique(file_labels, return_counts=True)
@@ -194,17 +195,6 @@ def create_loaders(config):
         comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
     )
     return train_loader, test_loader, comp_loader
-
-def get_batch(loader, device):
-    while True:
-        for data, robot_name in loader:
-            # transpose from (B, L, C, W, H) to (L, B, C, W, H)
-            imgs, states, actions, masks = data
-            frames = imgs.transpose_(1, 0).to(device)
-            robots = states.transpose_(1, 0).to(device)
-            actions = actions.transpose_(1, 0).to(device)
-            masks = masks.transpose_(1, 0).to(device)
-            yield (frames, robots, actions, masks), robot_name
 
 
 if __name__ == "__main__":

@@ -1,7 +1,5 @@
 import os
 
-from dataclasses import dataclass
-
 from torch.utils.data.dataloader import DataLoader
 from typing import Any
 import cv2
@@ -101,7 +99,18 @@ class RobotDataset(data.Dataset):
             states = self._preprocess_states(states, low, high)
 
             robot = hf.attrs["robot"]
-        return (images, states, actions, masks), robot
+
+        out = {
+            "images": images,
+            "states": states,
+            "actions": actions,
+            "masks": masks,
+            "robot": robot,
+            "file_name": name,
+            "file_path": hdf5_path,
+            "idx": idx
+        }
+        return out
 
     def _load_actions(self, file_pointer, low, high, start, end):
         actions = file_pointer["actions"][:].astype(np.float32)
@@ -268,6 +277,28 @@ class RobotDataset(data.Dataset):
     def __len__(self):
         return len(self._traj_names)
 
+def process_batch(data, device):
+    data_keys = ["images", "states", "actions", "masks"]
+    meta_keys = ["robot", "file_name", "file_path", "idx"]
+    # transpose from (B, L, C, W, H) to (L, B, C, W, H)
+    for k in data_keys:
+        data[k] = data[k].transpose_(1, 0).to(device)
+    return data
+
+def get_batch(loader, device):
+    """Infinite batch generator for dataloader
+
+    Args:
+        loader (Dataloader): dataloader to get batches from
+        device (torch.Device): GPU to put tensors on
+
+    Yields:
+        [type]: [description]
+    """
+
+    while True:
+        for data in loader:
+            yield process_batch(data, device)
 
 if __name__ == "__main__":
     from src.config import argparser

@@ -49,9 +49,7 @@ def create_loaders(config):
         random_state=split_rng,
     )
     augment_img = config.img_augmentation
-    train_data = RobotDataset(
-        X_train, y_train, config, augment_img=augment_img, load_snippet=True
-    )
+    train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img)
     test_data = RobotDataset(X_test, y_test, config)
     # stratified sampler
     robots, counts = np.unique(file_labels, return_counts=True)
@@ -113,17 +111,6 @@ def create_loaders(config):
     )
 
     return train_loader, test_loader, comp_loader
-
-def get_batch(loader, device):
-    while True:
-        for data, robot_name in loader:
-            # transpose from (B, L, C, W, H) to (L, B, C, W, H)
-            imgs, states, actions, masks = data
-            frames = imgs.transpose_(1, 0).to(device)
-            robots = states.transpose_(1, 0).to(device)
-            actions = actions.transpose_(1, 0).to(device)
-            masks = masks.transpose_(1, 0).to(device)
-            yield (frames, robots, actions, masks), robot_name
 
 
 if __name__ == "__main__":
