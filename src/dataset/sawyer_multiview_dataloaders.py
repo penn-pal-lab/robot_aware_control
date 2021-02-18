@@ -13,9 +13,9 @@ from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision.datasets.folder import has_file_allowed_extension
 
 # which viewpoints to train on
-SAWYER_TRAIN_DIRS = ["sudri0_c1_hdf5", "sudri0_c0_hdf5", "sudri0_c1_hdf5", "sudri2_c0", "sudri2_c2", "vestri_table2_c0", "sudri2_c1","sudri2_c2"]
+SAWYER_TRAIN_DIRS = ["sudri0_c0", "sudri0_c1", "sudri0_c2", "sudri2_c0", "sudri2_c2", "vestri_table2_c0", "vestri_table2_c1", "vestri_table2_c2", ]
 # which viewpoints to test on
-SAWYER_TEST_DIRS = ["sudri2_c1_hdf5"]
+SAWYER_TEST_DIRS = ["sudri2_c1"]
 
 def create_finetune_loaders(config):
     # finetune on unseen sawyer viewpoint
@@ -33,6 +33,7 @@ def create_finetune_loaders(config):
 
     # only use 500 videos (400 training) like robonet
     files = files[:500]
+    file_labels = file_labels[:500]
     split_rng = np.random.RandomState(config.seed)
     X_train, X_test, y_train, y_test = train_test_split(
         files, file_labels, test_size=1 - config.train_val_split, random_state=split_rng
@@ -91,6 +92,8 @@ def create_transfer_loader(config):
 
     # only use 500 videos (400 training) like robonet
     files = files[:500]
+    file_labels = file_labels[:500]
+    print("loaded transfer data", data_path, len(files))
     split_rng = np.random.RandomState(config.seed)
     X_train, _, y_train, _ = train_test_split(
         files, file_labels, test_size=1 - config.train_val_split, random_state=split_rng
@@ -151,6 +154,8 @@ def create_loaders(config):
     class_weight = {}
     for robot, count in zip(robots, counts):
         class_weight[robot] = count
+
+    print("loaded training data", class_weight)
     # scale weights so we sample uniformly by class
     train_weights = torch.DoubleTensor(
         [1 / (len(robots) * class_weight[robot]) for robot in y_train]
@@ -192,7 +197,7 @@ def create_loaders(config):
     # because train / test loaders have multiple workers, RNG is tricky.
     num_gifs = min(config.batch_size, 10)
     comp_files = X_test[:num_gifs]
-    comp_file_labels = ["comparison"] * len(comp_files)
+    comp_file_labels = y_test[:num_gifs]
     comp_data = RobotDataset(comp_files, comp_file_labels, config)
     comp_loader = DataLoader(
         comp_data, num_workers=0, batch_size=num_gifs, shuffle=False

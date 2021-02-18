@@ -270,7 +270,7 @@ class RobotDataset(data.Dataset):
             robot_type = self._traj_robots[idx]
             if robot_type == "sawyer":
                 # TODO: account for camera config and index
-                world2cam = world_to_camera_dict["sawyer_sudri0_0"]
+                world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
             elif robot_type == "widowx":
                 world2cam = world_to_camera_dict["widowx1"]
             elif robot_type == "baxter":
@@ -280,7 +280,7 @@ class RobotDataset(data.Dataset):
         elif self._config.training_regime == "singlerobot":
             # train on sawyer, convert actions to camera space
             # TODO: account for camera config and index
-            world2cam = world_to_camera_dict["sawyer_sudri0_0"]
+            world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
         elif self._config.training_regime == "finetune":
             # finetune on baxter, convert to camera frame
             # Assumes the baxter arm is right arm!

@@ -133,7 +133,7 @@ def add_prediction_arguments(parser):
         "--beta1", default=0.9, type=float, help="momentum term for adam"
     )
     parser.add_argument("--batch_size", default=100, type=int, help="batch size")
-    parser.add_argument("--test_batch_size", default=128, type=int, help="test batch size")
+    parser.add_argument("--test_batch_size", default=16, type=int, help="test batch size")
     parser.add_argument("--optimizer", default="adam", help="optimizer to train with")
     parser.add_argument(
         "--niter", type=int, default=300, help="number of epochs to train for"
@@ -165,10 +165,10 @@ def add_prediction_arguments(parser):
         "--rnn_size", type=int, default=256, help="dimensionality of hidden layer"
     )
     parser.add_argument(
-        "--prior_rnn_layers", type=int, default=1, help="number of layers"
+        "--prior_rnn_layers", type=int, default=2, help="number of layers"
     )
     parser.add_argument(
-        "--posterior_rnn_layers", type=int, default=1, help="number of layers"
+        "--posterior_rnn_layers", type=int, default=2, help="number of layers"
     )
     parser.add_argument(
         "--predictor_rnn_layers", type=int, default=2, help="number of layers"

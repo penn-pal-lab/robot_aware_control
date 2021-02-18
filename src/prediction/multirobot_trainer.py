@@ -426,7 +426,7 @@ class MultiRobotPredictionTrainer(object):
                     self.plot_rec(data, epoch, "train")
 
                 wandb.log({f"train/{k}": v for k, v in info.items()}, step=self._step)
-                self.progress.update(self._config.batch_size)
+                self.progress.update()
 
             # log epoch statistics
             # wandb.log(epoch_losses, step=self._step)
@@ -449,7 +449,7 @@ class MultiRobotPredictionTrainer(object):
                 comp_data = next(self.comp_batch_generator)
                 self.plot(comp_data, epoch, "comparison")
 
-                if self._config.training_regime == "singlerobot":
+                if self._config.training_regime in ["singlerobot", "train_sawyer_multiview"]:
                     self._compute_epoch_metrics(self.transfer_loader, "transfer")
                     transfer_data = next(self.transfer_batch_generator)
                     self.plot(transfer_data, epoch, "transfer")
@@ -636,8 +636,6 @@ class MultiRobotPredictionTrainer(object):
                         min_idx = s
                     s_list = [
                         min_idx,
-                        np.random.randint(nsample),
-                        np.random.randint(nsample),
                         np.random.randint(nsample),
                         np.random.randint(nsample),
                     ]
