@@ -396,6 +396,10 @@ class MultiRobotPredictionTrainer(object):
     def train(self):
         """Training, Evaluation, Checkpointing loop"""
         cf = self._config
+        if cf.model == "copy":
+            self.train_copy_baseline()
+            return
+
         # load models and dataset
         self._step = self._load_checkpoint(cf.dynamics_model_ckpt)
         self._setup_data()
