@@ -535,6 +535,20 @@ class MultiRobotPredictionTrainer(object):
             from src.dataset.finetune_multirobot_dataloaders import (
                 create_finetune_loaders as create_loaders,
             )
+        elif self._config.training_regime == "train_sawyer_multiview":
+            from src.dataset.sawyer_multiview_dataloaders import (
+                create_loaders,
+                create_transfer_loader,
+            )
+            # measure zero shot performance on transfer data
+            self.transfer_loader = create_transfer_loader(self._config)
+            self.transfer_batch_generator = get_batch(
+                self.transfer_loader, self._device
+            )
+        elif self._config.training_regime == "finetune_sawyer_view":
+            from src.dataset.sawyer_multiview_dataloaders import (
+                create_finetune_loaders as create_loaders,
+            )
         else:
             raise NotImplementedError(self._config.training_regime)
         self.train_loader, self.test_loader, comp_loader = create_loaders(self._config)
