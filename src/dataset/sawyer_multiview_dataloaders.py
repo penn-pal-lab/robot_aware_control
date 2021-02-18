@@ -141,10 +141,6 @@ def create_loaders(config):
 
     files = [x[0] for x in file_and_labels]
     file_labels = [x[1] for x in file_and_labels]
-<<<<<<< HEAD
-=======
-
->>>>>>> 12079dd071a5da2520b651a02c5b6930809dfa52
     # Stratify by viewpoint
     split_rng = np.random.RandomState(config.seed)
     X_train, X_test, y_train, y_test = train_test_split(
