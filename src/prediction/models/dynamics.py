@@ -209,3 +209,23 @@ class SVGModel(DeterministicModel):
         h_pred = self.frame_predictor(cat([a, r, h, z], 1))
         x_pred = self.decoder([h_pred, skip])
         return x_pred, skip, mu, logvar, mu_p, logvar_p
+
+class CopyModel(nn.Module):
+    """
+    Baseline that copies the previous image  to predict the next image
+    """
+    @torch.no_grad()
+    def forward(self, image, mask, next_image, next_mask):
+        image = image.detach().clone()
+        next_image = next_image.detach().clone()
+        next_mask = next_mask.type(torch.bool).repeat(1,3,1,1)
+
+        # set world pixels of next image to the world pixels of the previous image
+        next_image[~next_mask] = image[~next_mask]
+        # world pixels of next image that are occupied by robot in previous image just get set to next image world pixels
+        # next_image[~next_mask & mask] = image[~next_mask & mask]
+
+        return next_image
+
+    def init_hidden(self, batch_size=None):
+        pass
