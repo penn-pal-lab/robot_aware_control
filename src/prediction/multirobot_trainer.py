@@ -4,7 +4,7 @@ from collections import defaultdict
 from functools import partial
 
 from src.dataset.multirobot_dataset import get_batch, process_batch
-from src.prediction.models.dynamics import DeterministicModel, SVGModel
+from src.prediction.models.dynamics import CopyModel, DeterministicModel, SVGModel
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 from warnings import simplefilter  # disable tensorflow warnings
@@ -78,6 +78,9 @@ class MultiRobotPredictionTrainer(object):
             self.model = SVGModel(cf).to(self._device)
         elif cf.model == "det":
             self.model = DeterministicModel(cf).to(self._device)
+        elif cf.model == "copy":
+            self.model = CopyModel()
+            return
         else:
             raise ValueError(f"{cf.model}")
 
@@ -268,7 +271,6 @@ class MultiRobotPredictionTrainer(object):
         for k, v in avg_loss.items():
             log_str += f"{k}: {v:.5f}, "
         self._logger.info(log_str)
-        wandb.log(avg_loss, step=self._step)
         return avg_loss
 
     def _eval_video(self, data, autoregressive=False):
@@ -327,20 +329,23 @@ class MultiRobotPredictionTrainer(object):
             m_j, r_j, a_j = mask[i - 1], robot[i - 1], ac[i - 1]
             x_i, m_i, r_i = x[i], mask[i], robot[i]
 
-            # zero out robot pixels in input for norobot cost
-            if self._config.reconstruction_loss == "dontcare_mse":
-                self._zero_robot_region(m_j, x_j)
-                self._zero_robot_region(m_i, x_i)
+            if cf.model == "copy":
+                x_pred = self.model(x_j, m_j, x_i, m_i)
+            else:
+                # zero out robot pixels in input for norobot cost
+                if self._config.reconstruction_loss == "dontcare_mse":
+                    self._zero_robot_region(m_j, x_j)
+                    self._zero_robot_region(m_i, x_i)
 
-            if cf.model == "det":
-                x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
-            elif cf.model == "svg":
-                out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
-                x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
+                if cf.model == "det":
+                    x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
+                elif cf.model == "svg":
+                    out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
+                    x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-            # overwrite skip with most recent skip
-            if cf.last_frame_skip or i <= cf.n_past:
-                skip = curr_skip
+                # overwrite skip with most recent skip
+                if cf.last_frame_skip or i <= cf.n_past:
+                    skip = curr_skip
             if cf.multiview:
                 num_views = x_pred.shape[2] // cf.image_width
                 for n in range(num_views):
@@ -442,17 +447,53 @@ class MultiRobotPredictionTrainer(object):
             if epoch % cf.eval_interval == 0:
                 # plot and evaluate on test set
                 self.model.eval()
-                self._compute_epoch_metrics(self.test_loader, "test")
+                info = self._compute_epoch_metrics(self.test_loader, "test")
+                wandb.log(info, step=self._step)
                 test_data = next(self.testing_batch_generator)
                 self.plot(test_data, epoch, "test")
                 self.plot_rec(test_data, epoch, "test")
                 comp_data = next(self.comp_batch_generator)
                 self.plot(comp_data, epoch, "comparison")
 
-                if self._config.training_regime in ["singlerobot", "train_sawyer_multiview"]:
-                    self._compute_epoch_metrics(self.transfer_loader, "transfer")
+                if cf.training_regime in ["singlerobot", "train_sawyer_multiview"]:
+                    info = self._compute_epoch_metrics(self.transfer_loader, "transfer")
+                    wandb.log(info, step=self._step)
                     transfer_data = next(self.transfer_batch_generator)
                     self.plot(transfer_data, epoch, "transfer")
+
+    def train_copy_baseline(self):
+        """Compute metrics for copy baseline
+        """
+        cf = self._config
+        # load models and dataset
+        self._step = self._load_checkpoint(cf.dynamics_model_ckpt)
+        self._setup_data()
+        epoch = 0
+        # train set
+        self.model.train()
+        train_info = self._compute_epoch_metrics(self.train_loader, "train")
+        train_data = next(self.training_batch_generator)
+        self.plot(train_data, epoch, "train")
+        self.plot_rec(train_data, epoch, "train")
+        # test set
+        self.model.eval()
+        test_info = self._compute_epoch_metrics(self.test_loader, "test")
+        test_data = next(self.testing_batch_generator)
+        self.plot(test_data, epoch, "test")
+        self.plot_rec(test_data, epoch, "test")
+
+        # plot 2 points to make horizontal line
+        wandb.log(train_info, step=0)
+        wandb.log(test_info, step=0)
+        # transfer
+        if cf.training_regime in ["singlerobot", "train_sawyer_multiview"]:
+            transfer_info = self._compute_epoch_metrics(self.transfer_loader, "transfer")
+            transfer_data = next(self.transfer_batch_generator)
+            self.plot(transfer_data, epoch, "transfer")
+            wandb.log(transfer_info, step=0)
+            wandb.log(transfer_info, step=500000)
+        wandb.log(train_info, step=500000)
+        wandb.log(test_info, step=500000)
 
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
@@ -568,6 +609,9 @@ class MultiRobotPredictionTrainer(object):
         ac = data["actions"]
         mask = data["masks"]
         nsample = 1
+        if cf.model == "svg":
+            nsample = 3
+
         gen_seq = [[] for i in range(nsample)]
         gt_seq = [x[i] for i in range(len(x))]
         b = min(x.shape[1], 10)
@@ -580,7 +624,7 @@ class MultiRobotPredictionTrainer(object):
         for s in range(nsample):
             self.model.init_hidden(b)
             # first frame of all videos
-            if self._config.reconstruction_loss == "dontcare_mse":
+            if cf.reconstruction_loss == "dontcare_mse" and cf.model != "copy":
                 self._zero_robot_region(mask[0], x[0])
             gen_seq[s].append(x[0])
 
@@ -588,25 +632,28 @@ class MultiRobotPredictionTrainer(object):
             for i in range(1, cf.n_eval):
                 # let j be i - 1, or previous timestep
                 m_j, r_j, a_j = mask[i - 1], robot[i - 1], ac[i - 1]
-                # zero out robot pixels in input for norobot cost
-                if self._config.reconstruction_loss == "dontcare_mse":
-                    self._zero_robot_region(mask[i], x[i])
+                x_i, m_i, r_i = x[i], mask[i], robot[i]
+                if cf.model == "copy":
+                    x_pred = self.model(x_j, m_j, x_i, m_i)
+                else:
+                    # zero out robot pixels in input for norobot cost
+                    if cf.reconstruction_loss == "dontcare_mse":
+                        self._zero_robot_region(mask[i], x[i])
 
-                if cf.model == "det":
-                    x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
-                elif cf.model == "svg":
-                    x_i, m_i, r_i = x[i], mask[i], robot[i]
-                    if i > cf.n_past:  # don't use posterior
-                        x_i, m_i, r_i = None, None, None
-                    out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
-                    x_pred, curr_skip, _, _, _, _ = out
+                    if cf.model == "det":
+                        x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
+                    elif cf.model == "svg":
+                        if i > cf.n_past:  # don't use posterior
+                            x_i, m_i, r_i = None, None, None
+                        out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
+                        x_pred, curr_skip, _, _, _, _ = out
 
-                if cf.last_frame_skip or i <= cf.n_past:
-                    # feed in the  most recent conditioning frame img's skip
-                    skip = curr_skip
+                    if cf.last_frame_skip or i <= cf.n_past:
+                        # feed in the  most recent conditioning frame img's skip
+                        skip = curr_skip
 
-                if self._config.reconstruction_loss == "dontcare_mse":
-                    self._zero_robot_region(mask[i], x_pred)
+                    if cf.reconstruction_loss == "dontcare_mse":
+                        self._zero_robot_region(mask[i], x_pred)
                 if i < cf.n_past:
                     x_j = x_i
                 else:
@@ -623,22 +670,7 @@ class MultiRobotPredictionTrainer(object):
                 row.append(gt_seq[t][i])
             to_plot.append(row)
             if cf.model == "svg":
-                # best sequence
-                min_mse = 1e7
-                for s in range(nsample):
-                    mse = 0
-                    for t in range(cf.n_eval):
-                        mse += torch.sum(
-                            (gt_seq[t][i].data.cpu() - gen_seq[s][t][i].data.cpu()) ** 2
-                        )
-                    if mse < min_mse:
-                        min_mse = mse
-                        min_idx = s
-                    s_list = [
-                        min_idx,
-                        np.random.randint(nsample),
-                        np.random.randint(nsample),
-                    ]
+                s_list = range(nsample)
             else:
                 s_list = [0]
             for ss in range(len(s_list)):
@@ -681,7 +713,7 @@ class MultiRobotPredictionTrainer(object):
 
         self.model.init_hidden(b)
         gen_seq = []
-        if self._config.reconstruction_loss == "dontcare_mse":
+        if cf.reconstruction_loss == "dontcare_mse" and cf.model != "copy":
             self._zero_robot_region(mask[0], x[0])
         gen_seq.append(x[0])
         skip = None
@@ -689,24 +721,27 @@ class MultiRobotPredictionTrainer(object):
             # let j be i - 1, or previous timestep
             x_j, m_j, r_j, a_j = x[i - 1], mask[i - 1], robot[i - 1], ac[i - 1]
             x_i, m_i, r_i = x[i], mask[i], robot[i]
-            # zero out robot pixels in input for norobot cost
-            if self._config.reconstruction_loss == "dontcare_mse":
-                self._zero_robot_region(mask[i], x[i])
 
-            if cf.model == "det":
-                x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
-            elif cf.model == "svg":
-                out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
-                x_pred, curr_skip, _, _, _, _ = out
-            # overwrite skip with most recent skip
-            if cf.last_frame_skip or i <= cf.n_past:
-                skip = curr_skip
+            if cf.model == "copy":
+                x_pred = self.model(x_j, m_j, x_i, m_i)
+            else:
+                # zero out robot pixels in input for norobot cost
+                if cf.reconstruction_loss == "dontcare_mse":
+                    self._zero_robot_region(mask[i], x[i])
 
+                if cf.model == "det":
+                    x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
+                elif cf.model == "svg":
+                    out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
+                    x_pred, curr_skip, _, _, _, _ = out
+                # overwrite skip with most recent skip
+                if cf.last_frame_skip or i <= cf.n_past:
+                    skip = curr_skip
+                if cf.reconstruction_loss == "dontcare_mse":
+                    self._zero_robot_region(mask[i], x_pred)
             if i < cf.n_past:
                 gen_seq.append(x_i)
             else:
-                if self._config.reconstruction_loss == "dontcare_mse":
-                    self._zero_robot_region(mask[i], x_pred)
                 gen_seq.append(x_pred)
 
         to_plot = []
