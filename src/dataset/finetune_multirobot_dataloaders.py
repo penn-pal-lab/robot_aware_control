@@ -11,29 +11,33 @@ from torch.utils.data import DataLoader
 from torch.utils.data.dataset import random_split
 from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision.datasets.folder import has_file_allowed_extension
-
+import pickle
 
 def create_finetune_loaders(config):
     # finetune on baxter left data
     file_type = "hdf5"
     files = []
     file_labels = []
-    robots = ["baxter"]
+    # motion info
+    with open(config.world_error_dict, "rb") as f:
+        motion_info = pickle.load(f)
     data_path = os.path.join(config.data_root, "new_hdf5")
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            for r in robots:
-                if f"{r}_left" in d.path:
+            if f"baxter_left" in d.path:
+                high_error = any([x["high_error"] for x in motion_info[d.path]])
+                if high_error:
                     files.append(d.path)
-                    file_labels.append(r)
-                    break
+                    file_labels.append("baxter")
+
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
-
-    # only use 500 videos (400 training) like robonet
+    # get 500 high motion videos
     files = files[:500]
-    file_labels = ["baxter"] * len(files)
+    file_labels = file_labels[:500]
+    print("loaded finetuning data", len(files))
+
     split_rng = np.random.RandomState(config.seed)
     X_train, X_test, y_train, y_test = train_test_split(
         files, file_labels, test_size=1 - config.train_val_split, random_state=split_rng
@@ -76,21 +80,25 @@ def create_finetune_loaders(config):
 
 def create_transfer_loader(config):
     """
-    For evaluating zero shot performance on the transfer set
+    For evaluating zero shot performance on the baxter data
+    Contains baxter_left data with high baseline error
     """
     # finetune on baxter left data
     file_type = "hdf5"
     files = []
     file_labels = []
-    robots = ["baxter"]
     data_path = os.path.join(config.data_root, "new_hdf5")
+    # motion info
+    with open(config.world_error_dict, "rb") as f:
+        motion_info = pickle.load(f)
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            for r in robots:
-                if f"{r}_left" in d.path:
+            if "baxter_left" in d.path:
+                high_error = any([x["high_error"] for x in motion_info[d.path]])
+                if high_error:
                     files.append(d.path)
-                    file_labels.append(r)
-                    break
+                    file_labels.append("baxter_left")
+
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
@@ -112,26 +120,37 @@ def create_transfer_loader(config):
 
 
 def create_loaders(config):
+    """Create training data for Sawyer->Baxter finetuning
+    Dataset consists of different sawyer viewpoints
+    Stratified train / test split by sawyer viewpoint
+    Imbalanced viewpoint sampling
+
+    Args:
+        config (Namespace): config dict
+    Returns:
+        List[Dataloader]: train, test, comparison loaders
+    """
     # create sawyer training data
     file_type = "hdf5"
     files = []
     file_labels = []
-    robots = ["sawyer"]
     data_path = os.path.join(config.data_root, "sawyer_views")
     for folder in os.scandir(data_path):
         if folder.is_dir():
             for d in os.scandir(folder.path):
                 if d.is_file() and has_file_allowed_extension(d.path, file_type):
-                    for r in robots:
-                        if r in d.path:
-                            files.append(d.path)
-                            file_labels.append(r)
-                            break
+                        files.append(d.path)
+                        file_labels.append(folder.name)
 
-    files = sorted(files)
+    file_and_labels = zip(files, file_labels)
+    file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
     random.seed(config.seed)
-    random.shuffle(files)
-    # for now, with 1 robot, stratify doesn't do anything.
+    random.shuffle(file_and_labels)
+
+    files = [x[0] for x in file_and_labels]
+    file_labels = [x[1] for x in file_and_labels]
+
+    # stratify train / test split by viewpoint
     split_rng = np.random.RandomState(config.seed)
     X_train, X_test, y_train, y_test = train_test_split(
         files,

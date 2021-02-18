@@ -443,7 +443,6 @@ if __name__ == "__main__":
     random.seed(config.seed)
     random.shuffle(files)
 
-    # only use 500 videos (400 training) like robonet
     files = files[:]
     file_labels = ["baxter"] * len(files)
     # iterate through videos
@@ -493,10 +492,10 @@ if __name__ == "__main__":
             batch = x[s:e], masks[s:e], names
             losses = eval_step(batch, model, config)
             num_snippets += 1
-            if losses["world_mse"] > 0.01:
+            if losses["world_mse"].item() > 0.01:
                 high_err_video = True
                 num_high_err_snippets += 1
-            entry = {"start": s, "end": e, "world_mse": losses["world_mse"], "high_error": losses["world_mse"] > 0.01}
+            entry = {"start": s, "end": e, "world_mse": losses["world_mse"].item(), "high_error": losses["world_mse"].item() > 0.01}
             meta_dict[video_name].append(entry)
             # if losses["world_mse"] > 0.01 and num_gifs < max_gifs:
             #     # save video
@@ -527,5 +526,5 @@ if __name__ == "__main__":
     # plt.savefig("world_error_histogram.png")
 
     # save meta dict
-    with open(f"baxter_{arm}.pkl", "wb") as f:
+    with open(f"baxter_{arm}_world_error.pkl", "wb") as f:
         pickle.dump(meta_dict, f)

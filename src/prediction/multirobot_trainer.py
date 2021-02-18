@@ -29,7 +29,7 @@ from src.prediction.losses import (
     world_mse_criterion,
 )
 from src.utils.plot import save_gif, save_tensors_image
-from torch import cat, optim
+from torch import optim
 from tqdm import tqdm
 
 
@@ -462,8 +462,7 @@ class MultiRobotPredictionTrainer(object):
                     self.plot(transfer_data, epoch, "transfer")
 
     def train_copy_baseline(self):
-        """Compute metrics for copy baseline
-        """
+        """Compute metrics for copy baseline"""
         cf = self._config
         # load models and dataset
         self._step = self._load_checkpoint(cf.dynamics_model_ckpt)
@@ -487,7 +486,9 @@ class MultiRobotPredictionTrainer(object):
         wandb.log(test_info, step=0)
         # transfer
         if cf.training_regime in ["singlerobot", "train_sawyer_multiview"]:
-            transfer_info = self._compute_epoch_metrics(self.transfer_loader, "transfer")
+            transfer_info = self._compute_epoch_metrics(
+                self.transfer_loader, "transfer"
+            )
             transfer_data = next(self.transfer_batch_generator)
             self.plot(transfer_data, epoch, "transfer")
             wandb.log(transfer_info, step=0)

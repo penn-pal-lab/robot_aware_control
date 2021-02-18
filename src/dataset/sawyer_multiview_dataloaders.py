@@ -134,9 +134,13 @@ def create_loaders(config):
                     files.append(d.path)
                     file_labels.append(folder.name)
 
-    files = sorted(files)
+    file_and_labels = zip(files, file_labels)
+    file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
     random.seed(config.seed)
-    random.shuffle(files)
+    random.shuffle(file_and_labels)
+
+    files = [x[0] for x in file_and_labels]
+    file_labels = [x[1] for x in file_and_labels]
     # Stratify by viewpoint
     split_rng = np.random.RandomState(config.seed)
     X_train, X_test, y_train, y_test = train_test_split(
