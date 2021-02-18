@@ -196,9 +196,9 @@ def add_prediction_arguments(parser):
         default=False,
         help="if true, skip connections go between frame t and frame t+t rather than last ground truth frame",
     )
-    parser.add_argument(
-        "--stoch", type=str2bool, default=True, help="stochastic prediction"
-    )
+    # parser.add_argument(
+    #     "--stoch", type=str2bool, default=True, help="stochastic prediction"
+    # )
     parser.add_argument("--model", default="svg", choices=["svg", "det", "copy"])
     parser.add_argument("--reconstruction_loss", default="mse", choices=["mse", "l1", "dontcare_mse"])
     parser.add_argument("--scheduled_sampling", type=str2bool, default=False)
