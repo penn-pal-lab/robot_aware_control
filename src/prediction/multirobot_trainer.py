@@ -65,6 +65,7 @@ class MultiRobotPredictionTrainer(object):
             config_exclude_keys=["device"],
         )
         self._img_augmentation = config.img_augmentation
+        self._plot_rng = np.random.RandomState(self._config.seed)
 
     def _init_models(self, cf):
         """Initialize models and optimizers
@@ -604,9 +605,13 @@ class MultiRobotPredictionTrainer(object):
         self.comp_batch_generator = get_batch(comp_loader, self._device)
 
     @torch.no_grad()
-    def plot(self, data, epoch, name):
-        """
-        Plot the generation with learned prior. Autoregressive output.
+    def plot(self, data, epoch, name, random_start=True):
+        """Plot the generation with learned prior. Autoregressive output.
+        Args:
+            data (DataLoader): dictionary from dataloader
+            epoch (int): epoch number
+            name (str): name of the dataset
+            random_start (bool, optional): Choose a random timestep as the starting frame
         """
         cf = self._config
         x = data["images"]
@@ -617,18 +622,27 @@ class MultiRobotPredictionTrainer(object):
         if cf.model == "svg":
             nsample = 3
 
+        b = min(x.shape[1], 10)
+        # first frame of all videos
+        start = 0
+        video_len = cf.n_eval
+        end = start + video_len
+        if random_start:
+            offset = x.shape[0] - video_len
+            start = self._plot_rng.randint(0, offset + 1)
+            end = start + video_len
+        # truncate batch by time and batch dim
+        ipdb.set_trace()
+        x = x[start:end, :b]
+        robot = robot[start:end, :b]
+        ac = ac[start: end - 1, :b]
+        mask = mask[start:end, :b]
         gen_seq = [[] for i in range(nsample)]
         gt_seq = [x[i] for i in range(len(x))]
-        b = min(x.shape[1], 10)
-        # truncate batch
-        x = x[:, :b]
-        robot = robot[:, :b]
-        ac = ac[:, :b]
-        mask = mask[:, :b]
+
         skip = None
         for s in range(nsample):
             self.model.init_hidden(b)
-            # first frame of all videos
             if cf.reconstruction_loss == "dontcare_mse" and cf.model != "copy":
                 self._zero_robot_region(mask[0], x[0])
             gen_seq[s].append(x[0])
@@ -700,7 +714,7 @@ class MultiRobotPredictionTrainer(object):
         wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
 
     @torch.no_grad()
-    def plot_rec(self, data, epoch, name):
+    def plot_rec(self, data, epoch, name, random_start=True):
         """
         Plot the 1 step reconstruction with posterior instead of learned prior
         """
@@ -710,11 +724,19 @@ class MultiRobotPredictionTrainer(object):
         ac = data["actions"]
         mask = data["masks"]
         b = min(x.shape[1], 10)
-        # truncate batch
-        x = x[:, :b]
-        robot = robot[:, :b]
-        ac = ac[:, :b]
-        mask = mask[:, :b]
+        # first frame of all videos
+        start = 0
+        video_len = cf.n_eval
+        end = start + video_len
+        if random_start:
+            offset = x.shape[0] - video_len
+            start = self._plot_rng.randint(0, offset + 1)
+            end = start + video_len
+        # truncate batch by time and batch dim
+        x = x[start:end, :b]
+        robot = robot[start:end, :b]
+        ac = ac[start: end - 1, :b]
+        mask = mask[start:end, :b]
 
         self.model.init_hidden(b)
         gen_seq = []
