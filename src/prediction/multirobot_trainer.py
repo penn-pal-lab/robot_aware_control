@@ -632,7 +632,6 @@ class MultiRobotPredictionTrainer(object):
             start = self._plot_rng.randint(0, offset + 1)
             end = start + video_len
         # truncate batch by time and batch dim
-        ipdb.set_trace()
         x = x[start:end, :b]
         robot = robot[start:end, :b]
         ac = ac[start: end - 1, :b]
