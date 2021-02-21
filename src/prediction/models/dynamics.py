@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
-from torch import cat
 from src.prediction.models.base import MLPEncoder, init_weights
 from src.prediction.models.lstm import LSTM, GaussianLSTM
+from torch import cat
+
 
 class DynamicsModel:
     def __init__(self, config):
@@ -70,8 +71,10 @@ class DeterministicModel(nn.Module):
         self._config = cf = config
         self._device = config.device
         if input_dim is None:
-            input_dim = cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim
-        self._init_models(input_dim)
+            input_dim = cf.action_enc_dim + cf.g_dim
+            if cf.model_use_robot_state:
+                input_dim += cf.robot_enc_dim
+            self._init_models(input_dim)
 
     def _init_models(self, input_dim):
         cf = self._config
@@ -81,28 +84,27 @@ class DeterministicModel(nn.Module):
             cf.rnn_size,
             cf.predictor_rnn_layers,
             cf.batch_size,
-        ).to(self._device)
+        )
 
         if cf.image_width == 64:
             from src.prediction.models.vgg_64 import Decoder, Encoder
         elif cf.image_width == 128:
             from src.prediction.models.vgg import Decoder, Encoder
 
-        # RGB + mask channel
-        self.encoder = enc = Encoder(
-            cf.g_dim, cf.channels + 1, cf.multiview, cf.dropout
-        ).to(self._device)
-        self.decoder = dec = Decoder(cf.g_dim, cf.channels, cf.multiview).to(
-            self._device
-        )
-        self.action_enc = ac = MLPEncoder(cf.action_dim, cf.action_enc_dim, 32).to(
-            self._device
-        )
-        self.robot_enc = rob = MLPEncoder(cf.robot_dim, cf.robot_enc_dim, 32).to(
-            self._device
-        )
-        self.all_models = []
-        self.all_models.extend([frame_pred, enc, dec, ac, rob])
+        channels = cf.channels
+        if cf.model_use_mask:
+            # RGB + mask channel
+            channels += 1
+        self.encoder = enc = Encoder(cf.g_dim, channels, cf.multiview, cf.dropout)
+        self.decoder = dec = Decoder(cf.g_dim, cf.channels, cf.multiview)
+        self.action_enc = ac = MLPEncoder(cf.action_dim, cf.action_enc_dim, 32)
+        self.all_models = [frame_pred, enc, dec, ac]
+        if cf.model_use_robot_state:
+            self.robot_enc = MLPEncoder(cf.robot_dim, cf.robot_enc_dim, 32)
+            self.robot_enc
+            self.all_models.append(self.robot_enc)
+
+        self.to(self._device)
         for model in self.all_models:
             model.apply(init_weights)
 
@@ -125,13 +127,23 @@ class DeterministicModel(nn.Module):
         Returns:
             [Tuple]: Next image, next latent, skip connection
         """
-        h, curr_skip = self.encoder(cat([image, mask], dim=1))
+        cf = self._config
+        if cf.model_use_mask:
+            h, curr_skip = self.encoder(cat([image, mask], dim=1))
+        else:
+            h, curr_skip = self.encoder(image)
+
         if skip is None:
             skip = curr_skip
 
-        r = self.robot_enc(robot) # robot at time t
-        a = self.action_enc(action) # action at time t
-        h_pred = self.frame_predictor(cat([a, r, h], 1)) # pred. image at time t + 1
+        a = self.action_enc(action)  # action at time t
+        if cf.model_use_robot_state:
+            r = self.robot_enc(robot)  # robot at time t
+            h_pred = self.frame_predictor(
+                cat([a, r, h], 1)
+            )  # pred. image at time t + 1
+        else:
+            h_pred = self.frame_predictor(cat([a, h], 1))
         x_pred = self.decoder([h_pred, skip])
         return x_pred, skip
 
@@ -141,26 +153,32 @@ class SVGModel(DeterministicModel):
         self._config = config
         cf = config
         self.all_models = []
-        input_dim = cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim
-        input_dim += cf.z_dim
+        input_dim = cf.action_enc_dim + cf.g_dim + cf.z_dim
+        post_dim = cf.g_dim
+        prior_dim = cf.action_enc_dim + cf.g_dim
+        if cf.model_use_robot_state:
+            input_dim += cf.robot_enc_dim
+            post_dim += cf.robot_enc_dim
+            prior_dim += cf.robot_enc_dim
         super().__init__(config, input_dim)
+
         self.posterior = post = GaussianLSTM(
-            cf.robot_enc_dim + cf.g_dim,
+            post_dim,
             cf.z_dim,
             cf.rnn_size,
             cf.posterior_rnn_layers,
             cf.batch_size,
-        ).to(self._device)
+        )
 
         self.prior = prior = GaussianLSTM(
-            cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim,
+            prior_dim,
             cf.z_dim,
             cf.rnn_size,
             cf.prior_rnn_layers,
             cf.batch_size,
-        ).to(self._device)
+        )
         self.all_models.extend([post, prior])
-
+        self.to(self._device)
         # initialize weights and count parameters
         # def count_parameters(model):
         # return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -173,11 +191,12 @@ class SVGModel(DeterministicModel):
         self.posterior.hidden = self.posterior.init_hidden(batch_size)
         self.prior.hidden = self.prior.init_hidden(batch_size)
 
-
-    def forward(self, image, mask, robot, action, next_image, next_mask, next_robot, skip=None):
+    def forward(
+        self, image, mask, robot, action, next_image, next_mask, next_robot, skip=None
+    ):
         """Predict the next state using the learned prior or posterior
         If next_image, next_mask, next_robot are None, learned prior is used
-        If skip is None, use image as skip
+        If skip is None, use current image as skip
 
         Args:
             image ([Tensor]): batch of images
@@ -190,35 +209,55 @@ class SVGModel(DeterministicModel):
         Returns:
             [Tuple]: Next image, next latent, skip connection
         """
-        h, curr_skip = self.encoder(cat([image, mask], dim=1))
+        cf = self._config
+        if cf.model_use_mask:
+            h, curr_skip = self.encoder(cat([image, mask], dim=1))
+        else:
+            h, curr_skip = self.encoder(image)
         if skip is None:
             skip = curr_skip
 
-        r = self.robot_enc(robot) # robot at time t
-        a = self.action_enc(action) # action at time t
-
-        # whether to use posterior or learned prior
+        a = self.action_enc(action)  # action at time t
         z_t, mu, logvar, mu_p, logvar_p = None, None, None, None, None
-        z_p, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
+        if cf.model_use_robot_state:
+            r = self.robot_enc(robot)  # robot at time t
+            # whether to use posterior or learned prior
+            z_p, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
+        else:
+            z_p, mu_p, logvar_p = self.prior(cat([a, h], 1))
+
         z = z_p
         if next_image is not None:
-            h_target = self.encoder(cat([next_image, next_mask], dim=1))[0]
-            r_target = self.robot_enc(next_robot)
-            z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
+            if cf.model_use_mask:
+                h_target = self.encoder(cat([next_image, next_mask], dim=1))[0]
+            else:
+                h_target = self.encoder(next_image)[0]
+            if cf.model_use_robot_state:
+                r_target = self.robot_enc(next_robot)
+                z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
+            else:
+                z_t, mu, logvar = self.posterior(h_target)
             z = z_t
-        h_pred = self.frame_predictor(cat([a, r, h, z], 1))
+
+        if cf.model_use_robot_state:
+            h_pred = self.frame_predictor(cat([a, r, h, z], 1))
+        else:
+            h_pred = self.frame_predictor(cat([a, h, z], 1))
+
         x_pred = self.decoder([h_pred, skip])
         return x_pred, skip, mu, logvar, mu_p, logvar_p
+
 
 class CopyModel(nn.Module):
     """
     Baseline that copies the previous image  to predict the next image
     """
+
     @torch.no_grad()
     def forward(self, image, mask, next_image, next_mask):
         image = image.detach().clone()
         next_image = next_image.detach().clone()
-        next_mask = next_mask.type(torch.bool).repeat(1,3,1,1)
+        next_mask = next_mask.type(torch.bool).repeat(1, 3, 1, 1)
 
         # set world pixels of next image to the world pixels of the previous image
         next_image[~next_mask] = image[~next_mask]
