@@ -554,7 +554,7 @@ class MultiRobotPredictionTrainer(object):
             print(f"Loading ckpt {ckpt_path}")
             ckpt = torch.load(ckpt_path, map_location=self._device)
             self.model.load_state_dict(ckpt["model"])
-            if self._config.training_regime == "finetune":
+            if self._config.training_regime in ["finetune", "finetune_sawyer_view"]:
                 step = 0
             else:
                 step = ckpt["step"]
