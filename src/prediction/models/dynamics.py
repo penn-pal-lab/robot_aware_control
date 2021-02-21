@@ -74,7 +74,7 @@ class DeterministicModel(nn.Module):
             input_dim = cf.action_enc_dim + cf.g_dim
             if cf.model_use_robot_state:
                 input_dim += cf.robot_enc_dim
-            self._init_models(input_dim)
+        self._init_models(input_dim)
 
     def _init_models(self, input_dim):
         cf = self._config

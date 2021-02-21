@@ -750,7 +750,7 @@ class MultiRobotPredictionTrainer(object):
             self._zero_robot_region(mask[0], x[0])
         gen_seq.append(x[0])
         skip = None
-        for i in range(1, cf.n_past + cf.n_future):
+        for i in range(1, cf.n_eval):
             # let j be i - 1, or previous timestep
             x_j, m_j, r_j, a_j = x[i - 1], mask[i - 1], robot[i - 1], ac[i - 1]
             x_i, m_i, r_i = x[i], mask[i], robot[i]
@@ -781,7 +781,7 @@ class MultiRobotPredictionTrainer(object):
         nrow = b
         for i in range(nrow):
             row = []
-            for t in range(cf.n_past + cf.n_future):
+            for t in range(cf.n_eval):
                 row.append(gen_seq[t][i])
             to_plot.append(row)
         fname = os.path.join(cf.plot_dir, f"{name}_rec_{epoch}.png")
