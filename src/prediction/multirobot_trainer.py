@@ -295,7 +295,9 @@ class MultiRobotPredictionTrainer(object):
             }
             losses = self._eval_step(batch_data, autoregressive)
             for k, v in losses.items():
-                all_losses[k] += v / floor(T / window)
+                all_losses[k] += v
+        for k, v in all_losses.items():
+            all_losses[k] /= floor(T/window)
         return all_losses
 
     @torch.no_grad()
@@ -341,7 +343,12 @@ class MultiRobotPredictionTrainer(object):
                 if cf.model == "det":
                     x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
                 elif cf.model == "svg":
-                    out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
+                    force_use_prior = False
+                    # use prior for autoregressive step and i > conditioning
+                    if autoregressive and i > 1:
+                        x_i = m_i = r_i = None
+                        force_use_prior = True
+                    out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip, force_use_prior=force_use_prior)
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
                 # overwrite skip with most recent skip

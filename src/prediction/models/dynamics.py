@@ -192,7 +192,7 @@ class SVGModel(DeterministicModel):
         self.prior.hidden = self.prior.init_hidden(batch_size)
 
     def forward(
-        self, image, mask, robot, action, next_image, next_mask, next_robot, skip=None
+        self, image, mask, robot, action, next_image, next_mask, next_robot, skip=None, force_use_prior=False
     ):
         """Predict the next state using the learned prior or posterior
         If next_image, next_mask, next_robot are None, learned prior is used
@@ -204,7 +204,7 @@ class SVGModel(DeterministicModel):
             robot ([Tensor]): batch of robot states
             action ([Tensor]): batch of robot actions
             skip ([Tensor]): batch of skip connections
-            use_posterior:
+            force_use_prior: use prior z even if posterior z is computed. Use this when we want to use the prior, but need to compute statistics about the posterior z
 
         Returns:
             [Tuple]: Next image, next latent, skip connection
@@ -237,7 +237,8 @@ class SVGModel(DeterministicModel):
                 z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
             else:
                 z_t, mu, logvar = self.posterior(h_target)
-            z = z_t
+            if not force_use_prior:
+                z = z_t
 
         if cf.model_use_robot_state:
             h_pred = self.frame_predictor(cat([a, r, h, z], 1))
