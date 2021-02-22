@@ -4,6 +4,7 @@ from src.prediction.multirobot_trainer import (
     make_log_folder,
 )
 import wandb
+import ipdb
 
 
 
@@ -23,40 +24,37 @@ def evaluate_checkpoints(config, checkpoint_dir):
         path = f
         files_sorted.append((num, path))
     files_sorted.sort(key=lambda x: x[0])
-    print(files_sorted)
 
     trainer = MultiRobotPredictionTrainer(config)
     trainer._setup_data()
-    for ckpt_path, ckpt_num in files_sorted:
+    for ckpt_num, ckpt_path in files_sorted:
         print("evaluating", ckpt_num)
         trainer._load_checkpoint(ckpt_path)
         trainer.model.eval()
         test_info = trainer._compute_epoch_metrics(trainer.test_loader, "test")
         wandb.log(test_info, step=ckpt_num)
-        test_data = next(trainer.testing_batch_generator)
-        trainer.plot(test_data, ckpt_num, "test")
-        trainer.plot_rec(test_data, ckpt_num, "test")
+
 
         if config.training_regime in ["singlerobot", "train_sawyer_multiview"]:
             transfer_info = trainer._compute_epoch_metrics(
                 trainer.transfer_loader, "transfer"
             )
             wandb.log(transfer_info, step=ckpt_num)
-            transfer_data = next(trainer.transfer_batch_generator)
-            trainer.plot(transfer_data, ckpt_num, "transfer")
 
 
 if __name__ == "__main__":
     """
     Evaluate the checkpoints.
-    checkpoint_dir: the path to the checkpoints for evaluation
     job_name: folder name for evaluation info
     """
-    from src.config import argparser
+    from src.config import create_parser
+    from torch.multiprocessing import set_start_method
 
-    config, _ = argparser()
-    checkpoint_dir = "asdf"
+    set_start_method("spawn")
+
+    parser = create_parser()
+    parser.add_argument("--ckpt_dir", type=str)
+    config, unparsed = parser.parse_known_args()
     config.log_dir = "ckpt_eval"
-    config.job_name = "ckpt_eval_model_name_here"
     make_log_folder(config)
-    evaluate_checkpoints(config, checkpoint_dir)
+    evaluate_checkpoints(config, config.ckpt_dir)

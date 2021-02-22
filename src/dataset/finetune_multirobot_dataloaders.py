@@ -51,7 +51,7 @@ def create_finetune_loaders(config):
         num_workers=config.data_threads,
         batch_size=config.batch_size,
         shuffle=True,
-        drop_last=True,
+        drop_last=False,
         pin_memory=True,
         generator=torch.Generator().manual_seed(config.seed),
     )
@@ -60,7 +60,7 @@ def create_finetune_loaders(config):
         num_workers=config.data_threads,
         batch_size=config.test_batch_size,
         shuffle=True,
-        drop_last=True,
+        drop_last=False,
         pin_memory=True,
         generator=torch.Generator().manual_seed(config.seed),
     )
@@ -112,7 +112,7 @@ def create_transfer_loader(config):
         num_workers=config.data_threads,
         batch_size=config.test_batch_size,
         shuffle=True,
-        drop_last=True,
+        drop_last=False,
         pin_memory=True,
         generator=torch.Generator().manual_seed(config.seed),
     )
@@ -181,7 +181,7 @@ def create_loaders(config):
         num_workers=config.data_threads,
         batch_size=config.batch_size,
         shuffle=False,
-        drop_last=True,
+        drop_last=False,
         pin_memory=True,
         sampler=train_sampler,
     )
@@ -197,9 +197,9 @@ def create_loaders(config):
     test_loader = DataLoader(
         test_data,
         num_workers=config.data_threads,
-        batch_size=config.batch_size,
+        batch_size=config.test_batch_size,
         shuffle=False,
-        drop_last=True,
+        drop_last=False,
         pin_memory=True,
         sampler=test_sampler,
     )

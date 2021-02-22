@@ -62,7 +62,7 @@ def kl_criterion(mu1, logvar1, mu2, logvar2, bs):
         + (torch.exp(logvar1) + (mu1 - mu2) ** 2) / (2 * torch.exp(logvar2))
         - 1 / 2
     )
-    assert kld.shape[0] == bs
+    assert kld.shape[0] == bs, f"{kld.shape[0]} != {bs}"
     return kld.sum() / bs
 
 
@@ -164,7 +164,7 @@ class ImgL2Cost(Cost):
             diff = np.abs(curr_img - goal_img)
             dist = np.sum(diff > threshold)
         return -dist
-    
+
     def _call_tensor(self, curr_img: Tensor, goal_img: Tensor):
         if curr_img is None or goal_img is None:
             return 0
@@ -172,7 +172,7 @@ class ImgL2Cost(Cost):
         if len(img_diff.shape) == 4: # batch x |img|
             sum_diff = torch.sum(img_diff, (1, 2, 3)) # sum up across image dimensions
         elif len(img_diff.shape) == 3: # img only
-            sum_diff = torch.sum(img_diff) 
+            sum_diff = torch.sum(img_diff)
         else:
             raise NotImplementedError(f"Tensor shape {img_diff.shape} not supported")
         dist = sum_diff.sqrt().cpu().numpy()
@@ -180,7 +180,7 @@ class ImgL2Cost(Cost):
 
     def __call__(self, curr: State, goal: State):
         if isinstance(curr.img, Tensor) or isinstance(goal.img, Tensor):
-            return self._call_tensor(curr.img, goal.img) 
+            return self._call_tensor(curr.img, goal.img)
         return self._call(curr.img, goal.img)
 
 class ImgDontcareCost(Cost):
@@ -195,7 +195,7 @@ class ImgDontcareCost(Cost):
         if len(img_diff.shape) == 4: # batch x |img|
             sum_diff = torch.sum(img_diff, (1, 2, 3)) # sum up across image dimensions
         elif len(img_diff.shape) == 3: # img only
-            sum_diff = torch.sum(img_diff) 
+            sum_diff = torch.sum(img_diff)
         else:
             raise NotImplementedError(f"Tensor shape {img_diff.shape} not supported")
         dist = sum_diff.sqrt()
@@ -226,7 +226,7 @@ class ImgDontcareCost(Cost):
 
     def __call__(self, curr: State, goal: State):
         if isinstance(curr.img, Tensor) or isinstance(goal.img, Tensor):
-            return self._call_tensor(curr.img, goal.img, curr.mask, goal.mask) 
+            return self._call_tensor(curr.img, goal.img, curr.mask, goal.mask)
         return self._call(curr.img, goal.img, curr.mask, goal.mask)
 
 

@@ -236,7 +236,8 @@ class MultiRobotPredictionTrainer(object):
                         losses[f"{r}_world_loss"] += r_world_mse.cpu().item()
 
             if cf.model == "svg":
-                kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
+                bs = min(cf.batch_size, x.shape[1])
+                kl = kl_criterion(mu, logvar, mu_p, logvar_p, bs)
                 kld += kl
                 losses["kld"] += kl.cpu().item()
         loss = recon_loss + kld * cf.beta
@@ -391,7 +392,9 @@ class MultiRobotPredictionTrainer(object):
                     losses[f"{prefix}_{r}_world_loss"] += r_world_mse.cpu().item()
 
             if cf.model == "svg":
-                kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.test_batch_size)
+                # if x.shape[1] != cf.test_batch_size:
+                #     ipdb.set_trace()
+                kl = kl_criterion(mu, logvar, mu_p, logvar_p, bs)
                 losses[f"{prefix}_kld"] += kl.cpu().item()
 
         for k, v in losses.items():
