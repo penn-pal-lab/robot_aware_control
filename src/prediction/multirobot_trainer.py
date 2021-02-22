@@ -282,7 +282,7 @@ class MultiRobotPredictionTrainer(object):
         """
         x = data["images"]
         T = len(x)
-        window = self._config.n_past + self._config.n_future
+        window = self._config.n_eval
         all_losses = defaultdict(float)
         for i in range(floor(T / window)):
             s = i * window
@@ -324,7 +324,7 @@ class MultiRobotPredictionTrainer(object):
         all_robots = set(robot_name)
         x_pred = skip = None
         prefix = "autoreg" if autoregressive else "1step"
-        for i in range(1, cf.n_past + cf.n_future):
+        for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 x_j = x_pred.clone().detach()
             else:
@@ -398,7 +398,7 @@ class MultiRobotPredictionTrainer(object):
                 losses[f"{prefix}_kld"] += kl.cpu().item()
 
         for k, v in losses.items():
-            losses[k] = v / (cf.n_past + cf.n_future)
+            losses[k] = v / cf.n_eval
         return losses
 
     def train(self):
@@ -412,7 +412,7 @@ class MultiRobotPredictionTrainer(object):
         self._step = self._load_checkpoint(cf.dynamics_model_ckpt)
         self._setup_data()
         total = cf.niter * cf.epoch_size
-        desc = "videos seen"
+        desc = "batches seen"
         self.progress = tqdm(initial=self._step, total=total, desc=desc)
 
         # start training

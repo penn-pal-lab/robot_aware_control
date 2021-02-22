@@ -33,15 +33,16 @@ def create_finetune_loaders(config):
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
-    # get 500 high motion videos
-    files = files[:500]
-    file_labels = file_labels[:500]
-    print("loaded finetuning data", len(files))
 
-    split_rng = np.random.RandomState(config.seed)
-    X_train, X_test, y_train, y_test = train_test_split(
-        files, file_labels, test_size=1 - config.train_val_split, random_state=split_rng
-    )
+    # get 500 high motion videos for test set
+    X_test = files[:500]
+    y_test = file_labels[:500]
+
+    # get num_videos videos for training set
+    X_train = files[500:500 + config.finetune_num_videos]
+    y_train = file_labels[500:500 + config.finetune_num_videos]
+    print("loaded finetuning data", len(X_train) + len(X_test))
+
     augment_img = config.img_augmentation
     train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img)
     test_data = RobotDataset(X_test, y_test, config)
