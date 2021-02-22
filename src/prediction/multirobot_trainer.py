@@ -163,9 +163,6 @@ class MultiRobotPredictionTrainer(object):
         Returns info dict containing loss metrics
         """
         cf = self._config
-        self.model.zero_grad()
-        self.model.init_hidden()  # initialize the recurrent states
-
         losses = defaultdict(float)  # log loss metrics
         recon_loss = kld = 0
         x = data["images"]
@@ -177,6 +174,10 @@ class MultiRobotPredictionTrainer(object):
         all_robots = set(robot_name)
         x_pred = None
         skip = None
+
+        self.model.zero_grad()
+        bs = min(cf.batch_size, x.shape[1])
+        self.model.init_hidden(bs)  # initialize the recurrent states
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
                 x_j = x[i - 1] if self._use_true_token() else x_pred.clone().detach()
