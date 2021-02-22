@@ -34,13 +34,14 @@ def create_finetune_loaders(config):
     random.seed(config.seed)
     random.shuffle(files)
 
-    # get 500 high motion videos for test set
-    X_test = files[:500]
-    y_test = file_labels[:500]
+    n_test = config.finetune_num_test
+    n_train = config.finetune_num_train
 
-    # get num_videos videos for training set
-    X_train = files[500:500 + config.finetune_num_videos]
-    y_train = file_labels[500:500 + config.finetune_num_videos]
+    X_test = files[:n_test]
+    y_test = file_labels[:n_test]
+
+    X_train = files[n_test: n_test + n_train]
+    y_train = file_labels[n_test: n_test + n_train]
     print("loaded finetuning data", len(X_train) + len(X_test))
 
     augment_img = config.img_augmentation

@@ -31,13 +31,16 @@ def create_finetune_loaders(config):
     random.seed(config.seed)
     random.shuffle(files)
 
-    # only use 500 videos (400 training) like robonet
-    files = files[:500]
-    file_labels = file_labels[:500]
-    split_rng = np.random.RandomState(config.seed)
-    X_train, X_test, y_train, y_test = train_test_split(
-        files, file_labels, test_size=1 - config.train_val_split, random_state=split_rng
-    )
+    n_test = config.finetune_num_test
+    n_train = config.finetune_num_train
+
+    X_test = files[:n_test]
+    y_test = file_labels[:n_test]
+
+    X_train = files[n_test: n_test + n_train]
+    y_train = file_labels[n_test: n_test + n_train]
+    print("loaded finetuning data", len(X_train) + len(X_test))
+
     augment_img = config.img_augmentation
     train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img)
     test_data = RobotDataset(X_test, y_test, config)

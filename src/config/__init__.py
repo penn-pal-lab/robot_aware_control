@@ -235,7 +235,8 @@ def add_dataset_arguments(parser):
     parser.add_argument("--random_crop_size", type=int, default=59)
     parser.add_argument("--dropout", type=float, default=None)
     parser.add_argument("--world_error_dict", type=str, default=None)
-    parser.add_argument("--finetune_num_videos", type=int, default=500)
+    parser.add_argument("--finetune_num_train", type=int, default=400)
+    parser.add_argument("--finetune_num_test", type=int, default=100)
 
 
 
