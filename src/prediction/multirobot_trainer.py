@@ -634,6 +634,8 @@ class MultiRobotPredictionTrainer(object):
         # first frame of all videos
         start = 0
         video_len = cf.n_eval
+        if name in ["comparison", "train"]:
+            video_len = cf.n_past + cf.n_future
         end = start + video_len
         if random_start:
             offset = x.shape[0] - video_len
@@ -655,7 +657,7 @@ class MultiRobotPredictionTrainer(object):
             gen_seq[s].append(x[0])
 
             x_j = x[0]
-            for i in range(1, cf.n_eval):
+            for i in range(1, video_len):
                 # let j be i - 1, or previous timestep
                 m_j, r_j, a_j = mask[i - 1], robot[i - 1], ac[i - 1]
                 x_i, m_i, r_i = x[i], mask[i], robot[i]
@@ -687,12 +689,12 @@ class MultiRobotPredictionTrainer(object):
                 gen_seq[s].append(x_j)
 
         to_plot = []
-        gifs = [[] for t in range(cf.n_eval)]
+        gifs = [[] for t in range(video_len)]
         nrow = b
         for i in range(nrow):
             # ground truth sequence
             row = []
-            for t in range(cf.n_eval):
+            for t in range(video_len):
                 row.append(gt_seq[t][i])
             to_plot.append(row)
             if cf.model == "svg":
@@ -702,10 +704,10 @@ class MultiRobotPredictionTrainer(object):
             for ss in range(len(s_list)):
                 s = s_list[ss]
                 row = []
-                for t in range(cf.n_eval):
+                for t in range(video_len):
                     row.append(gen_seq[s][t][i])
                 to_plot.append(row)
-            for t in range(cf.n_eval):
+            for t in range(video_len):
                 row = []
                 row.append(gt_seq[t][i])
                 for ss in range(len(s_list)):
@@ -734,6 +736,8 @@ class MultiRobotPredictionTrainer(object):
         # first frame of all videos
         start = 0
         video_len = cf.n_eval
+        if name in ["comparison", "train"]:
+            video_len = cf.n_past + cf.n_future
         end = start + video_len
         if random_start:
             offset = x.shape[0] - video_len
@@ -751,7 +755,7 @@ class MultiRobotPredictionTrainer(object):
             self._zero_robot_region(mask[0], x[0])
         gen_seq.append(x[0])
         skip = None
-        for i in range(1, cf.n_eval):
+        for i in range(1, video_len):
             # let j be i - 1, or previous timestep
             x_j, m_j, r_j, a_j = x[i - 1], mask[i - 1], robot[i - 1], ac[i - 1]
             x_i, m_i, r_i = x[i], mask[i], robot[i]
@@ -782,7 +786,7 @@ class MultiRobotPredictionTrainer(object):
         nrow = b
         for i in range(nrow):
             row = []
-            for t in range(cf.n_eval):
+            for t in range(video_len):
                 row.append(gen_seq[t][i])
             to_plot.append(row)
         fname = os.path.join(cf.plot_dir, f"{name}_rec_{epoch}.png")
