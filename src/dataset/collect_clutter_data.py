@@ -7,7 +7,7 @@ import h5py
 import imageio
 import numpy as np
 from src.config import argparser
-from src.env.fetch.clutter_push import ClutterPushEnv
+from src.env.robotics.clutter_push import ClutterPushEnv
 from tqdm import tqdm
 
 
@@ -34,6 +34,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
     config.seed = rank
     env = ClutterPushEnv(config)
     len_stats = []
+    obj_moved_stats = defaultdict(list)
     it = range(num_trajectories)
     if rank == 0:
         it = tqdm(it)
@@ -59,6 +60,11 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
             states.append(ob["state"])
             for obj in env._objects:
                 obj_poses[obj + ":joint"].append(ob[obj + ":joint"])
+        # record object changes
+        for obj in env._objects:
+            obj_change = np.linalg.norm(obj_poses[f"{obj}:joint"][-1][:2] - obj_poses[f"{obj}:joint"][0][:2])
+            obj_moved_stats[obj].append(obj_change)
+
         object_inpaint_demo = np.asarray(object_inpaint_demo)
         robot = np.asarray(robot)
         actions = history["ac"]
@@ -98,7 +104,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
                 gif_object_only_img = object_only_img.copy()
                 putText(gif_object_only_img, f"NO-ROBOT", (10, 10))
 
-                cost = -np.linalg.norm(gif_inpaint_img - gif_object_only_img)
+                cost = -np.linalg.norm(gif_inpaint_img.astype(np.float) - gif_object_only_img.astype(np.float))
                 putText(gif_inpaint_img, f"{cost:.0f}", (0, 126))
                 img = np.concatenate(
                     [gif_robot_img, gif_inpaint_img, gif_object_only_img], axis=1
@@ -126,11 +132,18 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
                 create_dataset(obj + ":joint", data=obj_poses[obj + ":joint"])
 
     # print out stats about the dataset
-    stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}"
+    stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}\n"
     print(stats_str)
     stats_path = os.path.join(config.demo_dir, f"stats_{behavior}_{config.seed}.txt")
     with open(stats_path, "w") as f:
         f.write(stats_str)
+         # count number of episodes where object moved
+        for obj in env._objects:
+            obj_move = np.asarray(obj_moved_stats[obj])
+            stats_str = f"{obj} dist mean: {obj_move.mean()} min: {obj_move.min():.2f}, max: {obj_move.max():.2f}\n"
+            f.write(stats_str)
+            stats_str = f"Num episodes where {obj} moved more than 1cm {np.sum(obj_move > 0.01)}\n"
+            f.write(stats_str)
 
 
 def create_demo_dataset(config, num_demo, num_workers, record, behavior, ep_len):
@@ -163,8 +176,8 @@ def collect_demo_cem_data():
     """
     Used for collecting the demo dataset for demo CEM
     """
-    num_demo = 50  # per worker
-    num_workers = 2
+    num_demo = 100  # per worker
+    num_workers = 1
     record = False
     behavior = "straight_push"
     ep_len = 12  # gonna be off by -1 because of reset but whatever
@@ -173,11 +186,12 @@ def collect_demo_cem_data():
     config.norobot_pixels_ob = True  # whether to inpaint the robot in observation
 
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/straight_push"
+    config.robot_mask_with_obj = False
+    config.demo_dir = "demos/table_realrobotmask_straight_push"
     config.most_recent_background = False  # use static or mr background for inpaint
     config.multiview = True
     config.img_dim = 64
-    config.camera_ids = [0, 1]
+    config.camera_ids = [0, 2]
     create_demo_dataset(config, num_demo, num_workers, record, behavior, ep_len)
 
 
@@ -187,9 +201,9 @@ def collect_svg_data():
     Collect 7k noisy pushing, 3k truly random demonstrations
     Each demo is around 7-14 steps long, and the dataset will be around 100k images total
     """
-    num_workers = 1
-    num_push = 100 // num_workers
-    num_rand = 100 // num_workers
+    num_workers = 10
+    num_push = 20000 // num_workers
+    num_rand = 10000 // num_workers
     record = False
     ep_len = 12  # gonna be off by 1 because of reset but whatever
 
@@ -197,17 +211,17 @@ def collect_svg_data():
     config.norobot_pixels_ob = True
     config.inpaint_eef = True
     config.reward_type = "inpaint"
-    config.demo_dir = "demos/mask_svg_train"
+    config.robot_mask_with_obj = False
+    config.demo_dir = "demos/table_svg_train"
     config.most_recent_background = False
     config.multiview = True
     config.img_dim = 64
-    config.camera_ids = [0, 1]
-    config.temporal_beta = 0.3  # control random policy's temporal correlation
+    config.camera_ids = [0, 2]
+    config.temporal_beta = 0.2  # control random policy's temporal correlation
     config.action_noise = 0.05
     # create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)
-    create_demo_dataset(
-       config, num_rand, num_workers, record, "random_robot", ep_len
-    )
+    create_demo_dataset(config, num_push, num_workers, record, "temporal_random_robot", ep_len)
+    create_demo_dataset(config, num_rand, num_workers, record, "random_robot", ep_len)
 
 
 if __name__ == "__main__":

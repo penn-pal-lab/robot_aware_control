@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from src.config import argparser
-from src.env.fetch.clutter_push import ClutterPushEnv
+from src.env.robotics.clutter_push import ClutterPushEnv
 from tqdm import tqdm, trange
 
 

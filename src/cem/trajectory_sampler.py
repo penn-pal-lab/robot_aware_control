@@ -1,12 +1,13 @@
+from src.prediction.losses import RobotWorldCost
 import time as timer
 from collections import defaultdict
+from src.utils.state import State, DemoGoalState
 
 import numpy as np
 import torch
 from torch import cat
 import torch.multiprocessing as mp
 from src.prediction.models.dynamics import DynamicsModel
-from torchvision.transforms.functional import to_tensor
 
 
 @torch.no_grad()
@@ -15,11 +16,8 @@ def generate_model_rollouts(
     env,
     model: DynamicsModel,
     action_sequences,
-    start_img,
-    start_mask,
-    start_robot,
-    start_sim,
-    goal_imgs,
+    start_state: State,
+    goal: DemoGoalState,
     opt_traj=None,
     ret_obs=False,
     ret_step_cost=False,
@@ -38,6 +36,7 @@ def generate_model_rollouts(
 
     Returns a dictionary containing the cost per trajectory by default.
     """
+    cost = RobotWorldCost(cfg)
     dev = cfg.device
     N = len(action_sequences)  # Number of candidate action sequences
     ac_per_batch = cfg.candidates_batch_size
@@ -46,10 +45,11 @@ def generate_model_rollouts(
     sum_cost = np.zeros(N)
     all_obs = torch.zeros((N, T, 3, 128, 64))  # N x T x obs
     all_step_cost = np.zeros((N, T))  # N x T x 1
-    goal_imgs = torch.stack([to_tensor(g) for g in goal_imgs]).to(dev)
-    if opt_traj is not None:  # for debug comparison
-        opt_traj = torch.stack([to_tensor(g) for g in opt_traj]).to(dev)
-    start_mask = torch.from_numpy(start_mask).unsqueeze_(0)
+    goal_imgs = torch.stack(
+        [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in goal.imgs]
+    ).to(dev)
+    goal_masks = torch.stack([torch.from_numpy(g) for g in goal.masks]).to(dev)
+    start_mask = torch.from_numpy(start_state.mask).unsqueeze_(0)
     optimal_sum_cost = 0
     if not suppress_print:
         start_time = timer.time()
@@ -61,12 +61,18 @@ def generate_model_rollouts(
         action_batch = action_sequences[start:end]
         actions = action_batch.to(dev)
         model.reset(batch_size=num_batch)
-        curr_img = cat([to_tensor(start_img.copy()), start_mask], dim=0)
+        curr_img = cat(
+            [
+                torch.from_numpy(start_state.img.copy()).permute(2, 0, 1).float() / 255,
+                start_mask,
+            ],
+            dim=0,
+        )
         curr_img = curr_img.expand(num_batch, -1, -1, -1).to(dev)  # (N x |I|)
         curr_robot = (
-            torch.from_numpy(start_robot.copy()).expand(num_batch, -1).to(dev)
+            torch.from_numpy(start_state.robot.copy()).expand(num_batch, -1).to(dev)
         )  # N x |A|)
-        curr_sim = [start_sim] * num_batch  # (N x D)
+        curr_sim = [start_state.sim] * num_batch  # (N x D)
         curr_mask = torch.zeros((num_batch, 1, 128, 64), dtype=torch.bool).to(
             dev
         )  # (N x 1 x H x W)
@@ -86,26 +92,16 @@ def generate_model_rollouts(
             # compute the img costs
             goal_idx = t if t < len(goal_imgs) else -1
             goal_img = goal_imgs[goal_idx]
-            if opt_traj is not None:  # for debug comparison
-                opt_img = opt_traj[goal_idx]
-
+            goal_robot = goal.robots[goal_idx]
+            goal_mask = None
+            if goal.masks is not None:
+                goal_mask = goal_masks[goal_idx]
+            goal_state = State(img=goal_img, robot=goal_robot, mask=goal_mask)
+            curr_state = State(img=next_img, robot=curr_robot, mask=curr_mask)
             rew = 0
             # sparse_cost only uses last frame of trajectory for cost
-            if not cfg.sparse_cost or (cfg.sparse_cost and t == T-1):
-                rew = (
-                    -(torch.sum((255 * (next_img - goal_img)) ** 2, (1, 2, 3)))
-                    .sqrt()
-                    .cpu()
-                    .numpy()
-                )  # N x 1
-                if opt_traj is not None and b == 0:
-                    optimal_sum_cost += (
-                        -(torch.sum((255 * (opt_img - goal_img)) ** 2))
-                        .sqrt()
-                        .cpu()
-                        .numpy()
-                    )
-
+            if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
+                rew = cost(curr_state, goal_state)
             sum_cost[start:end] += rew
             if ret_obs:
                 all_obs[start:end, t] = next_img.cpu()  # B x T x Obs
@@ -137,11 +133,11 @@ def generate_env_rollouts(
     cfg,
     env,
     action_sequences,
-    goal_imgs,
+    goal: DemoGoalState,
     ret_obs=False,
     ret_step_cost=False,
     suppress_print=True,
-    opt_traj=None
+    opt_traj=None,
 ):
     """
     Executes the action sequences on the environment. Used by the ground truth
@@ -157,13 +153,14 @@ def generate_env_rollouts(
 
     Returns a dictionary containing the cost per trajectory by default.
     """
+    cost = RobotWorldCost(cfg)
     N = len(action_sequences)  # Number of candidate action sequences
     T = len(action_sequences[0])
     sum_cost = np.zeros(N)
     all_obs = []  # N x T x obs
     all_step_cost = []  # N x T x 1
-
-    bg_img = env._background_img.copy()
+    if env._background_img is not None:
+        bg_img = env._background_img.copy()
     env_state = env.get_flattened_state()
     if not suppress_print:
         start_time = timer.time()
@@ -173,19 +170,34 @@ def generate_env_rollouts(
         ep_cost = []
         optimal_sum_cost = 0
         for t in range(T):
-            goal_idx = t if t < len(goal_imgs) else -1
-            goal_img = goal_imgs[goal_idx]
+            goal_idx = t if t < len(goal.imgs) else -1
+            goal_img = goal.imgs[goal_idx].astype(np.float32)
+            goal_robot = goal.robots[goal_idx]
+            goal_mask = None
+            if goal.masks is not None:
+                goal_mask = goal.masks[goal_idx]
+            goal_state = State(img=goal_img, robot=goal_robot, mask=goal_mask)
             if opt_traj is not None:  # for debug comparison
-                opt_img = opt_traj[goal_idx]
+                opt_state = opt_traj[goal_idx]
+
             action = action_sequences[ep_num, t].numpy()
             ob, _, _, _ = env.step(action)
 
-            img = ob["observation"]
+            img = ob["observation"].astype(np.float32)
+            robot = ob["robot"]
+            mask = ob["mask"]
+            curr_state = State(img=img, robot=robot, mask=mask)
             rew = 0
-            if not cfg.sparse_cost or (cfg.sparse_cost and t == T-1):
-                rew = -np.linalg.norm(img - goal_img)
-                if opt_traj is not None:
-                    optimal_sum_cost += -np.linalg.norm(opt_img - goal_img)
+            if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
+                rew = cost(curr_state, goal_state)
+                if opt_traj is not None and ep_num == 0:
+                    optimal_sum_cost += cost(opt_state, goal_state)
+
+                    # print("env", optimal_sum_cost, goal_idx)
+                    # import pickle
+                    # with open(f"env_goal_{t}.pkl", "wb") as f:
+                    #     data = {"opt_img": opt_img, "goal_img": goal_img}
+                    #     pickle.dump(data, f)
 
             sum_cost[ep_num] += rew
             if ret_obs:
@@ -196,7 +208,8 @@ def generate_env_rollouts(
         all_obs.append(ep_obs)
         all_step_cost.append(ep_cost)
         env.set_flattened_state(env_state.copy())  # reset env to before rollout
-        env._background_img = bg_img.copy()
+        if env._background_img is not None:
+            env._background_img = bg_img.copy()
     if not suppress_print:
         print(
             "======= Samples Gathered  ======= | >>>> Time taken = %f "

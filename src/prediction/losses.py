@@ -1,12 +1,57 @@
 """Loss functions for the video prediction"""
 import numpy as np
+from numpy.linalg import norm
 import torch
+from torch.functional import Tensor
 import torch.nn as nn
 from skimage.filters import gaussian
 from torchvision.transforms import ToTensor
+from src.utils.state import State
 
 mse_criterion = nn.MSELoss()
 l1_criterion = nn.L1Loss()
+
+def dontcare_mse_criterion(prediction, target, mask, robot_weight):
+    """
+    Zero out the robot region from the target image before summing up the cost
+    prediction / target is B x C x H x W
+    mask is B x 1 x H x W
+    """
+    diff = target - prediction # 3 x H x W
+    mask = mask.type(torch.bool)
+    repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
+    diff[repeat_mask] *= robot_weight
+    num_world_pixels = (~repeat_mask).sum()
+    mean_squared_err = torch.sum(diff ** 2) / num_world_pixels
+    return mean_squared_err
+
+def robot_mse_criterion(prediction, target, mask):
+    """
+    MSE of the robot pixels
+    prediction / target is B x C x H x W
+    mask is B x 1 x H x W
+    """
+    diff = target - prediction # 3 x H x W
+    mask = mask.type(torch.bool)
+    repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
+    diff[~repeat_mask] = 0
+    num_robot_pixels = repeat_mask.sum()
+    mean_squared_err = torch.sum(diff ** 2) / num_robot_pixels
+    return mean_squared_err
+
+def world_mse_criterion(prediction, target, mask):
+    """
+    MSE of the world pixels
+    prediction / target is B x C x H x W
+    mask is B x 1 x H x W
+    """
+    diff = target - prediction # 3 x H x W
+    mask = mask.type(torch.bool)
+    repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
+    diff[repeat_mask] = 0
+    num_world_pixels = (~repeat_mask).sum()
+    mean_squared_err = torch.sum(diff ** 2) / num_world_pixels
+    return mean_squared_err
 
 
 def kl_criterion(mu1, logvar1, mu2, logvar2, bs):
@@ -17,7 +62,7 @@ def kl_criterion(mu1, logvar1, mu2, logvar2, bs):
         + (torch.exp(logvar1) + (mu1 - mu2) ** 2) / (2 * torch.exp(logvar2))
         - 1 / 2
     )
-    assert kld.shape[0] == bs
+    assert kld.shape[0] == bs, f"{kld.shape[0]} != {bs}"
     return kld.sum() / bs
 
 
@@ -67,3 +112,154 @@ class InpaintBlurCost:
 
         cost = scale * mse_criterion(img, goal)
         return cost
+
+# def img_l2_dist(curr_img, goal_img):
+#     # makes sure to cast uint8 img to float before norming
+#     dist = norm(curr_img.astype(np.float) - goal_img.astype(np.float))
+#     return dist
+
+# def eef_inpaint_cost(curr_eef, goal_eef, curr_img, goal_img, robot_weight, print_cost=False):
+#     """
+#     Assumes the images are inpainted.
+#     """
+#     eef_loss = -norm(curr_eef - goal_eef)
+#     # TODO: add option for don't-care cost instead of inpaint image cost.
+#     image_cost = -img_l2_dist(curr_img, goal_img)
+#     if print_cost:
+#         print(f"eef_cost: {robot_weight * eef_loss :.2f},  img cost: {image_cost :.2f}")
+#     return robot_weight * eef_loss + image_cost
+
+class Cost:
+    """Generic Cost fn interface"""
+    name = "generic_cost"
+    def __init__(self, config):
+        self._config = config
+
+    def __call__(self, curr: State, goal: State):
+        raise NotImplementedError()
+
+class RobotL2Cost(Cost):
+    name="robot_l2"
+    def call(self, curr_robot, goal_robot):
+        if curr_robot is None or goal_robot is None:
+            return 0
+        # TODO: check for tensor vs np array
+        return -norm(curr_robot - goal_robot)
+
+    def __call__(self, curr: State, goal: State):
+        return self.call(curr.robot, goal.robot)
+
+
+class ImgL2Cost(Cost):
+    name = "img_l2"
+    def _call(self, curr_img, goal_img):
+        if curr_img is None or goal_img is None:
+            return 0
+        curr_img = curr_img.astype(np.float)
+        goal_img = goal_img.astype(np.float)
+        threshold = self._config.img_cost_threshold
+        if threshold is None:
+            dist = norm(curr_img - goal_img)
+        else:
+            diff = np.abs(curr_img - goal_img)
+            dist = np.sum(diff > threshold)
+        return -dist
+
+    def _call_tensor(self, curr_img: Tensor, goal_img: Tensor):
+        if curr_img is None or goal_img is None:
+            return 0
+        img_diff = (255 * (curr_img - goal_img)) ** 2
+        if len(img_diff.shape) == 4: # batch x |img|
+            sum_diff = torch.sum(img_diff, (1, 2, 3)) # sum up across image dimensions
+        elif len(img_diff.shape) == 3: # img only
+            sum_diff = torch.sum(img_diff)
+        else:
+            raise NotImplementedError(f"Tensor shape {img_diff.shape} not supported")
+        dist = sum_diff.sqrt().cpu().numpy()
+        return -dist
+
+    def __call__(self, curr: State, goal: State):
+        if isinstance(curr.img, Tensor) or isinstance(goal.img, Tensor):
+            return self._call_tensor(curr.img, goal.img)
+        return self._call(curr.img, goal.img)
+
+class ImgDontcareCost(Cost):
+    name = "img_dontcare"
+    def _call_tensor(self, curr_img, goal_img, curr_mask, goal_mask):
+        if curr_img is None or goal_img is None:
+            return 0
+        img_diff = (255 * (curr_img - goal_img)) ** 2
+        total_mask_2d = curr_mask | goal_mask
+        total_mask = total_mask_2d.repeat(1,3,1,1)
+        img_diff[total_mask] = 0 # set robot region to 0
+        if len(img_diff.shape) == 4: # batch x |img|
+            sum_diff = torch.sum(img_diff, (1, 2, 3)) # sum up across image dimensions
+        elif len(img_diff.shape) == 3: # img only
+            sum_diff = torch.sum(img_diff)
+        else:
+            raise NotImplementedError(f"Tensor shape {img_diff.shape} not supported")
+        dist = sum_diff.sqrt()
+        num_world_pixels = torch.sum(~total_mask_2d, (1,2,3))
+        dist /= num_world_pixels
+        dist = dist.cpu().numpy()
+        return -dist
+
+    def _call(self, curr_img, goal_img, curr_mask, goal_mask):
+        if curr_img is None or goal_img is None:
+            return 0
+        curr_img = curr_img.astype(np.float)
+        goal_img = goal_img.astype(np.float)
+
+        total_mask = curr_mask | goal_mask
+        non_robot_region1 = curr_img[~total_mask]
+        non_robot_region2 = goal_img[~total_mask]
+        threshold = self._config.img_cost_threshold
+        if threshold is None:
+            non_robot_loss = norm(non_robot_region1 - non_robot_region2)
+        else:
+            non_robot_diff = np.abs(non_robot_region1 - non_robot_region2)
+            non_robot_loss = np.sum(non_robot_diff > threshold)
+
+        if self._config.img_cost_world_norm:
+            non_robot_loss /= np.sum(~total_mask)
+        return -non_robot_loss
+
+    def __call__(self, curr: State, goal: State):
+        if isinstance(curr.img, Tensor) or isinstance(goal.img, Tensor):
+            return self._call_tensor(curr.img, goal.img, curr.mask, goal.mask)
+        return self._call(curr.img, goal.img, curr.mask, goal.mask)
+
+
+class RobotWorldCost(Cost):
+    """Combination of a robot and a world cost."""
+    def __init__(self, config):
+        self._config = config
+        self._build_robot_cost(config)
+        self._build_world_cost(config)
+
+    def _build_robot_cost(self, config):
+        self.robot_cost_weight = config.robot_cost_weight
+        self.robot_cost = RobotL2Cost(config)
+
+    def _build_world_cost(self, config):
+        self.world_cost_weight = config.world_cost_weight
+        self.world_cost = ImgL2Cost(config)
+        if config.reward_type == "dontcare":
+            self.world_cost = ImgDontcareCost(config)
+
+    def __call__(self, curr: State, goal: State, print_cost=False):
+        weights = [self.robot_cost_weight, self.world_cost_weight]
+        costs = [self.robot_cost, self.world_cost]
+        total_cost = 0
+        print_str = ""
+        for w, c in zip(weights, costs):
+            if w == 0:
+                continue
+            cost = w * c(curr, goal)
+            if print_cost:
+                print_str += f"{c.name}: {cost:.2f} ,"
+            total_cost += cost
+        if print_cost:
+            print(print_str)
+
+        return total_cost

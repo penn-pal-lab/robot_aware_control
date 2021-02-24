@@ -1,12 +1,9 @@
 import os
 import random
 
-import ipdb
-
 from src.dataset.video_dataset import VideoDataset
 from torchvision.datasets.folder import has_file_allowed_extension
 from torch.utils.data import DataLoader
-import torch
 
 
 def create_split(config):

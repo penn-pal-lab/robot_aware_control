@@ -6,6 +6,8 @@ data
 *.out
 inpaintobs.gif
 *.pt
+robonet_images/
+visualize_actions.pkl
 
 # IDE
 *.swp
@@ -138,3 +140,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+ckpt_eval

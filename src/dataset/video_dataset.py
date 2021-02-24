@@ -59,7 +59,6 @@ class VideoDataset(data.Dataset):
         # plt.scatter(x=all_actions[:, 0], y=all_actions[:,1])
         # plt.show()
 
-
     def __getitem__(self, index):
         path = self._files[index]
         # item = self._cache.get(path)

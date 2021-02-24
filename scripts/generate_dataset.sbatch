@@ -7,4 +7,4 @@
 #SBATCH -o ./gendataset.out
 #SBATCH -e ./gendataset.out
 
-python -m src.env.fetch.fetch_push
+python -m src.env.robotics.fetch_push

@@ -7,7 +7,7 @@ import h5py
 import imageio
 import numpy as np
 from src.config import argparser
-from src.env.fetch.clutter_push import ClutterPushEnv
+from src.env.robotics.clutter_push import ClutterPushEnv
 from tqdm import tqdm
 
 
@@ -133,7 +133,7 @@ def collect_push_data():
     config.action_noise = 0.5
     # create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)
     create_demo_dataset(
-       config, num_push, num_workers, record, "temporal_random_robot", ep_len
+        config, num_push, num_workers, record, "temporal_random_robot", ep_len
     )
 
 

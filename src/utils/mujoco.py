@@ -1,6 +1,7 @@
 """Module for caching Python modules related to simulation."""
 
 import sys
+import os
 
 _MUJOCO_PY_MODULE = None
 
@@ -54,3 +55,42 @@ def _mj_warning_fn(warn_data: bytes):
             warn_data.decode()
         )
     )
+
+def init_mjrender_device(config):
+    """
+    Decide which device to render on for mujoco.
+    -1 is CPU.
+    """
+    if config.gpu is None:
+        config.render_device = -1
+    else: # use the GPU
+        # if slurm job, need to get the SLURM GPUs from env var
+        if "SLURM_JOB_GPUS" in os.environ or "SLURM_STEP_GPUS" in os.environ:
+            if "SLURM_JOB_GPUS" in os.environ:
+                gpus = os.environ["SLURM_JOB_GPUS"].split(",")
+            elif "SLURM_STEP_GPUS" in os.environ:
+                gpus = os.environ["SLURM_STEP_GPUS"].split(",")
+            gpus = [int(i) for i in gpus]
+            config.render_device = gpus[config.gpu]
+        else:
+            config.render_device = config.gpu
+    print("MjRender Device:", config.render_device)
+
+def get_mjrender_device(initial_render_device=None):
+    """
+    Decide which device to render on for mujoco.
+    -1 is CPU.
+    """
+    if initial_render_device is None:
+        return -1
+    else: # use the GPU
+        # if slurm job, need to get the SLURM GPUs from env var
+        if "SLURM_JOB_GPUS" in os.environ or "SLURM_STEP_GPUS" in os.environ:
+            if "SLURM_JOB_GPUS" in os.environ:
+                gpus = os.environ["SLURM_JOB_GPUS"].split(",")
+            elif "SLURM_STEP_GPUS" in os.environ:
+                gpus = os.environ["SLURM_STEP_GPUS"].split(",")
+            gpus = [int(i) for i in gpus]
+            initial_render_device = gpus[initial_render_device]
+    print("MjRender Device:", initial_render_device)
+    return initial_render_device
