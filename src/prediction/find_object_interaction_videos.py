@@ -428,14 +428,15 @@ if __name__ == "__main__":
     file_type = "hdf5"
     files = []
     file_labels = []
-    robots = ["baxter"]
+    robots = ["sawyer"]
     arm = "left"
 
-    data_path = os.path.join(config.data_root, "new_hdf5")
+    data_path = os.path.join(config.data_root, "sawyer_views", "sudri2_c1")
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             for r in robots:
-                if f"{r}_{arm}" in d.path:
+                # if f"{r}_{arm}" in d.path:
+                if f"sawyer" in d.path:
                     files.append(d.path)
                     file_labels.append(r)
                     break
@@ -444,7 +445,7 @@ if __name__ == "__main__":
     random.shuffle(files)
 
     files = files[:]
-    file_labels = ["baxter"] * len(files)
+    file_labels = ["sawyer"] * len(files)
     # iterate through videos
     # compute error for each video
     # if error > threshold, save the video
@@ -466,7 +467,7 @@ if __name__ == "__main__":
     num_snippets = 0
 
     num_gifs = 0
-    max_gifs = 10
+    max_gifs = 100
 
     """
     Meta dictionary that stores information about each sequence.
@@ -492,12 +493,12 @@ if __name__ == "__main__":
             batch = x[s:e], masks[s:e], names
             losses = eval_step(batch, model, config)
             num_snippets += 1
-            if losses["world_mse"].item() > 0.01:
+            if losses["world_mse"].item() > 0.06:
                 high_err_video = True
                 num_high_err_snippets += 1
             entry = {"start": s, "end": e, "world_mse": losses["world_mse"].item(), "high_error": losses["world_mse"].item() > 0.01}
             meta_dict[video_name].append(entry)
-            # if losses["world_mse"] > 0.01 and num_gifs < max_gifs:
+            # if losses["world_mse"] > 0.06 and num_gifs < max_gifs:
             #     # save video
             #     mask = batch[1]
             #     robot_mask = mask.type(torch.bool)
@@ -509,9 +510,12 @@ if __name__ == "__main__":
             #     gif_name = f"{name}_{losses['world_mse']:.6f}.gif"
             #     imageio.mimwrite(gif_name, imgs)
             #     num_gifs += 1
+            # if num_gifs >= max_gifs:
+            #     break
             all_err.append(losses["world_mse"])
             pbar.update()
-
+        if num_gifs >= max_gifs:
+            break
         if high_err_video:
             num_high_err_videos += 1
     print(f"number of videos with high errors {num_high_err_videos}/{len(dataset)}")
@@ -522,8 +526,8 @@ if __name__ == "__main__":
     # print(all_err.mean())
     # plt.hist(all_err, bins=24, color='c', edgecolor='k', alpha=0.65)
     # plt.axvline(all_err.mean(), color='k', linestyle='dashed', linewidth=1)
-    # # plt.show()
     # plt.savefig("world_error_histogram.png")
+    # plt.show()
 
     # save meta dict
     with open(f"baxter_{arm}_world_error.pkl", "wb") as f:
