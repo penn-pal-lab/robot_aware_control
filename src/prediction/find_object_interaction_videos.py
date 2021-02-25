@@ -414,7 +414,7 @@ if __name__ == "__main__":
     Generate meta dictionary for recording baseline error per video
     """
     config, _ = argparser()
-    config.data_root = "/home/ed/Robonet"
+    config.data_root = "/scratch/edward/Robonet"
     config.batch_size = 1
     config.video_length = 31
     config.image_width = 64
@@ -530,5 +530,5 @@ if __name__ == "__main__":
     # plt.show()
 
     # save meta dict
-    with open(f"baxter_{arm}_world_error.pkl", "wb") as f:
+    with open(f"sudri2_c1_world_error.pkl", "wb") as f:
         pickle.dump(meta_dict, f)
