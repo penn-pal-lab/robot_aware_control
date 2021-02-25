@@ -15,7 +15,16 @@
         <mesh name="GUIDE_WSG50_110" file="GUIDE_WSG50_110.stl" scale="0.001 0.001 0.001" />
         <mesh name="WSG-FMF" file="WSG-FMF.stl" scale="0.001 0.001 0.001" />
     </asset>
+	<equality>
+        <weld body1="robot0:mocap" body2="right_hand" solimp="0.9 0.95 0.001" solref="0.02 1"></weld>
+    </equality>
     <worldbody>
+		<body mocap="true" name="robot0:mocap" pos="0 0 0">
+            <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0 1 0 0" size="0.005 0.005 0.005" type="box"></geom>
+            <geom conaffinity="0" contype="0" pos="0 0 0" rgba="1 0 0 0" size="1 0.005 0.005" type="box"></geom>
+            <geom conaffinity="0" contype="0" pos="0 0 0" rgba="1 0 0 0" size="0.005 1 0.001" type="box"></geom>
+            <geom conaffinity="0" contype="0" pos="0 0 0" rgba="1 0 0 0" size="0.005 0.005 1" type="box"></geom>
+        </body>
 
     	<body name="base" pos="0 0 0" quat="1 0 0 0">
 			<body name="eef_body">
@@ -98,7 +107,8 @@
     											<!-- This sites were added for visualization. They are all standardized between models-->
 												<!-- Position mimics the gripper attachment point (right_hand) -->
 												<!--  Y-axis should be perpendicular to grasping motion, and Z-axis should point out of the robot eef -->
-												<site name="ee" pos="0 0 0" size="0.01 0.01 0.01" rgba="0 0 1 1" type="sphere" group="1"/>
+												<!-- <site name="ee" pos="0 0 0" size="0.01 0.01 0.01" rgba="0 0 1 1" type="sphere" group="1"/> -->
+												<site name="ee" pos="0 0 0.004" size="0.01 0.01 0.01" rgba="0 0 1 1" type="sphere" group="1"/>
 												<site name="ee_x" pos="0 0 0" size="0.005 .1"  quat="0.707105 0.707108 0 0 " rgba="1 0 0 0" type="cylinder" group="1"/>
 												<site name="ee_z" pos="0 0 0" size="0.005 .1" quat="0.707105 0 0 0.707108" rgba="0 0 1 0" type="cylinder" group="1"/>
 												<site name="ee_y" pos="0 0 0" size="0.005 .1" quat="0.707105 0 0.707108 0 " rgba="0 1 0 0" type="cylinder" group="1"/>

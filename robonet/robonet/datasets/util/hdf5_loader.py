@@ -225,6 +225,45 @@ def load_data_customized(f_name, file_metadata, hparams, rng=None):
 
     return images, states, qposes, ws_min, ws_max, viewpoint
 
+def load_trajectory(f_name, file_metadata, hparams, rng=None):
+    rng = random.Random(rng)
+
+    assert os.path.exists(f_name) and os.path.isfile(f_name), "invalid f_name"
+    with open(f_name, 'rb') as f:
+        buf = f.read()
+    # assert hashlib.sha256(buf).hexdigest(
+    # ) == file_metadata['sha256'], "file hash doesn't match meta-data. maybe delete pkl and re-generate?"
+
+    ws_min = file_metadata['low_bound']
+    ws_max = file_metadata['high_bound']
+    viewpoint = file_metadata['camera_configuration']
+    # print(file_metadata['camera_type'])
+
+    # For reading hdf5 file directly
+    with h5py.File(io.BytesIO(buf)) as hf:
+        start_time, n_states = 0, min([file_metadata['state_T'], file_metadata['img_T'], file_metadata['action_T'] + 1])
+        assert n_states > 1, "must be more than one state in loaded tensor!"
+        if 1 < hparams.load_T < n_states:
+            start_time = rng.randint(0, n_states - hparams.load_T)
+            n_states = hparams.load_T
+
+        assert all([0 <= i < file_metadata['ncam'] for i in hparams.cams_to_load]), "cams_to_load out of bounds!"
+        images, selected_cams = [], []
+        for cam_index in hparams.cams_to_load:
+            images.append(load_camera_imgs(cam_index, hf, file_metadata, hparams.img_size, start_time, n_states)[None])
+            selected_cams.append(cam_index)
+        images = np.swapaxes(np.concatenate(images, 0), 0, 1)
+
+        states = load_states(hf, file_metadata, hparams).astype(np.float32)[start_time:start_time + n_states]
+        # Denormalize
+        states *= (ws_max - ws_min)
+        states += ws_min
+
+        qposes = load_qpos(hf)
+
+        actions = load_actions(hf, file_metadata, hparams)
+
+    return images, states, qposes, actions, ws_min, ws_max, viewpoint
 
 if __name__ == '__main__':
     import argparse
