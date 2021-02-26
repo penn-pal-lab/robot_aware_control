@@ -18,7 +18,7 @@ from time import time
 from src.utils.camera_calibration import world_to_camera_dict
 
 
-class RobotDataset(data.Dataset):
+class JointPosDataset(data.Dataset):
     def __init__(
         self, hdf5_list, robot_list, config, augment_img=False, load_snippet=False
     ):
@@ -53,13 +53,6 @@ class RobotDataset(data.Dataset):
 
         self._rng = np.random.RandomState(config.seed)
         self._memory = {}
-        if config.preload_ram:
-            self.preload_ram()
-
-    def preload_ram(self):
-        # load everything into memory
-        for i in trange(len(self._traj_names), desc=f"loading into RAM"):
-            self._memory[i] = self.__getitem__(i)
 
     def __getitem__(self, idx):
         """
@@ -81,7 +74,6 @@ class RobotDataset(data.Dataset):
                 start = self._rng.randint(0, offset + 1)
                 end = start + self._video_length
 
-            images = hf["frames"][start:end]
             states = hf["states"][start:end].astype(np.float32)
             # actions = hf["actions"][start:end - 1].astype(np.float32)
             low = hf["low_bound"][:]
@@ -90,29 +82,27 @@ class RobotDataset(data.Dataset):
             masks = hf["mask"][start:end].astype(np.float32)
 
             assert (
-                len(images) == len(states) == len(actions) + 1 == len(masks)
-            ), f"{hdf5_path}, {images.shape}, {states.shape}, {actions.shape}, {masks.shape}"
+                len(states) == len(actions) + 1 == len(masks)
+            ), f"{hdf5_path}, {states.shape}, {actions.shape}, {masks.shape}"
 
             # preprocessing
-            images, masks = self._preprocess_images_masks(images, masks)
+            masks = torch.stack([self._img_transform(i) for i in masks])
             actions = self._preprocess_actions(states, actions, low, high, idx)
             states = self._preprocess_states(states, low, high)
 
             robot = hf.attrs["robot"]
         out = {
-            "images": images,
             "states": states,
             "actions": actions,
             "masks": masks,
             "robot": robot,
-            "file_name": name,
+            "file_name": os.path.basename(os.path.dirname(name)),
             "file_path": hdf5_path,
-            "idx": idx
+            "idx": idx,
         }
-        if self._config.learned_robot_dynamics:
-             # TODO: implement qpos loading
-            qpos = torch.zeros((images.shape[0], 5))
-            out["qpos"] = qpos
+        # TODO: implement qpos loading
+        qpos = torch.zeros((masks.shape[0], 7))
+        out["qpos"] = qpos
 
         return out
 
@@ -139,44 +129,6 @@ class RobotDataset(data.Dataset):
             return new_actions[start:end].astype(np.float32)
         else:
             raise ValueError(f"file adim {adim}, target adim {self._action_dim}")
-
-    def _preprocess_images_masks(self, images, masks):
-        """
-        Converts numpy image (uint8) [0, 255] to tensor (float) [0, 1].
-        """
-        if self._augment_img:
-            # img_mask = torch.cat([video_tensor, mask_tensor], dim=1)
-            crop_size = [self._config.random_crop_size] * 2
-            img_width = self._config.image_width
-            i, j, th, tw = tf.RandomCrop.get_params(
-                torch.zeros(3, img_width, img_width), crop_size
-            )
-            brightness = (1 - 0.2, 1 + 0.2)
-            contrast = (1 - 0.2, 1 + 0.2)
-            saturation = (1 - 0.2, 1 + 0.2)
-            hue = (-0.1, 0.1)
-            jitter = tf.ColorJitter.get_params(brightness, contrast, saturation, hue)
-            aug_imgs = []
-            aug_masks = []
-            for img, mask in zip(images, masks):
-                img = self._img_transform(img)
-                mask = self._img_transform(mask)
-                crop_img = F.crop(img, i, j, th, tw)
-                crop_mask = F.crop(mask, i, j, th, tw)
-                resized_img = F.resize(crop_img, img_width)
-                # cast back to 0 or 1 value
-                resized_mask = (
-                    F.resize(crop_mask, img_width).type(torch.bool).type(torch.float32)
-                )
-                color_img = jitter(resized_img)
-                aug_imgs.append(color_img)
-                aug_masks.append(resized_mask)
-            video_tensor = torch.stack(aug_imgs)
-            mask_tensor = torch.stack(aug_masks)
-        else:
-            video_tensor = torch.stack([self._img_transform(i) for i in images])
-            mask_tensor = torch.stack([self._img_transform(i) for i in masks])
-        return video_tensor, mask_tensor
 
     def _preprocess_states(self, states, low, high):
         """
@@ -288,7 +240,7 @@ class RobotDataset(data.Dataset):
 
 
 def process_batch(data, device):
-    data_keys = ["images", "states", "actions", "masks"]
+    data_keys = ["qpos", "states", "actions", "masks"]
     meta_keys = ["robot", "file_name", "file_path", "idx"]
     # transpose from (B, L, C, W, H) to (L, B, C, W, H)
     for k in data_keys:

@@ -1,7 +1,6 @@
 import argparse
 from argparse import ArgumentParser
 
-
 def str2bool(v):
     return v.lower() == "true"
 
@@ -182,9 +181,9 @@ def add_prediction_arguments(parser):
     )
     parser.add_argument("--action_dim", type=int, default=2)
     parser.add_argument("--action_enc_dim", type=int, default=2)
-
     parser.add_argument("--robot_dim", type=int, default=6)
     parser.add_argument("--robot_enc_dim", type=int, default=6)
+    parser.add_argument("--robot_joint_dim", type=int, default=7)
 
     parser.add_argument(
         "--beta", type=float, default=0.0001, help="weighting on KL to prior"
@@ -196,9 +195,7 @@ def add_prediction_arguments(parser):
         default=False,
         help="if true, skip connections go between frame t and frame t+t rather than last ground truth frame",
     )
-    # parser.add_argument(
-    #     "--stoch", type=str2bool, default=True, help="stochastic prediction"
-    # )
+
     parser.add_argument("--model", default="svg", choices=["svg", "det", "copy"])
     parser.add_argument("--model_use_mask", type=str2bool, default=True)
     parser.add_argument("--model_use_robot_state", type=str2bool, default=True)
@@ -208,6 +205,7 @@ def add_prediction_arguments(parser):
         "--robot_pixel_weight", type=float, default=0, help="weighting on robot pixels"
     )
 
+    parser.add_argument("--learned_robot_dynamics", type=str2bool, default=False_)
 
 def add_dataset_arguments(parser):
     parser.add_argument(

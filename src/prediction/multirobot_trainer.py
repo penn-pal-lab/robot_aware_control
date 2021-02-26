@@ -714,7 +714,7 @@ class MultiRobotPredictionTrainer(object):
                     s = s_list[ss]
                     row.append(gen_seq[s][t][i])
                 gifs[t].append(row)
-
+        # gifs is T x B x S x |I|
         fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.png")
         save_tensors_image(fname, to_plot)
 
