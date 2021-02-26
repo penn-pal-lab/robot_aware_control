@@ -188,6 +188,7 @@ def generate_robot_masks(env, df, hdf5_list, hparams, target_dir):
             f.create_dataset("states", data=states, compression="gzip")
             f.create_dataset("actions", data=actions, compression="gzip")
             f.create_dataset("frames", data=images, compression="gzip")
+            f.create_dataset("qpos", data=qposes,compression="gzip")
 
 if __name__ == "__main__":
     """

@@ -2,6 +2,7 @@ import os
 import random
 
 import ipdb
+import pickle
 import numpy as np
 import torch
 import torchvision.transforms as tf
@@ -21,12 +22,17 @@ def create_finetune_loaders(config):
     # finetune on unseen sawyer viewpoint
     file_type = "hdf5"
     files = []
+    # motion info
+    with open(config.world_error_dict, "rb") as f:
+        motion_info = pickle.load(f)
     file_labels = []
     data_path = os.path.join(config.data_root, "sawyer_views", SAWYER_TEST_DIRS[0])
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            files.append(d.path)
-            file_labels.append(SAWYER_TEST_DIRS[0])
+            high_error = any([x["high_error"] for x in motion_info[d.path]])
+            if high_error:
+                files.append(d.path)
+                file_labels.append(SAWYER_TEST_DIRS[0])
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
@@ -85,10 +91,15 @@ def create_transfer_loader(config):
     files = []
     file_labels = []
     data_path = os.path.join(config.data_root, "sawyer_views", SAWYER_TEST_DIRS[0])
+    # motion info
+    with open(config.world_error_dict, "rb") as f:
+        motion_info = pickle.load(f)
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            files.append(d.path)
-            file_labels.append(SAWYER_TEST_DIRS[0])
+            high_error = any([x["high_error"] for x in motion_info[d.path]])
+            if high_error:
+                files.append(d.path)
+                file_labels.append(SAWYER_TEST_DIRS[0])
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)

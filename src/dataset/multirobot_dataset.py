@@ -21,7 +21,7 @@ from src.utils.camera_calibration import world_to_camera_dict
 class RobotDataset(data.Dataset):
     def __init__(
         self, hdf5_list, robot_list, config, augment_img=False, load_snippet=False
-    ) -> None:
+    ):
         """
         hdf5_list: list of hdf5 files to load
         robot_list: list of robot type for each hdf5 file
@@ -99,7 +99,6 @@ class RobotDataset(data.Dataset):
             states = self._preprocess_states(states, low, high)
 
             robot = hf.attrs["robot"]
-
         out = {
             "images": images,
             "states": states,
@@ -110,6 +109,11 @@ class RobotDataset(data.Dataset):
             "file_path": hdf5_path,
             "idx": idx
         }
+        if self._config.learned_robot_dynamics:
+             # TODO: implement qpos loading
+            qpos = torch.zeros((images.shape[0], 5))
+            out["qpos"] = qpos
+
         return out
 
     def _load_actions(self, file_pointer, low, high, start, end):
@@ -144,10 +148,12 @@ class RobotDataset(data.Dataset):
             # img_mask = torch.cat([video_tensor, mask_tensor], dim=1)
             crop_size = [self._config.random_crop_size] * 2
             img_width = self._config.image_width
-            i,j,th,tw = tf.RandomCrop.get_params(torch.zeros(3, img_width, img_width), crop_size)
-            brightness = (1-0.2, 1+0.2)
-            contrast = (1-0.2, 1+0.2)
-            saturation = (1-0.2, 1+0.2)
+            i, j, th, tw = tf.RandomCrop.get_params(
+                torch.zeros(3, img_width, img_width), crop_size
+            )
+            brightness = (1 - 0.2, 1 + 0.2)
+            contrast = (1 - 0.2, 1 + 0.2)
+            saturation = (1 - 0.2, 1 + 0.2)
             hue = (-0.1, 0.1)
             jitter = tf.ColorJitter.get_params(brightness, contrast, saturation, hue)
             aug_imgs = []
@@ -155,11 +161,13 @@ class RobotDataset(data.Dataset):
             for img, mask in zip(images, masks):
                 img = self._img_transform(img)
                 mask = self._img_transform(mask)
-                crop_img = F.crop(img, i,j,th,tw)
-                crop_mask = F.crop(mask, i,j,th,tw)
+                crop_img = F.crop(img, i, j, th, tw)
+                crop_mask = F.crop(mask, i, j, th, tw)
                 resized_img = F.resize(crop_img, img_width)
                 # cast back to 0 or 1 value
-                resized_mask= F.resize(crop_mask, img_width).type(torch.bool).type(torch.float32)
+                resized_mask = (
+                    F.resize(crop_mask, img_width).type(torch.bool).type(torch.float32)
+                )
                 color_img = jitter(resized_img)
                 aug_imgs.append(color_img)
                 aug_masks.append(resized_mask)
@@ -278,6 +286,7 @@ class RobotDataset(data.Dataset):
     def __len__(self):
         return len(self._traj_names)
 
+
 def process_batch(data, device):
     data_keys = ["images", "states", "actions", "masks"]
     meta_keys = ["robot", "file_name", "file_path", "idx"]
@@ -285,6 +294,7 @@ def process_batch(data, device):
     for k in data_keys:
         data[k] = data[k].transpose_(1, 0).to(device)
     return data
+
 
 def get_batch(loader, device):
     """Infinite batch generator for dataloader
@@ -300,6 +310,7 @@ def get_batch(loader, device):
     while True:
         for data in loader:
             yield process_batch(data, device)
+
 
 if __name__ == "__main__":
     from src.config import argparser

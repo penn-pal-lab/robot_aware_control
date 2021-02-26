@@ -249,6 +249,33 @@ class SVGModel(DeterministicModel):
         return x_pred, skip, mu, logvar, mu_p, logvar_p
 
 
+class JointPosPredictor(nn.Module):
+    """
+    Predicts the next joint pos of the robot
+    """
+    def __init__(self, config):
+        super().__init__()
+
+        input_dim = config.robot_joint_dim + config.robot_dim + config.action_dim
+        output_dim = config.robot_joint_dim
+        self.predictor = MLPEncoder(input_dim, output_dim, 128)
+
+    def forward(self, joints, eef_pose, action):
+        """Predict the next joint position
+
+        Args:
+            joints (Tensor): Tensor of joint positions
+            eef_pos (Tensor): Tensor of end effector poses
+            action (Tensor): Tensor of end effector displacements
+
+        Returns:
+            Tensor: difference in joint positions between future and current joint position after applying action
+        """
+        input = cat([joints, eef_pose, action], 1)
+        out = self.predictor(input)
+        return out
+
+
 class CopyModel(nn.Module):
     """
     Baseline that copies the previous image  to predict the next image
