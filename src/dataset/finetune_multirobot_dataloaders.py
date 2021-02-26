@@ -96,8 +96,7 @@ def create_transfer_loader(config):
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             if "baxter_left" in d.path:
-                # high_error = any([x["high_error"] for x in motion_info[d.path]])
-                high_error = True
+                high_error = any([x["high_error"] for x in motion_info[d.path]])
                 if high_error:
                     files.append(d.path)
                     file_labels.append("baxter_left")
