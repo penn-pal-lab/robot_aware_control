@@ -14,8 +14,8 @@ except ImportError:
     )
 from os.path import join as pjoin
 
-import env.transform_utils as T
-from env.controllers import Controller
+import src.env.robotics.controllers.transform_utils as T
+from src.env.robotics.controllers import Controller
 
 
 class PandaIKController(Controller):

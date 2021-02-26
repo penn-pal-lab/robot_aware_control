@@ -196,8 +196,7 @@ class SawyerIKController(Controller):
                     6,
                     target_position,
                     targetOrientation=target_orientation,
-                    restPoses=[0, -1.18, 0.00, 2.18, 0.00, 0.57, 3.3161],
-                    jointDamping=[0.1] * 7,
+                    # jointDamping=[0.1] * 7,
                 )
             )
         else:
@@ -211,7 +210,7 @@ class SawyerIKController(Controller):
                     upperLimits=[3.05, 2.28, 3.05, 3.05, 2.98, 2.98, 4.71],
                     jointRanges=[6.1, 6.1, 6.1, 6.1, 5.96, 5.96, 9.4],
                     restPoses=rest_poses,
-                    jointDamping=[0.1] * 7,
+                    # jointDamping=[0.1] * 7,
                 )
             )
         return ik_solution
@@ -269,9 +268,9 @@ class SawyerIKController(Controller):
 
         rest_poses = [0, -1.18, 0.00, 2.18, 0.00, 0.57, 3.3161]
 
-        for bullet_i in range(20):
+        for bullet_i in range(100):
             arm_joint_pos = self.inverse_kinematics(
-                world_targets[0], world_targets[1], rest_poses=rest_poses
+                world_targets[0], world_targets[1]
             )
             self.sync_ik_robot(arm_joint_pos, sync_last=True)
 
