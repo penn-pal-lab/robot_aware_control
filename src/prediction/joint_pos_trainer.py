@@ -514,8 +514,6 @@ def make_log_folder(config):
 if __name__ == "__main__":
     # import torch.multiprocessing as mp
     from src.config import argparser
-    logger = logging.getLogger("wandb")
-    logger.setLevel(logging.ERROR)
 
     config, _ = argparser()
     make_log_folder(config)
