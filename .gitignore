@@ -9,6 +9,7 @@ inpaintobs.gif
 robonet_images/
 visualize_actions.pkl
 figures/
+MUJOCO_LOG.TXT
 
 # IDE
 *.swp

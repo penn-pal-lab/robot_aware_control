@@ -11,6 +11,7 @@ import imageio
 
 class LocobotMaskEnv(MaskEnv):
     def __init__(self):
+        # TODO: change the model path
         model_path = os.path.join("widowx", "robot.xml")
         initial_qpos = None
         n_actions = 1
@@ -77,26 +78,6 @@ class LocobotMaskEnv(MaskEnv):
 
 
 if __name__ == "__main__":
-    import pandas as pd
-    from robonet.robonet.datasets.util.hdf5_loader import (
-        default_loader_hparams,
-        load_data_customized,
-    )
-    from robonet.robonet.datasets.util.metadata_helper import load_metadata
-    import tensorflow as tf
-    from tqdm import tqdm
-
-    robonet_root = "/media/ed/hdd/Datasets/Robonet/hdf5/"
-    metadata_path = "/media/ed/hdd/Datasets/Robonet/hdf5/meta_data.pkl"
-    num_test = 10
-    hparams = tf.contrib.training.HParams(**default_loader_hparams())
-    hparams.img_size = [120, 160]
-    hparams.cams_to_load = [0]
-
-    df = pd.read_pickle(metadata_path, compression="gzip")
-    widowx_df = df.loc["widowx" == df["robot"]]
-    widowx_subset = widowx_df[widowx_df["camera_configuration"] == "widowx1"]
-
     camera_extrinsics = np.array(
         [
             [-0.17251765, 0.5984481, -0.78236663, 0.37869496],
@@ -110,6 +91,7 @@ if __name__ == "__main__":
     cam_pos = camera_extrinsics[:3, 3]
     rel_rot = Rotation.from_quat([0, 1, 0, 0])  # calculated
     cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
+
     env = LocobotMaskEnv()
     cam_id = 0
     offset = [0, 0, 0]
@@ -123,13 +105,5 @@ if __name__ == "__main__":
     ]
     env.sim.forward()
 
-    rand_sawyer = widowx_subset.sample(num_test, random_state=5)
-    meta_data = load_metadata(robonet_root)
-    # load qpos, gripper states, workspace bounds
-    for traj_name in tqdm(rand_sawyer.index, "generating gifs"):
-        f_metadata = df.loc[traj_name]
-        f_name = os.path.join(robonet_root, traj_name)
-        data = load_data_customized(f_name, f_metadata, hparams)
-        imgs, states, qposes, ws_min, ws_max, vp = data
-        imgs = imgs[:, 0]
-        env.compare_traj(traj_name, qposes, states, imgs)
+    while True:
+        env.render("human")
