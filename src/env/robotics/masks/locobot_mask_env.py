@@ -12,7 +12,7 @@ import imageio
 class LocobotMaskEnv(MaskEnv):
     def __init__(self):
         # TODO: change the model path
-        model_path = os.path.join("widowx", "robot.xml")
+        model_path = os.path.join("locobot", "locobot.xml")
         initial_qpos = None
         n_actions = 1
         n_substeps = 1
