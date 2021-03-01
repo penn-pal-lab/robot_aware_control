@@ -366,7 +366,7 @@ class MultiRobotPredictionTrainer(object):
             predicted_masks = mask[0]
             q_j, r_j = qpos[0], states[0]
             for i in tqdm(range(1, cf.n_eval), "generating robot predictions"):
-                a_j = ac[i - 1],
+                a_j = ac[i - 1]
                 r_pred = self.gripper_model(r_j, a_j) + r_j
                 q_pred = self.joint_model(q_j, a_j) + q_j
                 predicted_states[i] = r_pred

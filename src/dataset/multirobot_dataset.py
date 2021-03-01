@@ -88,6 +88,7 @@ class RobotDataset(data.Dataset):
             high = hf["high_bound"][:]
             actions = self._load_actions(hf, low, high, start, end - 1)
             masks = hf["mask"][start:end].astype(np.float32)
+            qpos = hf["qpos"][start:end].astype(np.float32)
 
             assert (
                 len(images) == len(states) == len(actions) + 1 == len(masks)
@@ -107,13 +108,9 @@ class RobotDataset(data.Dataset):
             "robot": robot,
             "file_name": os.path.basename(os.path.dirname(name)),
             "file_path": hdf5_path,
-            "idx": idx
+            "idx": idx,
+            "qpos": qpos
         }
-        if self._config.learned_robot_dynamics:
-             # TODO: implement qpos loading
-            qpos = torch.zeros((images.shape[0], 5))
-            out["qpos"] = qpos
-
         return out
 
     def _load_actions(self, file_pointer, low, high, start, end):
