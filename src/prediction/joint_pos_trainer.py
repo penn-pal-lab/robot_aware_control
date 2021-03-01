@@ -5,7 +5,7 @@ from functools import partial
 from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
 
 from src.dataset.joint_pos_dataset import get_batch, process_batch
-from src.prediction.models.dynamics import JointPosPredictor
+from src.prediction.models.dynamics import GripperStatePredictor, JointPosPredictor
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 from warnings import simplefilter  # disable tensorflow warnings
@@ -30,9 +30,9 @@ import torchvision.transforms as tf
 
 
 
-class JointPosPredictionTrainer(object):
+class RobotPredictionTrainer(object):
     """
-    Qpos Prediction with Sawyer / Baxter
+    Qpos, EEF Prediction with Sawyer / Baxter
     Training, Checkpointing, Visualizing the prediction
     """
 
@@ -62,7 +62,6 @@ class JointPosPredictionTrainer(object):
             config_exclude_keys=["device"],
         )
         self._img_augmentation = config.img_augmentation
-        self._learned_robot_dynamics = config.learned_robot_dynamics
         self._plot_rng = np.random.RandomState(self._config.seed)
         self._img_transform = tf.Compose(
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
@@ -86,8 +85,10 @@ class JointPosPredictionTrainer(object):
         else:
             raise ValueError("Unknown optimizer: %s" % cf.optimizer)
 
-        self.robot_model = JointPosPredictor(cf).to(self._device)
-        self.robot_optimizer = optimizer(self.robot_model.parameters())
+        self.joint_model = JointPosPredictor(cf).to(self._device)
+        self.gripper_model = GripperStatePredictor(cf).to(self._device)
+        params = list(self.joint_model.parameters()) + list(self.gripper_model.parameters())
+        self.optimizer = optimizer(params)
 
     def _schedule_prob(self):
         """Returns probability of using ground truth"""
@@ -106,7 +107,10 @@ class JointPosPredictionTrainer(object):
             return True
         return np.random.choice([True, False], p=self._schedule_prob())
 
-    def _robot_loss(self, prediction, target):
+    def _joint_loss(self, prediction, target):
+        return mse_criterion(prediction, target)
+
+    def _gripper_loss(self, prediction, target):
         return mse_criterion(prediction, target)
 
     def _train_video(self, data):
@@ -116,8 +120,7 @@ class JointPosPredictionTrainer(object):
         Args:
             data (dict): Video data
         """
-        qpos = data["qpos"]
-        T = len(qpos)
+        T = data["qpos"].shape[0]
         window = self._config.n_past + self._config.n_future
         all_losses = defaultdict(float)
         for i in range(floor(T / window)):
@@ -141,23 +144,33 @@ class JointPosPredictionTrainer(object):
         """
         cf = self._config
         losses = defaultdict(float)  # log loss metrics
-        robot_loss = 0
-        robot = data["states"]
+        joint_loss = gripper_loss = 0
+        states = data["states"]
         ac = data["actions"]
         qpos = data["qpos"]
-        self.robot_model.zero_grad()
+        self.joint_model.zero_grad()
+        self.gripper_model.zero_grad()
+
         for i in range(1, cf.n_past + cf.n_future):
             # let j be i - 1, or previous timestep
-            r_j, a_j = robot[i - 1], ac[i - 1]
+            r_j, a_j = states[i - 1], ac[i - 1]
             q_j, q_i = qpos[i - 1], qpos[i]
             a_j = ac[i - 1]
-            q_pred = self.robot_model(q_j, r_j, a_j) + q_j
-            r_loss = self._robot_loss(q_pred, q_i)
-            robot_loss += r_loss
-            losses[f"joint_loss"] = r_loss.cpu().item()
+            q_pred = self.joint_model(q_j,  a_j) + q_j
+            q_loss = self._joint_loss(q_pred, q_i)
+            joint_loss += q_loss
+            losses[f"joint_loss"] = q_loss.cpu().item()
 
-        robot_loss.backward()
-        self.robot_optimizer.step()
+             # gripper loss
+            r_i = states[i]
+            r_pred = self.gripper_model(r_j, a_j) + r_j
+            r_loss = self._gripper_loss(r_pred, r_i)
+            gripper_loss += r_loss
+            losses[f"gripper_loss"] = r_loss.cpu().item()
+
+        loss = joint_loss + gripper_loss
+        loss.backward()
+        self.optimizer.step()
         for k, v in losses.items():
             losses[k] = v / (cf.n_past + cf.n_future)
         return losses
@@ -194,8 +207,7 @@ class JointPosPredictionTrainer(object):
         data: video data from dataloader
         autoregressive: use model's outputs as input for next timestep
         """
-        qpos = data["qpos"]
-        T = len(qpos)
+        T = data["qpos"].shape[0]
         window = self._config.n_eval
         all_losses = defaultdict(float)
         for i in range(floor(T / window)):
@@ -222,27 +234,34 @@ class JointPosPredictionTrainer(object):
         """
         # one step evaluation loss
         cf = self._config
-        robot_loss = 0
+        joint_loss = gripper_loss = 0
 
-        robot = data["states"]
+        states = data["states"]
         ac = data["actions"]
         qpos = data["qpos"]
         losses = defaultdict(float)
-        q_pred = None
         prefix = "autoreg" if autoregressive else "1step"
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 q_j = q_pred.clone().detach()
+                r_j = r_pred.clone().detach()
             else:
                 q_j = qpos[i - 1]
+                r_j = states[i - 1]
             # let j be previous timestep
-            r_j, a_j = robot[i - 1], ac[i - 1]
+            a_j =  ac[i - 1]
             q_i = qpos[i]
-            a_j = ac[i - 1]
-            q_pred = self.robot_model(q_j, r_j, a_j) + q_j
-            r_loss = self._robot_loss(q_pred, q_i)
-            robot_loss += r_loss
-            losses[f"{prefix}_joint_loss"] = r_loss.cpu().item()
+            q_pred = self.joint_model(q_j, a_j) + q_j
+            q_loss = self._joint_loss(q_pred, q_i)
+            joint_loss += q_loss
+            losses[f"{prefix}_joint_loss"] = q_loss.cpu().item()
+
+            # gripper loss
+            r_i = states[i]
+            r_pred = self.gripper_model(r_j, a_j) + r_j
+            r_loss = self._gripper_loss(r_pred, r_i)
+            gripper_loss += r_loss
+            losses[f"{prefix}_gripper_loss"] = r_loss.cpu().item()
 
         for k, v in losses.items():
             losses[k] = v / cf.n_eval
@@ -264,7 +283,8 @@ class JointPosPredictionTrainer(object):
 
         # start training
         for epoch in range(cf.niter):
-            self.robot_model.train()
+            self.joint_model.train()
+            self.gripper_model.train()
             for i in range(cf.epoch_size):
                 data = next(self.training_batch_generator)
                 info = self._train_video(data)
@@ -283,7 +303,8 @@ class JointPosPredictionTrainer(object):
                 self._save_checkpoint()
             if epoch % cf.eval_interval == 0:
                 # plot and evaluate on test set
-                self.robot_model.eval()
+                self.joint_model.eval()
+                self.gripper_model.eval()
                 info = self._compute_epoch_metrics(self.test_loader, "test")
                 wandb.log(info, step=self._step)
                 test_data = next(self.testing_batch_generator)
@@ -293,8 +314,9 @@ class JointPosPredictionTrainer(object):
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
         data = {
-            "robot_model": self.robot_model.state_dict(),
-            "robot_optimizer": self.robot_optimizer.state_dict(),
+            "joint_model": self.joint_model.state_dict(),
+            "gripper_model": self.gripper_model.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
             "step": self._step,
         }
         torch.save(data, path)
@@ -334,20 +356,22 @@ class JointPosPredictionTrainer(object):
             else:
                 print(f"Loading most recent ckpt: {ckpt_path}")
                 ckpt = torch.load(ckpt_path, map_location=self._device)
-                self.robot_model.load_state_dict(ckpt["robot_model"])
-                self.robot_optimizer.load_state_dict(ckpt["robot_optimizer"])
+                self.joint_model.load_state_dict(ckpt["joint_model"])
+                self.gripper_model.load_state_dict(ckpt["gripper_model"])
+                self.optimizer.load_state_dict(ckpt["optimizer"])
                 step = ckpt["step"]
                 return step
         else:
             # load given ckpt path
             print(f"Loading ckpt {ckpt_path}")
             ckpt = torch.load(ckpt_path, map_location=self._device)
-            self.robot_model.load_state_dict(ckpt["robot_model"])
+            self.joint_model.load_state_dict(ckpt["joint_model"])
+            self.gripper_model.load_state_dict(ckpt["gripper_model"])
             if self._config.training_regime in ["finetune", "finetune_sawyer_view"]:
                 step = 0
             else:
                 step = ckpt["step"]
-                self.robot_optimizer.load_state_dict(ckpt["robot_optimizer"])
+                self.optimizer.load_state_dict(ckpt["optimizer"])
             return step
 
     def _setup_data(self):
@@ -414,9 +438,9 @@ class JointPosPredictionTrainer(object):
             else:
                 q_j = qpos[i - 1]
             # let j be previous timestep
-            r_j, a_j = robot[i - 1], ac[i - 1]
+            a_j = robot[i - 1], ac[i - 1]
             a_j = ac[i - 1]
-            q_pred = self.robot_model(q_j, r_j, a_j) + q_j
+            q_pred = self.joint_model(q_j, a_j) + q_j
             all_q_preds.append(q_pred)
 
         # project qpos into masks, compare with real masks
@@ -517,5 +541,5 @@ if __name__ == "__main__":
 
     config, _ = argparser()
     make_log_folder(config)
-    trainer = JointPosPredictionTrainer(config)
+    trainer = RobotPredictionTrainer(config)
     trainer.train()

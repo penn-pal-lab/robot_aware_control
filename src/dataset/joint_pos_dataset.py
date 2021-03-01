@@ -80,9 +80,10 @@ class JointPosDataset(data.Dataset):
             high = hf["high_bound"][:]
             actions = self._load_actions(hf, low, high, start, end - 1)
             masks = hf["mask"][start:end].astype(np.float32)
+            qpos = hf["qpos"][start:end].astype(np.float32)
 
             assert (
-                len(states) == len(actions) + 1 == len(masks)
+                len(states) == len(actions) + 1 == len(masks) == len(qpos)
             ), f"{hdf5_path}, {states.shape}, {actions.shape}, {masks.shape}"
 
             # preprocessing
@@ -99,10 +100,8 @@ class JointPosDataset(data.Dataset):
             "file_name": os.path.basename(os.path.dirname(name)),
             "file_path": hdf5_path,
             "idx": idx,
+            "qpos": qpos
         }
-        # TODO: implement qpos loading
-        qpos = torch.zeros((masks.shape[0], 7))
-        out["qpos"] = qpos
 
         return out
 
@@ -244,7 +243,7 @@ def process_batch(data, device):
     meta_keys = ["robot", "file_name", "file_path", "idx"]
     # transpose from (B, L, C, W, H) to (L, B, C, W, H)
     for k in data_keys:
-        data[k] = data[k].transpose_(1, 0).to(device)
+        data[k] = data[k].transpose_(1, 0).to(device, non_blocking=True)
     return data
 
 
@@ -281,7 +280,7 @@ if __name__ == "__main__":
         for d in os.scandir(config.data_root)
         if d.is_file() and has_file_allowed_extension(d.path, "hdf5")
     ]
-    dataset = RobotDataset(hdf5_list, config)
+    dataset = JointPosDataset(hdf5_list, config)
     test_loader = DataLoader(
         dataset,
         num_workers=config.data_threads,

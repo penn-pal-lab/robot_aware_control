@@ -101,7 +101,16 @@ class DeterministicModel(nn.Module):
         self.all_models = [frame_pred, enc, dec, ac]
         if cf.model_use_robot_state:
             self.robot_enc = MLPEncoder(cf.robot_dim, cf.robot_enc_dim, 32)
-            self.robot_enc
+            # hidden_size = 256
+            # self.robot_enc = nn.Sequential(
+            #     nn.Linear(cf.robot_dim, hidden_size),
+            #     nn.ReLU(inplace=True),
+            #     nn.Linear(hidden_size, hidden_size),
+            #     nn.ReLU(inplace=True),
+            #     nn.Linear(hidden_size, hidden_size),
+            #     nn.ReLU(inplace=True),
+            #     nn.Linear(hidden_size, cf.robot_enc_dim),
+            # )
             self.all_models.append(self.robot_enc)
 
         self.to(self._device)
@@ -256,22 +265,64 @@ class JointPosPredictor(nn.Module):
     def __init__(self, config):
         super().__init__()
 
-        input_dim = config.robot_joint_dim + config.robot_dim + config.action_dim
+        input_dim = config.robot_joint_dim + config.action_dim
         output_dim = config.robot_joint_dim
-        self.predictor = MLPEncoder(input_dim, output_dim, 128)
+        hidden_size = 512
+        self.predictor = nn.Sequential(
+            nn.Linear(input_dim, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, output_dim),
+        )
 
-    def forward(self, joints, eef_pose, action):
+    def forward(self, joints, action):
         """Predict the next joint position
 
         Args:
             joints (Tensor): Tensor of joint positions
-            eef_pos (Tensor): Tensor of end effector poses
             action (Tensor): Tensor of end effector displacements
 
         Returns:
             Tensor: difference in joint positions between future and current joint position after applying action
         """
-        input = cat([joints, eef_pose, action], 1)
+        input = cat([joints, action], 1)
+        out = self.predictor(input)
+        return out
+
+class GripperStatePredictor(nn.Module):
+    """
+    Predicts the next eef pos, vel, grip of the robot
+    """
+    def __init__(self, config):
+        super().__init__()
+
+        input_dim = config.robot_dim + config.action_dim
+        output_dim = config.robot_dim
+        hidden_size = 512
+        self.predictor = nn.Sequential(
+            nn.Linear(input_dim, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, output_dim),
+        )
+
+    def forward(self, eef_pose, action):
+        """Predict the next eef pose position
+
+        Args:
+            eef_pose (Tensor): Tensor of end effector poses
+            action (Tensor): Tensor of end effector displacements
+
+        Returns:
+            Tensor: difference in eef pose between future and current eef pose after applying action
+        """
+        input = cat([eef_pose, action], 1)
         out = self.predictor(input)
         return out
 
