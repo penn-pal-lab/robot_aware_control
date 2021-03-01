@@ -142,13 +142,16 @@ class MultiRobotPredictionTrainer(object):
         else:
             raise NotImplementedError(f"{self._config.reconstruction_loss}")
 
-    def _zero_robot_region(self, mask, image):
+    def _zero_robot_region(self, mask, image, inplace=True):
         """
         Set the robot region to zero
         """
         robot_mask = mask.type(torch.bool)
         robot_mask = robot_mask.repeat(1, 3, 1, 1)
+        if not inplace:
+            image = image.clone()
         image[robot_mask] *= 0
+        return image
 
     def _train_video(self, data):
         """Train the model over the video data
@@ -334,7 +337,7 @@ class MultiRobotPredictionTrainer(object):
         x = data["images"]
         states = data["states"]
         ac = data["actions"]
-        mask = data["masks"]
+        true_mask = mask = data["masks"]
         qpos = data["qpos"]
         robot_name = data["robot"]
         bs = min(cf.test_batch_size, x.shape[1])
@@ -363,9 +366,9 @@ class MultiRobotPredictionTrainer(object):
             predicted_states = torch.zeros_like(states)
             predicted_states[0] = states[0]
             predicted_masks = torch.zeros_like(mask)
-            predicted_masks = mask[0]
+            predicted_masks[0] = mask[0]
             q_j, r_j = qpos[0], states[0]
-            for i in tqdm(range(1, cf.n_eval), "generating robot predictions"):
+            for i in range(1, cf.n_eval):
                 a_j = ac[i - 1]
                 r_pred = self.gripper_model(r_j, a_j) + r_j
                 q_pred = self.joint_model(q_j, a_j) + q_j
@@ -373,9 +376,9 @@ class MultiRobotPredictionTrainer(object):
                 # generate mask for each qpos prediction
                 for b in range(q_pred.shape[0]):
                     vp = data["file_name"][b]
-                    qpos = q_pred[b].cpu().numpy()
+                    q_pred_b = q_pred[b].cpu().numpy()
                     env = self.renderers[vp]
-                    m = env.generate_masks([qpos])
+                    m = env.generate_masks([q_pred_b])[0]
                     m = self._img_transform(m).to(self._device, non_blocking=True).type(torch.bool)
                     predicted_masks[i][b] = m
 
@@ -399,15 +402,15 @@ class MultiRobotPredictionTrainer(object):
             else:
                 # zero out robot pixels in input for norobot cost
                 if self._config.reconstruction_loss == "dontcare_mse":
-                    self._zero_robot_region(m_j, x_j)
-                    self._zero_robot_region(m_i, x_i)
+                    x_j_black = self._zero_robot_region(m_j, x_j, False)
+                    x_i_black = self._zero_robot_region(m_i, x_i, False)
 
                 if cf.model == "det":
-                    x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
+                    x_pred, curr_skip = self.model(x_j_black, m_j, r_j, a_j, skip)
                 elif cf.model == "svg":
                     # use prior for autoregressive step and i > conditioning
                     force_use_prior = autoregressive and i > 1
-                    out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip, force_use_prior=force_use_prior)
+                    out = self.model(x_j_black, m_j, r_j, a_j, x_i_black, m_i, r_i, skip, force_use_prior=force_use_prior)
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
                 # overwrite skip with most recent skip
@@ -433,10 +436,10 @@ class MultiRobotPredictionTrainer(object):
                     losses[f"{prefix}_total_robot_loss"] += robot_mse_scalar
                     losses[f"{prefix}_total_world_loss"] += world_mse_scalar
             else:
-                view_loss = self._recon_loss(x_pred, x[i], mask[i])
+                view_loss = self._recon_loss(x_pred, x[i], true_mask[i])
                 losses[f"{prefix}_recon_loss"] += view_loss.cpu().item()
-                robot_mse = robot_mse_criterion(x_pred, x[i], mask[i])
-                world_mse = world_mse_criterion(x_pred, x[i], mask[i])
+                robot_mse = robot_mse_criterion(x_pred, x[i], true_mask[i])
+                world_mse = world_mse_criterion(x_pred, x[i], true_mask[i])
                 losses[f"{prefix}_robot_loss"] += robot_mse.cpu().item()
                 losses[f"{prefix}_world_loss"] += world_mse.cpu().item()
                 # robot specific metrics
@@ -446,7 +449,7 @@ class MultiRobotPredictionTrainer(object):
                     r_idx = r == robot_name
                     r_pred = x_pred[r_idx]
                     r_img = x[i][r_idx]
-                    r_mask = mask[i][r_idx]
+                    r_mask = true_mask[i][r_idx]
                     r_robot_mse = robot_mse_criterion(r_pred, r_img, r_mask)
                     r_world_mse = world_mse_criterion(r_pred, r_img, r_mask)
                     losses[f"{prefix}_{r}_robot_loss"] += r_robot_mse.cpu().item()
@@ -501,7 +504,7 @@ class MultiRobotPredictionTrainer(object):
 
                 if i == cf.epoch_size - 1:
                     self.plot(data, epoch, "train")
-                    self.plot_rec(data, epoch, "train")
+                    # self.plot_rec(data, epoch, "train")
 
                 wandb.log({f"train/{k}": v for k, v in info.items()}, step=self._step)
                 self.progress.update()
@@ -524,7 +527,7 @@ class MultiRobotPredictionTrainer(object):
                 wandb.log(info, step=self._step)
                 test_data = next(self.testing_batch_generator)
                 self.plot(test_data, epoch, "test")
-                self.plot_rec(test_data, epoch, "test")
+                # self.plot_rec(test_data, epoch, "test")
                 comp_data = next(self.comp_batch_generator)
                 self.plot(comp_data, epoch, "comparison")
 
@@ -546,13 +549,13 @@ class MultiRobotPredictionTrainer(object):
         train_info = self._compute_epoch_metrics(self.train_loader, "train")
         train_data = next(self.training_batch_generator)
         self.plot(train_data, epoch, "train")
-        self.plot_rec(train_data, epoch, "train")
+        # self.plot_rec(train_data, epoch, "train")
         # test set
         self.model.eval()
         test_info = self._compute_epoch_metrics(self.test_loader, "test")
         test_data = next(self.testing_batch_generator)
         self.plot(test_data, epoch, "test")
-        self.plot_rec(test_data, epoch, "test")
+        # self.plot_rec(test_data, epoch, "test")
 
         # plot 2 points to make horizontal line
         wandb.log(train_info, step=0)
@@ -693,6 +696,7 @@ class MultiRobotPredictionTrainer(object):
         states = data["states"]
         ac = data["actions"]
         mask = data["masks"]
+        qpos = data["qpos"]
         nsample = 1
         if cf.model == "svg":
             nsample = 3
@@ -713,6 +717,47 @@ class MultiRobotPredictionTrainer(object):
         states = states[start:end, :b]
         ac = ac[start : end - 1, :b]
         mask = mask[start:end, :b]
+        qpos = qpos[start:end, :b]
+        viewpoints = set(data["file_name"][:b])
+
+        if cf.learned_robot_model:
+            # TODO: add baxter rendering
+            if not hasattr(self, "renderers"):
+                self.renderers = {}
+            for v in viewpoints:
+                if v in self.renderers:
+                    continue
+                env = SawyerMaskEnv()
+                cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+                env.set_opencv_camera_pose("main_cam", cam_ext)
+                self.renderers[v] = env
+
+            # use robot models to generate mask / eef pose instead of gt
+            predicted_states = torch.zeros_like(states)
+            predicted_states[0] = states[0]
+            predicted_masks = torch.zeros_like(mask)
+            predicted_masks[0] = mask[0]
+            q_j, r_j = qpos[0], states[0]
+            for i in range(1, video_len):
+                a_j = ac[i - 1]
+                r_pred = self.gripper_model(r_j, a_j) + r_j
+                q_pred = self.joint_model(q_j, a_j) + q_j
+                predicted_states[i] = r_pred
+                # generate mask for each qpos prediction
+                for b_idx in range(q_pred.shape[0]):
+                    vp = data["file_name"][b_idx]
+                    q_pred_b = q_pred[b_idx].cpu().numpy()
+                    env = self.renderers[vp]
+                    m = env.generate_masks([q_pred_b])[0]
+                    m = self._img_transform(m).to(self._device, non_blocking=True).type(torch.bool)
+                    predicted_masks[i][b_idx] = m
+
+                q_j = q_pred
+                r_j = r_pred
+
+            states = predicted_states
+            mask = predicted_masks
+
         gen_seq = [[] for i in range(nsample)]
         gt_seq = [x[i] for i in range(len(x))]
 

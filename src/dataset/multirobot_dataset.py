@@ -285,7 +285,7 @@ class RobotDataset(data.Dataset):
 
 
 def process_batch(data, device):
-    data_keys = ["images", "states", "actions", "masks"]
+    data_keys = ["qpos", "images", "states", "actions", "masks"]
     meta_keys = ["robot", "file_name", "file_path", "idx"]
     # transpose from (B, L, C, W, H) to (L, B, C, W, H)
     for k in data_keys:
