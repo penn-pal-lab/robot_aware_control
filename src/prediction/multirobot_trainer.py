@@ -3,8 +3,17 @@ import os
 from collections import defaultdict
 from functools import partial
 
+import torchvision.transforms as tf
 from src.dataset.multirobot_dataset import get_batch, process_batch
-from src.prediction.models.dynamics import CopyModel, DeterministicModel, SVGModel
+from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
+from src.prediction.models.dynamics import (
+    CopyModel,
+    DeterministicModel,
+    GripperStatePredictor,
+    JointPosPredictor,
+    SVGModel,
+)
+from src.utils.camera_calibration import world_to_camera_dict
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 from warnings import simplefilter  # disable tensorflow warnings
@@ -66,6 +75,9 @@ class MultiRobotPredictionTrainer(object):
         )
         self._img_augmentation = config.img_augmentation
         self._plot_rng = np.random.RandomState(self._config.seed)
+        self._img_transform = tf.Compose(
+            [tf.ToTensor(), tf.CenterCrop(config.image_width)]
+        )
 
     def _init_models(self, cf):
         """Initialize models and optimizers
@@ -95,6 +107,12 @@ class MultiRobotPredictionTrainer(object):
             raise ValueError("Unknown optimizer: %s" % cf.optimizer)
 
         self.optimizer = optimizer(self.model.parameters())
+
+        if cf.learned_robot_model:
+            # learned robot models for evaluation
+            self.joint_model = JointPosPredictor(cf).to(self._device)
+            self.gripper_model = GripperStatePredictor(cf).to(self._device)
+            self._load_robot_model_checkpoint(cf.robot_model_ckpt)
 
     def _schedule_prob(self):
         """Returns probability of using ground truth"""
@@ -294,12 +312,14 @@ class MultiRobotPredictionTrainer(object):
                 "actions": data["actions"][s : e - 1],
                 "masks": data["masks"][s:e],
                 "robot": data["robot"],
+                "qpos": data["qpos"][s:e],
+                "file_name": data["file_name"],
             }
             losses = self._eval_step(batch_data, autoregressive)
             for k, v in losses.items():
                 all_losses[k] += v
         for k, v in all_losses.items():
-            all_losses[k] /= floor(T/window)
+            all_losses[k] /= floor(T / window)
         return all_losses
 
     @torch.no_grad()
@@ -315,6 +335,7 @@ class MultiRobotPredictionTrainer(object):
         states = data["states"]
         ac = data["actions"]
         mask = data["masks"]
+        qpos = data["qpos"]
         robot_name = data["robot"]
         bs = min(cf.test_batch_size, x.shape[1])
         # initialize the recurrent states
@@ -325,6 +346,45 @@ class MultiRobotPredictionTrainer(object):
         all_robots = set(robot_name)
         x_pred = skip = None
         prefix = "autoreg" if autoregressive else "1step"
+        if autoregressive and cf.learned_robot_model:
+            # TODO: add baxter rendering
+            viewpoints = set(data["file_name"])
+            if not hasattr(self, "renderers"):
+                self.renderers = {}
+            for v in viewpoints:
+                if v in self.renderers:
+                    continue
+                env = SawyerMaskEnv()
+                cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+                env.set_opencv_camera_pose("main_cam", cam_ext)
+                self.renderers[v] = env
+
+            # use robot models to generate mask / eef pose instead of gt
+            predicted_states = torch.zeros_like(states)
+            predicted_states[0] = states[0]
+            predicted_masks = torch.zeros_like(mask)
+            predicted_masks = mask[0]
+            q_j, r_j = qpos[0], states[0]
+            for i in tqdm(range(1, cf.n_eval), "generating robot predictions"):
+                a_j = ac[i - 1],
+                r_pred = self.gripper_model(r_j, a_j) + r_j
+                q_pred = self.joint_model(q_j, a_j) + q_j
+                predicted_states[i] = r_pred
+                # generate mask for each qpos prediction
+                for b in range(q_pred.shape[0]):
+                    vp = data["file_name"][b]
+                    qpos = q_pred[b].cpu().numpy()
+                    env = self.renderers[vp]
+                    m = env.generate_masks([qpos])
+                    m = self._img_transform(m).to(self._device, non_blocking=True).type(torch.bool)
+                    predicted_masks[i][b] = m
+
+                q_j = q_pred
+                r_j = r_pred
+
+            states = predicted_states
+            mask = predicted_masks
+
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 x_j = x_pred.clone().detach()
@@ -518,6 +578,13 @@ class MultiRobotPredictionTrainer(object):
         }
         torch.save(data, path)
 
+    def _load_robot_model_checkpoint(self, ckpt_path):
+        # load given ckpt path
+        print(f"Loading Robot Model ckpt {ckpt_path}")
+        ckpt = torch.load(ckpt_path, map_location=self._device)
+        self.joint_model.load_state_dict(ckpt["joint_model"])
+        self.gripper_model.load_state_dict(ckpt["gripper_model"])
+
     def _load_checkpoint(self, ckpt_path=None):
         """
         Either load a given checkpoint path, or find the most recent checkpoint file
@@ -644,7 +711,7 @@ class MultiRobotPredictionTrainer(object):
         # truncate batch by time and batch dim
         x = x[start:end, :b]
         states = states[start:end, :b]
-        ac = ac[start: end - 1, :b]
+        ac = ac[start : end - 1, :b]
         mask = mask[start:end, :b]
         gen_seq = [[] for i in range(nsample)]
         gt_seq = [x[i] for i in range(len(x))]
@@ -746,7 +813,7 @@ class MultiRobotPredictionTrainer(object):
         # truncate batch by time and batch dim
         x = x[start:end, :b]
         states = states[start:end, :b]
-        ac = ac[start: end - 1, :b]
+        ac = ac[start : end - 1, :b]
         mask = mask[start:end, :b]
 
         self.model.init_hidden(b)

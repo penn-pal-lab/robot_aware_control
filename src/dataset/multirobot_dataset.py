@@ -105,7 +105,7 @@ class RobotDataset(data.Dataset):
             "actions": actions,
             "masks": masks,
             "robot": robot,
-            "file_name": name,
+            "file_name": os.path.basename(os.path.dirname(name)),
             "file_path": hdf5_path,
             "idx": idx
         }
@@ -292,7 +292,7 @@ def process_batch(data, device):
     meta_keys = ["robot", "file_name", "file_path", "idx"]
     # transpose from (B, L, C, W, H) to (L, B, C, W, H)
     for k in data_keys:
-        data[k] = data[k].transpose_(1, 0).to(device)
+        data[k] = data[k].transpose_(1, 0).to(device, non_blocking=True)
     return data
 
 

@@ -205,7 +205,8 @@ def add_prediction_arguments(parser):
         "--robot_pixel_weight", type=float, default=0, help="weighting on robot pixels"
     )
 
-    parser.add_argument("--learned_robot_dynamics", type=str2bool, default=False)
+    parser.add_argument("--learned_robot_model", type=str2bool, default=False)
+    parser.add_argument("--robot_model_ckpt", type=str, default=None)
 
 def add_dataset_arguments(parser):
     parser.add_argument(

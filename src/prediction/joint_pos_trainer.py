@@ -62,7 +62,6 @@ class RobotPredictionTrainer(object):
             config_exclude_keys=["device"],
         )
         self._img_augmentation = config.img_augmentation
-        self._learned_robot_dynamics = config.learned_robot_dynamics
         self._plot_rng = np.random.RandomState(self._config.seed)
         self._img_transform = tf.Compose(
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
@@ -439,7 +438,7 @@ class RobotPredictionTrainer(object):
             else:
                 q_j = qpos[i - 1]
             # let j be previous timestep
-            r_j, a_j = robot[i - 1], ac[i - 1]
+            a_j = robot[i - 1], ac[i - 1]
             a_j = ac[i - 1]
             q_pred = self.joint_model(q_j, a_j) + q_j
             all_q_preds.append(q_pred)
