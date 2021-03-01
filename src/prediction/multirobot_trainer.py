@@ -166,7 +166,7 @@ class MultiRobotPredictionTrainer(object):
         losses = defaultdict(float)  # log loss metrics
         recon_loss = kld = 0
         x = data["images"]
-        robot = data["states"]
+        states = data["states"]
         ac = data["actions"]
         mask = data["masks"]
         robot_name = data["robot"]
@@ -184,8 +184,8 @@ class MultiRobotPredictionTrainer(object):
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep
-            m_j, r_j, a_j = mask[i - 1], robot[i - 1], ac[i - 1]
-            x_i, m_i, r_i = x[i], mask[i], robot[i]
+            m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
+            x_i, m_i, r_i = x[i], mask[i], states[i]
 
             # zero out robot pixels in input for norobot cost
             if self._config.reconstruction_loss == "dontcare_mse":
@@ -312,7 +312,7 @@ class MultiRobotPredictionTrainer(object):
         cf = self._config
 
         x = data["images"]
-        robot = data["states"]
+        states = data["states"]
         ac = data["actions"]
         mask = data["masks"]
         robot_name = data["robot"]
@@ -331,8 +331,8 @@ class MultiRobotPredictionTrainer(object):
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep
-            m_j, r_j, a_j = mask[i - 1], robot[i - 1], ac[i - 1]
-            x_i, m_i, r_i = x[i], mask[i], robot[i]
+            m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
+            x_i, m_i, r_i = x[i], mask[i], states[i]
 
             if cf.model == "copy":
                 x_pred = self.model(x_j, m_j, x_i, m_i)
@@ -623,7 +623,7 @@ class MultiRobotPredictionTrainer(object):
         """
         cf = self._config
         x = data["images"]
-        robot = data["states"]
+        states = data["states"]
         ac = data["actions"]
         mask = data["masks"]
         nsample = 1
@@ -643,7 +643,7 @@ class MultiRobotPredictionTrainer(object):
             end = start + video_len
         # truncate batch by time and batch dim
         x = x[start:end, :b]
-        robot = robot[start:end, :b]
+        states = states[start:end, :b]
         ac = ac[start: end - 1, :b]
         mask = mask[start:end, :b]
         gen_seq = [[] for i in range(nsample)]
@@ -659,8 +659,8 @@ class MultiRobotPredictionTrainer(object):
             x_j = x[0]
             for i in range(1, video_len):
                 # let j be i - 1, or previous timestep
-                m_j, r_j, a_j = mask[i - 1], robot[i - 1], ac[i - 1]
-                x_i, m_i, r_i = x[i], mask[i], robot[i]
+                m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
+                x_i, m_i, r_i = x[i], mask[i], states[i]
                 if cf.model == "copy":
                     x_pred = self.model(x_j, m_j, x_i, m_i)
                 else:
@@ -729,7 +729,7 @@ class MultiRobotPredictionTrainer(object):
         """
         cf = self._config
         x = data["images"]
-        robot = data["states"]
+        states = data["states"]
         ac = data["actions"]
         mask = data["masks"]
         b = min(x.shape[1], 10)
@@ -745,7 +745,7 @@ class MultiRobotPredictionTrainer(object):
             end = start + video_len
         # truncate batch by time and batch dim
         x = x[start:end, :b]
-        robot = robot[start:end, :b]
+        states = states[start:end, :b]
         ac = ac[start: end - 1, :b]
         mask = mask[start:end, :b]
 
@@ -757,8 +757,8 @@ class MultiRobotPredictionTrainer(object):
         skip = None
         for i in range(1, video_len):
             # let j be i - 1, or previous timestep
-            x_j, m_j, r_j, a_j = x[i - 1], mask[i - 1], robot[i - 1], ac[i - 1]
-            x_i, m_i, r_i = x[i], mask[i], robot[i]
+            x_j, m_j, r_j, a_j = x[i - 1], mask[i - 1], states[i - 1], ac[i - 1]
+            x_i, m_i, r_i = x[i], mask[i], states[i]
 
             if cf.model == "copy":
                 x_pred = self.model(x_j, m_j, x_i, m_i)
