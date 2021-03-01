@@ -258,7 +258,18 @@ class JointPosPredictor(nn.Module):
 
         input_dim = config.robot_joint_dim + config.robot_dim + config.action_dim
         output_dim = config.robot_joint_dim
-        self.predictor = MLPEncoder(input_dim, output_dim, 128)
+        hidden_size = 1024
+        self.predictor = nn.Sequential(
+            nn.Linear(input_dim, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, output_dim),
+        )
 
     def forward(self, joints, eef_pose, action):
         """Predict the next joint position

@@ -14,7 +14,7 @@ from tqdm import tqdm
 from src.utils.camera_calibration import world_to_camera_dict
 
 
-robonet_root = "/scratch/edward/hdf5"
+robonet_root = "/scratch/edward/Robonet/hdf5"
 metadata_path = os.path.join(robonet_root, "meta_data.pkl")
 
 def generate_baxter_data():
@@ -78,14 +78,14 @@ def generate_sawyer_data(cam_config, cam_idx):
     hparams.img_size = [64, 85]
     hparams.cams_to_load = [cam_idx]
 
-    new_robonet_root = f"/scratch/edward/{cam_config}_c{hparams.cams_to_load[0]}_hdf5"
+    new_robonet_root = f"/scratch/edward/Robonet/sawyer_views_qpos/{cam_config}_c{hparams.cams_to_load[0]}"
     os.makedirs(new_robonet_root, exist_ok=True)
 
     df = pd.read_pickle(metadata_path, compression="gzip")
     sawyer_df = df.loc["sawyer" == df["robot"]]
     sawyer_subset = sawyer_df[f"{cam_config}" == sawyer_df["camera_configuration"]]
 
-    camera_extrinsics = world_to_camera_dict[f"sawyer_{cam_config}_{hparams.cams_to_load[0]}"]
+    camera_extrinsics = world_to_camera_dict[f"sawyer_{cam_config}_c{hparams.cams_to_load[0]}"]
     env = SawyerMaskEnv()
     env.set_opencv_camera_pose("main_cam", camera_extrinsics)
     hdf5_list = sawyer_subset.index
@@ -97,7 +97,7 @@ def generate_sawyer_data(cam_config, cam_idx):
 def generate_all_sawyer_data():
     # cam_configs = ["sudri0", "sudri2", "vestri_table2"]
     # cams = [0,1,2]
-    cam_configs = ["sudri0"]
+    cam_configs = ["vestri_table2"]
     cams = [0,1,2]
     for config in cam_configs:
         for i in cams:
