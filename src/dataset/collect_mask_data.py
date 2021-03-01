@@ -31,22 +31,23 @@ def generate_baxter_data():
     right = [not x for x in left]
 
     # generate masks for right arm
-    arm = "right"
-    baxter_subset = baxter_df[left if arm == "left" else right]
-    camera_extrinsics = np.array(
-        [
-            [0.59474902, -0.48560866, 0.64066983, 0.00593267],
-            [-0.80250365, -0.40577623, 0.4374169, -0.84046503],
-            [0.04755516, -0.77429315, -0.63103774, 0.45875102],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
-    )
+    # arm = "right"
+    # baxter_subset = baxter_df[left if arm == "left" else right]
+    # camera_extrinsics = np.array(
+    #     [
+    #         [0.59474902, -0.48560866, 0.64066983, 0.00593267],
+    #         [-0.80250365, -0.40577623, 0.4374169, -0.84046503],
+    #         [0.04755516, -0.77429315, -0.63103774, 0.45875102],
+    #         [0.0, 0.0, 0.0, 1.0],
+    #     ]
+    # )
 
-    env = BaxterMaskEnv()
-    env.arm = arm
-    env.set_opencv_camera_pose("main_cam", camera_extrinsics)
-    hdf5_list = baxter_subset.index
-    generate_robot_masks(env, baxter_df, hdf5_list, hparams, new_robonet_root)
+    # env = BaxterMaskEnv()
+    # env.arm = arm
+    # env.set_opencv_camera_pose("main_cam", camera_extrinsics)
+    # hdf5_list = baxter_subset.index
+    # new_robonet_root = f"/scratch/edward/Robonet/baxter_views_qpos/{arm}_c{hparams.cams_to_load[0]}"
+    # generate_robot_masks(env, baxter_df, hdf5_list, hparams, new_robonet_root)
 
     # hdf5_list = baxter_subset.sample(5).index
     # check_robot_masks(baxter_df, hdf5_list, hparams)
@@ -68,6 +69,7 @@ def generate_baxter_data():
     env.arm = arm
     env.set_opencv_camera_pose("main_cam", camera_extrinsics)
     hdf5_list = baxter_subset.index
+    new_robonet_root = f"/scratch/edward/Robonet/baxter_views/{arm}_c{hparams.cams_to_load[0]}"
     generate_robot_masks(env, baxter_df, hdf5_list, hparams, new_robonet_root)
 
     # hdf5_list = baxter_subset.sample(5).index
@@ -195,6 +197,6 @@ if __name__ == "__main__":
     Generates masks for each robot, and stores it in the target directory.
     """
     # generate_sawyer_data()
-    generate_all_sawyer_data()
-    # generate_baxter_data()
+    # generate_all_sawyer_data()
+    generate_baxter_data()
     # generate_widowx_data()

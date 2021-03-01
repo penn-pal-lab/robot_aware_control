@@ -1,17 +1,13 @@
 import os
 import random
 
-import ipdb
 import numpy as np
 import torch
-import torchvision.transforms as tf
 from sklearn.model_selection import train_test_split
 from src.dataset.joint_pos_dataset import JointPosDataset
 from torch.utils.data import DataLoader
-from torch.utils.data.dataset import random_split
 from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision.datasets.folder import has_file_allowed_extension
-import pickle
 
 def create_loaders(config):
     """Create training data for Sawyer->Baxter finetuning
@@ -98,45 +94,3 @@ def create_loaders(config):
         sampler=test_sampler,
     )
     return train_loader, test_loader
-
-
-if __name__ == "__main__":
-    import imageio
-    from src.config import argparser
-    from torch.multiprocessing import set_start_method
-
-    set_start_method("spawn")
-    config, _ = argparser()
-    config.data_root = "/home/ed/"
-    config.batch_size = 64  # needs to be multiple of the # of robots
-    config.video_length = 31
-    config.image_width = 64
-    # config.impute_autograsp_action = True
-    config.num_workers = 2
-    config.action_dim = 5
-
-    train, test = create_loaders(config)
-    # verify our batches have good class distribution
-    it = iter(train)
-
-    for i, (x, y) in enumerate(it):
-        # robots, counts = np.unique(y, return_counts=True)
-        # class_weight = {}
-        # for robot, count in zip(robots, counts):
-        #     class_weight[robot] = count / len(y)
-
-        # print(class_weight)
-        # print()
-        imgs, states, actions, masks = x
-        for robot_imgs, robot_masks in zip(imgs, masks):
-            # B x C x H x W
-            # B x H x W x C
-            img_gif = robot_imgs.permute(0, 2, 3, 1).clamp_(0, 1).cpu().numpy()
-            img_gif = np.uint8(img_gif * 255)
-            robot_masks = robot_masks.cpu().numpy().squeeze().astype(bool)
-            img_gif[robot_masks] = (0, 255, 255)
-            imageio.mimwrite(f"test{i}_{y[0]}.gif", img_gif)
-            break
-
-        if i >= 10:
-            break
