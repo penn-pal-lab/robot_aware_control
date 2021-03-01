@@ -1,17 +1,19 @@
 import os
-from src.env.robotics.masks.base_mask_env import MaskEnv
-
 from scipy.spatial.transform.rotation import Rotation
-from src.env.robotics.rotations import euler2quat, mat2quat, quat2euler
-from src.env.robotics.robot_env import RobotEnv
 import numpy as np
 import time
 import imageio
+import h5py
+from pupil_apriltags import Detector
+import cv2
+
+from src.env.robotics.masks.base_mask_env import MaskEnv
+from src.env.robotics.rotations import euler2quat, mat2quat, quat2euler
+from src.env.robotics.robot_env import RobotEnv
 
 
 class LocobotMaskEnv(MaskEnv):
     def __init__(self):
-        # TODO: change the model path
         model_path = os.path.join("locobot", "locobot.xml")
         initial_qpos = None
         n_actions = 1
@@ -62,6 +64,7 @@ class LocobotMaskEnv(MaskEnv):
         else:
             mask_dim = [height, width]
         mask = np.zeros(mask_dim, dtype=np.bool)
+        # TODO: change these to include the robot base
         ignore_parts = {"base_link_vis", "base_link_col", "head_vis"}
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
@@ -77,22 +80,92 @@ class LocobotMaskEnv(MaskEnv):
         return mask
 
 
-if __name__ == "__main__":
-    camera_extrinsics = np.array(
-        [
-            [-0.17251765, 0.5984481, -0.78236663, 0.37869496],
-            [-0.98499368, -0.10885336, 0.13393427, -0.04712975],
-            [-0.00501052, 0.79373221, 0.60824672, 0.15596613],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
-    )
+def get_camera_pose_from_apriltag(image):
+    detector = Detector(families='tag36h11',
+                        nthreads=1,
+                        quad_decimate=1.0,
+                        quad_sigma=0.0,
+                        refine_edges=1,
+                        decode_sharpening=0.25,
+                        debug=0)
 
-    rot_matrix = camera_extrinsics[:3, :3]
-    cam_pos = camera_extrinsics[:3, 3]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    results = detector.detect(gray,
+                              estimate_tag_pose=True,
+                              camera_params=[612.45,
+                                             612.45,
+                                             330.55,
+                                             248.61],
+                              tag_size=0.035)
+    print("[INFO] {} total AprilTags detected".format(len(results)))
+
+    # loop over the AprilTag detection results
+    for r in results:
+        pose_t = r.pose_t
+        pose_R = r.pose_R
+        print("pose_t", r.pose_t)
+        print("pose_R", r.pose_R)
+    return pose_t, pose_R
+
+
+if __name__ == "__main__":
+    """
+    Load data:
+    """
+    data_path = "/mnt/ssd1/pallab/locobot_data/data_2-24-18-03.hdf5"
+
+    with h5py.File(data_path, "r") as f:
+        # List all groups
+        print("Keys: %s" % f.keys())
+
+        qposes = np.array(f['qpos'])
+        imgs = np.array(f['observations'])
+
+    """
+    Init Mujoco env:
+    """
+    env = LocobotMaskEnv()
+
+    env._joints = [f"joint_{i}" for i in range(1, 6)]
+    env._joint_references = [
+        env.sim.model.get_joint_qpos_addr(x) for x in env._joints
+    ]
+
+    """
+    camera params:
+    """
+    t = 1
+    env.sim.data.qpos[env._joint_references] = qposes[t]
+    env.sim.forward()
+
+    # tag to base transformation
+    print("ar tag position:\n", env.sim.data.get_geom_xpos("ar_tag_geom"))
+    print("ar tag orientation:\n", env.sim.data.get_geom_xmat("ar_tag_geom"))
+    tagTbase = np.column_stack((env.sim.data.get_geom_xmat("ar_tag_geom"), env.sim.data.get_geom_xpos("ar_tag_geom")))
+    tagTbase = np.row_stack((tagTbase, [0, 0, 0, 1]))
+    print("tagTbase:\n", tagTbase)
+
+    # tag to camera transformation
+    pose_t, pose_R = get_camera_pose_from_apriltag(imgs[t])
+    tagTcam = np.column_stack((pose_R, pose_t))
+    tagTcam = np.row_stack((tagTcam, [0, 0, 0, 1]))
+    print("tagTcam:\n", tagTcam)
+
+    # tag in camera to tag in robot transformation
+    # For explanation, refer to Kun's hand drawing
+    tagcTtagw = np.array([[0, 0, -1, 0],
+                          [0, -1, 0, 0],
+                          [-1, 0, 0, 0],
+                          [0, 0, 0, 1]])
+
+    camTbase = tagTbase @ tagcTtagw @ np.linalg.inv(tagTcam)
+    print("camTbase:\n", camTbase)
+
+    rot_matrix = camTbase[:3, :3]
+    cam_pos = camTbase[:3, 3]
     rel_rot = Rotation.from_quat([0, 1, 0, 0])  # calculated
     cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
 
-    env = LocobotMaskEnv()
     cam_id = 0
     offset = [0, 0, 0]
     env.sim.model.cam_pos[cam_id] = cam_pos + offset
@@ -103,6 +176,10 @@ if __name__ == "__main__":
         cam_quat[1],
         cam_quat[2],
     ]
+    print("camera pose:")
+    print(env.sim.model.cam_pos[cam_id])
+    print(env.sim.model.cam_quat[cam_id])
+
     env.sim.forward()
 
     while True:
