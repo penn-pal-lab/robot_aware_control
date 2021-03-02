@@ -21,7 +21,7 @@ def create_finetune_loaders(config):
     # motion info
     with open(config.world_error_dict, "rb") as f:
         motion_info = pickle.load(f)
-    data_path = os.path.join(config.data_root, "new_hdf5")
+    data_path = os.path.join(config.data_root, "baxter_views", "left_c0")
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             if f"baxter_left" in d.path:

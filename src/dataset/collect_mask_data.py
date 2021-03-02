@@ -70,6 +70,7 @@ def generate_baxter_data():
     env.set_opencv_camera_pose("main_cam", camera_extrinsics)
     hdf5_list = baxter_subset.index
     new_robonet_root = f"/scratch/edward/Robonet/baxter_views/{arm}_c{hparams.cams_to_load[0]}"
+    os.makedirs(new_robonet_root, exist_ok=True)
     generate_robot_masks(env, baxter_df, hdf5_list, hparams, new_robonet_root)
 
     # hdf5_list = baxter_subset.sample(5).index

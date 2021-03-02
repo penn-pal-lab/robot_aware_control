@@ -237,7 +237,6 @@ class JointPosDataset(data.Dataset):
     def __len__(self):
         return len(self._traj_names)
 
-
 def process_batch(data, device):
     data_keys = ["qpos", "states", "actions", "masks"]
     meta_keys = ["robot", "file_name", "file_path", "idx"]
