@@ -3,6 +3,8 @@ import os
 from collections import defaultdict
 from functools import partial
 from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
+from src.env.robotics.masks.baxter_mask_env import BaxterMaskEnv
+
 
 from src.dataset.joint_pos_dataset import get_batch, process_batch
 from src.prediction.models.dynamics import GripperStatePredictor, JointPosPredictor
@@ -380,6 +382,8 @@ class RobotPredictionTrainer(object):
         """
         if self._config.training_regime == "singlerobot":
             from src.dataset.sawyer_joint_pos_dataloaders import create_loaders
+        elif self._config.training_regime == "finetune":
+            from src.dataset.baxter_joint_pos_dataloaders import create_finetune_loaders as create_loaders
         else:
             raise NotImplementedError(self._config.training_regime)
         self.train_loader, self.test_loader = create_loaders(self._config)
@@ -408,8 +412,14 @@ class RobotPredictionTrainer(object):
         for v in viewpoints:
             if v in self.renderers:
                 continue
-            env = SawyerMaskEnv()
-            cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+            if cf.training_regime == "singlerobot":
+                env = SawyerMaskEnv()
+                cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+            elif cf.training_regime == "finetune":
+                env = BaxterMaskEnv()
+                env.arm = "left"
+                cam_ext = world_to_camera_dict[f"baxter_left"]
+
             env.set_opencv_camera_pose("main_cam", cam_ext)
             self.renderers[v] = env
 
