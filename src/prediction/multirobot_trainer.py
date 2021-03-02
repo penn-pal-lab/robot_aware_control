@@ -351,14 +351,12 @@ class MultiRobotPredictionTrainer(object):
         x_pred = skip = None
         prefix = "autoreg" if autoregressive else "1step"
         if autoregressive and cf.learned_robot_model:
-            # TODO: add baxter rendering
             viewpoints = set(data["file_name"])
             if not hasattr(self, "renderers"):
                 self.renderers = {}
             for v in viewpoints:
                 if v in self.renderers:
                     continue
-
                 if cf.training_regime == "singlerobot":
                     env = SawyerMaskEnv()
                     cam_ext = world_to_camera_dict[f"sawyer_{v}"]
@@ -366,6 +364,7 @@ class MultiRobotPredictionTrainer(object):
                     env = BaxterMaskEnv()
                     env.arm = "left"
                     cam_ext = world_to_camera_dict[f"baxter_left"]
+
                 env.set_opencv_camera_pose("main_cam", cam_ext)
                 self.renderers[v] = env
 
@@ -734,8 +733,14 @@ class MultiRobotPredictionTrainer(object):
             for v in viewpoints:
                 if v in self.renderers:
                     continue
-                env = SawyerMaskEnv()
-                cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+                if cf.training_regime == "singlerobot":
+                    env = SawyerMaskEnv()
+                    cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+                elif cf.training_regime == "finetune":
+                    env = BaxterMaskEnv()
+                    env.arm = "left"
+                    cam_ext = world_to_camera_dict[f"baxter_left"]
+
                 env.set_opencv_camera_pose("main_cam", cam_ext)
                 self.renderers[v] = env
 
