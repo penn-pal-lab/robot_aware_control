@@ -20,31 +20,32 @@ class LocobotMaskEnv(MaskEnv):
         n_substeps = 1
         seed = None
         super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
-        self._img_width = 85
-        self._img_height = 64
+        self._img_width = 640
+        self._img_height = 480
         self._camera_name = "main_cam"
         self._joints = [f"joint_{i}" for i in range(1, 6)]
         self._joints.append("gripper_revolute_joint")
 
-    def compare_traj(self, traj_name, qpos_data, gripper_data, real_imgs):
+    def compare_traj(self, traj_name, qpos_data, real_imgs):
         joint_references = [self.sim.model.get_joint_qpos_addr(x) for x in self._joints]
         # run qpos trajectory
         gif = []
         for i, qpos in enumerate(qpos_data):
             self.sim.data.qpos[joint_references] = qpos
-            grip_state = gripper_data[i]
-            eef_pos = grip_state[:3]
-            eef_site = self.sim.model.body_name2id("eef_body")
-            self.sim.model.body_pos[eef_site] = eef_pos
             self.sim.forward()
             # self.render("human")
             img = self.render("rgb_array")
             mask = self.get_robot_mask()
             real_img = real_imgs[i]
             mask_img = real_img.copy()
-            mask_img[mask] = (0, 255, 255)
+            # mask_img[mask] = (0, 255, 255)
+            mask_img = mask_img.astype(int)
+            mask_img[mask] += (100, 0, 0)
+            mask_img = mask_img.astype(np.uint8)
             comparison = mask_img
             # comparison = np.concatenate([img, real_img, mask_img], axis=1)
+            mask_img = cv2.cvtColor(mask_img, cv2.COLOR_BGR2RGB)
+            cv2.imwrite(f"{traj_name}_mask_" + str(i) + ".png", mask_img)
             gif.append(comparison)
         imageio.mimwrite(f"{traj_name}_mask.gif", gif)
 
@@ -65,18 +66,13 @@ class LocobotMaskEnv(MaskEnv):
             mask_dim = [height, width]
         mask = np.zeros(mask_dim, dtype=np.bool)
         # TODO: change these to include the robot base
-        ignore_parts = {"base_link_vis", "base_link_col", "head_vis"}
+        ignore_parts = {"finger_r_geom", "finger_l_geom"}
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
             if name is not None:
                 if name in ignore_parts:
                     continue
-                a = "vis" in name
-                b = "col" in name
-                c = "gripper" in name
-                d = "mesh" in name
-                if any([a, b, c, d]):
-                    mask[ids == i] = True
+                mask[ids == i] = True
         return mask
 
 
@@ -96,7 +92,7 @@ def get_camera_pose_from_apriltag(image):
                                              612.45,
                                              330.55,
                                              248.61],
-                              tag_size=0.035)
+                              tag_size=0.0223)
     print("[INFO] {} total AprilTags detected".format(len(results)))
 
     # loop over the AprilTag detection results
@@ -181,6 +177,8 @@ if __name__ == "__main__":
     print(env.sim.model.cam_quat[cam_id])
 
     env.sim.forward()
+
+    env.compare_traj("/mnt/ssd1/pallab/locobot_data/data_2-24-18-03", qposes, imgs)
 
     while True:
         env.render("human")
