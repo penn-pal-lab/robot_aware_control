@@ -69,6 +69,11 @@ class RobotPredictionTrainer(object):
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
         )
 
+        if config.training_regime == "singlerobot":
+            self._robot_sim = SawyerMaskEnv()
+        elif config.training_regime == "finetune":
+            self._robot_sim = BaxterMaskEnv()
+
     def _init_models(self, cf):
         """Initialize models and optimizers
         When adding a new model, make sure to:
@@ -162,6 +167,23 @@ class RobotPredictionTrainer(object):
             q_loss = self._joint_loss(q_pred, q_i)
             joint_loss += q_loss
             losses[f"joint_loss"] = q_loss.cpu().item()
+
+            # qpos-> eef pos loss
+            # all_pred_eef = []
+            # all_true_eef = []
+            # q_pred_d = q_pred.clone().detach()
+            # q_j_d = q_j.clone().detach()
+            # for k in range(len(q_pred)):
+            #     q_p = q_pred_d[k]
+            #     true_q = q_j_d[k]
+            #     pred_eef = self._get_gripper_pos(q_p.cpu().numpy())
+            #     true_eef = self._get_gripper_pos(true_q.cpu().numpy())
+            #     all_pred_eef.append(pred_eef)
+            #     all_true_eef.append(true_eef)
+            # all_pred_eef = torch.from_numpy(np.asarray(all_pred_eef))
+            # all_true_eef = torch.from_numpy(np.asarray(all_true_eef))
+            # eef_mse = mse_criterion(all_pred_eef, all_true_eef)
+            # losses[f"joint_eef_pos_loss"] += eef_mse.cpu().item()
 
              # gripper loss
             r_i = states[i]
@@ -257,6 +279,21 @@ class RobotPredictionTrainer(object):
             q_loss = self._joint_loss(q_pred, q_i)
             joint_loss += q_loss
             losses[f"{prefix}_joint_loss"] = q_loss.cpu().item()
+
+            # qpos-> eef pos loss
+            all_pred_eef = []
+            all_true_eef = []
+            for k in range(len(q_pred)):
+                q_p = q_pred[k]
+                true_q = q_j[k]
+                pred_eef = self._get_gripper_pos(q_p.cpu().numpy())
+                true_eef = self._get_gripper_pos(true_q.cpu().numpy())
+                all_pred_eef.append(pred_eef)
+                all_true_eef.append(true_eef)
+            all_pred_eef = torch.from_numpy(np.asarray(all_pred_eef))
+            all_true_eef = torch.from_numpy(np.asarray(all_true_eef))
+            eef_mse = mse_criterion(all_pred_eef, all_true_eef)
+            losses[f"{prefix}_joint_eef_pos_loss"] += eef_mse.cpu().item()
 
             # gripper loss
             r_i = states[i]
@@ -391,6 +428,21 @@ class RobotPredictionTrainer(object):
         self.training_batch_generator = get_batch(self.train_loader, self._device)
         self.testing_batch_generator = get_batch(self.test_loader, self._device)
 
+    def _get_gripper_pos(self, qpos):
+        """
+        Compute forward kinematics to get the gripper position. Used for error metrics.
+        """
+
+        if self._config.training_regime == "finetune": # baxter
+            joint_references = [self._robot_sim.sim.model.get_joint_qpos_addr(f"left_{x}") for x in self._robot_sim._joints]
+            self._robot_sim.sim.data.qpos[joint_references] = qpos
+            self._robot_sim.sim.forward()
+            return self._robot_sim.sim.data.get_body_xpos("left_gripper").copy()
+        elif config.training_regime == "singlerobot": # sawyer
+            self._robot_sim.sim.data.qpos[self._robot_sim._joint_references] = qpos
+            self._robot_sim.sim.forward()
+            return self._robot_sim.sim.data.get_body_xpos("right_hand").copy()
+
     @torch.no_grad()
     def plot(self, data, epoch, name, random_start=True):
         """Project masks with learned model. Autoregressive output.
@@ -469,11 +521,13 @@ class RobotPredictionTrainer(object):
             true_mask_list = mask[:, idx].cpu() # T x |I| tensor
             # compute IoU of the masks
             video_IoU = self._compute_iou(mask_list, true_mask_list).mean().item()
-            comparison_list = torch.stack([mask_list, true_mask_list]) # 2 x T x |I| tensor
+            # generate a difference map
+            diff_mask = (true_mask_list.type(torch.bool) ^ mask_list).type(torch.float32)
+            comparison_list = torch.stack([true_mask_list,mask_list, diff_mask]) # 3 x T x |I| tensor
             all_iou.append(video_IoU)
             all_masks.append(comparison_list)
-        all_masks = torch.stack(all_masks) # B x 2 x T x |I| tensor
-        # T x B x 2 x |I| array of the comparison images
+        all_masks = torch.stack(all_masks) # B x 3 x T x |I| tensor
+        # T x B x 3 x |I| array of the comparison images
         all_masks = all_masks.transpose_(1,2).transpose_(0,1)
         fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.gif")
         save_gif(fname, all_masks)
