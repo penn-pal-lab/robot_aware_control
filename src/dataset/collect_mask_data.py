@@ -115,6 +115,9 @@ def generate_widowx_data():
     widowx_df = df.loc["widowx" == df["robot"]]
     widowx_subset = widowx_df[widowx_df["camera_configuration"] == "widowx1"]
 
+    new_robonet_root = f"/scratch/edward/Robonet/widowx_views/widowx1_c{hparams.cams_to_load[0]}"
+    os.makedirs(new_robonet_root, exist_ok=True)
+
     camera_extrinsics = np.array(
         [
             [-0.17251765, 0.5984481, -0.78236663, 0.37869496],
@@ -128,11 +131,6 @@ def generate_widowx_data():
     env.set_opencv_camera_pose("main_cam", camera_extrinsics)
     hdf5_list = widowx_subset.index
     generate_robot_masks(env, widowx_df, hdf5_list, hparams, new_robonet_root)
-
-    # hdf5_list = widowx_subset.sample(5).index
-    # check_robot_masks(widowx_df, hdf5_list, hparams)
-
-
 
 
 def check_robot_masks(df, hdf5_list, hparams, target_dir):
@@ -199,5 +197,5 @@ if __name__ == "__main__":
     """
     # generate_sawyer_data()
     # generate_all_sawyer_data()
-    generate_baxter_data()
-    # generate_widowx_data()
+    # generate_baxter_data()
+    generate_widowx_data()

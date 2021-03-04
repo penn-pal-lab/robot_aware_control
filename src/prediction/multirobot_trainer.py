@@ -2,6 +2,7 @@ import logging
 import os
 from collections import defaultdict
 from functools import partial
+from src.env.robotics.masks.widowx_mask_env import WidowXMaskEnv
 from src.env.robotics.masks.baxter_mask_env import BaxterMaskEnv
 
 import torchvision.transforms as tf
@@ -364,6 +365,9 @@ class MultiRobotPredictionTrainer(object):
                     env = BaxterMaskEnv()
                     env.arm = "left"
                     cam_ext = world_to_camera_dict[f"baxter_left"]
+                elif cf.training_regime == "finetune_widowx":
+                    env = WidowXMaskEnv()
+                    cam_ext = world_to_camera_dict[f"widowx1"]
 
                 env.set_opencv_camera_pose("main_cam", cam_ext)
                 self.renderers[v] = env
@@ -407,6 +411,8 @@ class MultiRobotPredictionTrainer(object):
                 x_pred = self.model(x_j, m_j, x_i, m_i)
             else:
                 # zero out robot pixels in input for norobot cost
+                x_j_black = x_j
+                x_i_black = x_i
                 if self._config.reconstruction_loss == "dontcare_mse":
                     x_j_black = self._zero_robot_region(m_j, x_j, False)
                     x_i_black = self._zero_robot_region(m_i, x_i, False)
@@ -638,7 +644,7 @@ class MultiRobotPredictionTrainer(object):
             print(f"Loading ckpt {ckpt_path}")
             ckpt = torch.load(ckpt_path, map_location=self._device)
             self.model.load_state_dict(ckpt["model"])
-            if self._config.training_regime in ["finetune", "finetune_sawyer_view"]:
+            if self._config.training_regime in ["finetune", "finetune_sawyer_view", "finetune_widowx"]:
                 step = 0
             else:
                 step = ckpt["step"]
@@ -678,6 +684,10 @@ class MultiRobotPredictionTrainer(object):
             )
         elif self._config.training_regime == "finetune_sawyer_view":
             from src.dataset.sawyer_multiview_dataloaders import (
+                create_finetune_loaders as create_loaders,
+            )
+        elif self._config.training_regime == "finetune_widowx":
+            from src.dataset.finetune_widowx_dataloaders import (
                 create_finetune_loaders as create_loaders,
             )
         else:
@@ -740,6 +750,9 @@ class MultiRobotPredictionTrainer(object):
                     env = BaxterMaskEnv()
                     env.arm = "left"
                     cam_ext = world_to_camera_dict[f"baxter_left"]
+                elif cf.training_regime == "finetune_widowx":
+                    env = WidowXMaskEnv()
+                    cam_ext = world_to_camera_dict[f"widowx1"]
 
                 env.set_opencv_camera_pose("main_cam", cam_ext)
                 self.renderers[v] = env
