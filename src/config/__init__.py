@@ -227,7 +227,7 @@ def add_dataset_arguments(parser):
     parser.add_argument("--video_length", type=int, default=31, help="max length of the video, used for evaluation dataloader")
     parser.add_argument("--impute_autograsp_action", type=str2bool, default=True)
     parser.add_argument("--preload_ram", type=str2bool, default=False)
-    parser.add_argument("--training_regime", type=str, choices=["multirobot", "singlerobot", "finetune", "train_sawyer_multiview", "finetune_sawyer_view"], default="multirobot")
+    parser.add_argument("--training_regime", type=str, choices=["multirobot", "singlerobot", "finetune", "train_sawyer_multiview", "finetune_sawyer_view", "finetune_widowx"], default="multirobot")
     parser.add_argument("--preprocess_action", type=str, choices=["raw", "camera_raw", "state_infer", "camera_state_infer"], default="raw")
     parser.add_argument("--img_augmentation", type=str2bool, default=False)
     parser.add_argument("--color_jitter_range", type=float, default=0.1)

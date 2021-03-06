@@ -22,13 +22,15 @@ class WidowXMaskEnv(MaskEnv):
         self._camera_name = "main_cam"
         self._joints = [f"joint_{i}" for i in range(1, 6)]
         self._joints.append("gripper_revolute_joint")
+        self._joint_references = [
+            self.sim.model.get_joint_qpos_addr(x) for x in self._joints
+        ]
 
     def compare_traj(self, traj_name, qpos_data, gripper_data, real_imgs):
-        joint_references = [self.sim.model.get_joint_qpos_addr(x) for x in self._joints]
         # run qpos trajectory
         gif = []
         for i, qpos in enumerate(qpos_data):
-            self.sim.data.qpos[joint_references] = qpos
+            self.sim.data.qpos[self._joint_references] = qpos
             grip_state = gripper_data[i]
             eef_pos = grip_state[:3]
             eef_site = self.sim.model.body_name2id("eef_body")

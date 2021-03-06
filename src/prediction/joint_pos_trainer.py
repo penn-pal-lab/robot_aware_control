@@ -2,6 +2,7 @@ import logging
 import os
 from collections import defaultdict
 from functools import partial
+from src.env.robotics.masks.widowx_mask_env import WidowXMaskEnv
 from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
 from src.env.robotics.masks.baxter_mask_env import BaxterMaskEnv
 
@@ -55,7 +56,7 @@ class RobotPredictionTrainer(object):
         os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
         wandb.init(
             resume=config.jobname,
-            project=config.wandb_project,
+            project="robot-prediction",
             config=config,
             dir=config.log_dir,
             entity=config.wandb_entity,
@@ -68,6 +69,13 @@ class RobotPredictionTrainer(object):
         self._img_transform = tf.Compose(
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
         )
+
+        if config.training_regime == "singlerobot":
+            self._robot_sim = SawyerMaskEnv()
+        elif config.training_regime == "finetune":
+            self._robot_sim = BaxterMaskEnv()
+        elif config.training_regime == "finetune_widowx":
+            self._robot_sim = WidowXMaskEnv()
 
     def _init_models(self, cf):
         """Initialize models and optimizers
@@ -110,7 +118,16 @@ class RobotPredictionTrainer(object):
         return np.random.choice([True, False], p=self._schedule_prob())
 
     def _joint_loss(self, prediction, target):
+        # try weighted variant
+        # K = self._config.robot_joint_dim
+        # diff = target - prediction
+        # # give more weight to earlier joints
+        # weights = torch.from_numpy(np.array([1/K * i for i in range(1, K+1)][::-1])).to(self._device)
+        # mse = torch.mean(diff ** 2, (0)) # get per dim mse
+        # weighted_mse = torch.sum(weights * mse)
+        # return weighted_mse
         return mse_criterion(prediction, target)
+
 
     def _gripper_loss(self, prediction, target):
         return mse_criterion(prediction, target)
@@ -160,15 +177,36 @@ class RobotPredictionTrainer(object):
             a_j = ac[i - 1]
             q_pred = self.joint_model(q_j,  a_j) + q_j
             q_loss = self._joint_loss(q_pred, q_i)
+
             joint_loss += q_loss
-            losses[f"joint_loss"] = q_loss.cpu().item()
+            losses[f"joint_loss"] += q_loss.cpu().item()
+
+            joint_mse = mse_criterion(q_pred, q_i)
+            losses[f"joint_mse"] += joint_mse.cpu().item()
+
+            # qpos-> eef pos loss
+            # all_pred_eef = []
+            # all_true_eef = []
+            # q_pred_d = q_pred.clone().detach()
+            # q_j_d = q_j.clone().detach()
+            # for k in range(len(q_pred)):
+            #     q_p = q_pred_d[k]
+            #     true_q = q_j_d[k]
+            #     pred_eef = self._get_gripper_pos(q_p.cpu().numpy())
+            #     true_eef = self._get_gripper_pos(true_q.cpu().numpy())
+            #     all_pred_eef.append(pred_eef)
+            #     all_true_eef.append(true_eef)
+            # all_pred_eef = torch.from_numpy(np.asarray(all_pred_eef))
+            # all_true_eef = torch.from_numpy(np.asarray(all_true_eef))
+            # eef_mse = mse_criterion(all_pred_eef, all_true_eef)
+            # losses[f"joint_eef_pos_loss"] += eef_mse.cpu().item()
 
              # gripper loss
             r_i = states[i]
             r_pred = self.gripper_model(r_j, a_j) + r_j
             r_loss = self._gripper_loss(r_pred, r_i)
             gripper_loss += r_loss
-            losses[f"gripper_loss"] = r_loss.cpu().item()
+            losses[f"gripper_loss"] += r_loss.cpu().item()
 
         loss = joint_loss + gripper_loss
         loss.backward()
@@ -256,14 +294,31 @@ class RobotPredictionTrainer(object):
             q_pred = self.joint_model(q_j, a_j) + q_j
             q_loss = self._joint_loss(q_pred, q_i)
             joint_loss += q_loss
-            losses[f"{prefix}_joint_loss"] = q_loss.cpu().item()
+            losses[f"{prefix}_joint_loss"] += q_loss.cpu().item()
+            joint_mse = mse_criterion(q_pred, q_i)
+            losses[f"{prefix}_joint_mse"] += joint_mse.cpu().item()
+
+            # qpos-> eef pos loss
+            all_pred_eef = []
+            all_true_eef = []
+            for k in range(len(q_pred)):
+                q_p = q_pred[k]
+                true_q = q_j[k]
+                pred_eef = self._get_gripper_pos(q_p.cpu().numpy())
+                true_eef = self._get_gripper_pos(true_q.cpu().numpy())
+                all_pred_eef.append(pred_eef)
+                all_true_eef.append(true_eef)
+            all_pred_eef = torch.from_numpy(np.asarray(all_pred_eef))
+            all_true_eef = torch.from_numpy(np.asarray(all_true_eef))
+            eef_mse = mse_criterion(all_pred_eef, all_true_eef)
+            losses[f"{prefix}_joint_eef_pos_loss"] += eef_mse.cpu().item()
 
             # gripper loss
             r_i = states[i]
             r_pred = self.gripper_model(r_j, a_j) + r_j
             r_loss = self._gripper_loss(r_pred, r_i)
             gripper_loss += r_loss
-            losses[f"{prefix}_gripper_loss"] = r_loss.cpu().item()
+            losses[f"{prefix}_gripper_loss"] += r_loss.cpu().item()
 
         for k, v in losses.items():
             losses[k] = v / cf.n_eval
@@ -369,7 +424,7 @@ class RobotPredictionTrainer(object):
             ckpt = torch.load(ckpt_path, map_location=self._device)
             self.joint_model.load_state_dict(ckpt["joint_model"])
             self.gripper_model.load_state_dict(ckpt["gripper_model"])
-            if self._config.training_regime in ["finetune", "finetune_sawyer_view"]:
+            if self._config.training_regime in ["finetune", "finetune_sawyer_view", "finetune_widowx"]:
                 step = 0
             else:
                 step = ckpt["step"]
@@ -384,12 +439,33 @@ class RobotPredictionTrainer(object):
             from src.dataset.sawyer_joint_pos_dataloaders import create_loaders
         elif self._config.training_regime == "finetune":
             from src.dataset.baxter_joint_pos_dataloaders import create_finetune_loaders as create_loaders
+        elif  self._config.training_regime == "finetune_widowx":
+            from src.dataset.widowx_joint_pos_dataloaders import create_loaders
         else:
             raise NotImplementedError(self._config.training_regime)
         self.train_loader, self.test_loader = create_loaders(self._config)
         # for infinite batching
         self.training_batch_generator = get_batch(self.train_loader, self._device)
         self.testing_batch_generator = get_batch(self.test_loader, self._device)
+
+    def _get_gripper_pos(self, qpos):
+        """
+        Compute forward kinematics to get the gripper position. Used for error metrics.
+        """
+
+        if self._config.training_regime == "finetune": # baxter
+            joint_references = [self._robot_sim.sim.model.get_joint_qpos_addr(f"left_{x}") for x in self._robot_sim._joints]
+            self._robot_sim.sim.data.qpos[joint_references] = qpos
+            self._robot_sim.sim.forward()
+            return self._robot_sim.sim.data.get_body_xpos("left_gripper").copy()
+        elif config.training_regime == "singlerobot": # sawyer
+            self._robot_sim.sim.data.qpos[self._robot_sim._joint_references] = qpos
+            self._robot_sim.sim.forward()
+            return self._robot_sim.sim.data.get_body_xpos("right_hand").copy()
+        elif config.training_regime == "finetune_widowx": # sawyer
+            self._robot_sim.sim.data.qpos[self._robot_sim._joint_references] = qpos
+            self._robot_sim.sim.forward()
+            return self._robot_sim.sim.data.get_body_xpos("wrist_2_link").copy()
 
     @torch.no_grad()
     def plot(self, data, epoch, name, random_start=True):
@@ -419,6 +495,9 @@ class RobotPredictionTrainer(object):
                 env = BaxterMaskEnv()
                 env.arm = "left"
                 cam_ext = world_to_camera_dict[f"baxter_left"]
+            elif cf.training_regime == "finetune_widowx":
+                env = WidowXMaskEnv()
+                cam_ext = world_to_camera_dict["widowx1"]
 
             env.set_opencv_camera_pose("main_cam", cam_ext)
             self.renderers[v] = env
@@ -469,11 +548,13 @@ class RobotPredictionTrainer(object):
             true_mask_list = mask[:, idx].cpu() # T x |I| tensor
             # compute IoU of the masks
             video_IoU = self._compute_iou(mask_list, true_mask_list).mean().item()
-            comparison_list = torch.stack([mask_list, true_mask_list]) # 2 x T x |I| tensor
+            # generate a difference map
+            diff_mask = (true_mask_list.type(torch.bool) ^ mask_list).type(torch.float32)
+            comparison_list = torch.stack([true_mask_list,mask_list, diff_mask]) # 3 x T x |I| tensor
             all_iou.append(video_IoU)
             all_masks.append(comparison_list)
-        all_masks = torch.stack(all_masks) # B x 2 x T x |I| tensor
-        # T x B x 2 x |I| array of the comparison images
+        all_masks = torch.stack(all_masks) # B x 3 x T x |I| tensor
+        # T x B x 3 x |I| array of the comparison images
         all_masks = all_masks.transpose_(1,2).transpose_(0,1)
         fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.gif")
         save_gif(fname, all_masks)
