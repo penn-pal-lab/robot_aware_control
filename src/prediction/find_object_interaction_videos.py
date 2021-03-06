@@ -428,15 +428,15 @@ if __name__ == "__main__":
     file_type = "hdf5"
     files = []
     file_labels = []
-    robots = ["sawyer"]
+    robots = ["widowx"]
     arm = "left"
 
-    data_path = os.path.join(config.data_root, "sawyer_views", "sudri2_c1")
+    data_path = os.path.join(config.data_root, "widowx_views", "widowx1_c0")
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             for r in robots:
                 # if f"{r}_{arm}" in d.path:
-                if f"sawyer" in d.path:
+                if f"widowx" in d.path:
                     files.append(d.path)
                     file_labels.append(r)
                     break
@@ -445,7 +445,7 @@ if __name__ == "__main__":
     random.shuffle(files)
 
     files = files[:]
-    file_labels = ["sawyer"] * len(files)
+    file_labels = ["widowx"] * len(files)
     # iterate through videos
     # compute error for each video
     # if error > threshold, save the video
@@ -467,7 +467,7 @@ if __name__ == "__main__":
     num_snippets = 0
 
     num_gifs = 0
-    max_gifs = 100
+    max_gifs = 20
 
     """
     Meta dictionary that stores information about each sequence.
@@ -477,7 +477,7 @@ if __name__ == "__main__":
             - cost of sequence
     """
     meta_dict = defaultdict(list)
-
+    err_threshold = 0.06
     all_err = []
     for d in train_loader:
         x = d["images"].transpose_(0, 1) # T x B
@@ -493,12 +493,12 @@ if __name__ == "__main__":
             batch = x[s:e], masks[s:e], names
             losses = eval_step(batch, model, config)
             num_snippets += 1
-            if losses["world_mse"].item() > 0.06:
+            if losses["world_mse"].item() > err_threshold:
                 high_err_video = True
                 num_high_err_snippets += 1
-            entry = {"start": s, "end": e, "world_mse": losses["world_mse"].item(), "high_error": losses["world_mse"].item() > 0.01}
+            entry = {"start": s, "end": e, "world_mse": losses["world_mse"].item(), "high_error": losses["world_mse"].item() > err_threshold}
             meta_dict[video_name].append(entry)
-            # if losses["world_mse"] > 0.06 and num_gifs < max_gifs:
+            # if losses["world_mse"] > err_threshold and num_gifs < max_gifs:
             #     # save video
             #     mask = batch[1]
             #     robot_mask = mask.type(torch.bool)
@@ -530,5 +530,5 @@ if __name__ == "__main__":
     # plt.show()
 
     # save meta dict
-    with open(f"sudri2_c1_world_error.pkl", "wb") as f:
+    with open(f"widowx1_c0_world_error.pkl", "wb") as f:
         pickle.dump(meta_dict, f)
