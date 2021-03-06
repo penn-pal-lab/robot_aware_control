@@ -142,13 +142,15 @@ if __name__ == "__main__":
         eef_states = np.array(f['states'])
         actions = np.array(f['actions'])
 
-    predicted_qpos = [qposes[0]]
-    for t in range(actions.shape[0]):
-        qpos_next = predict_next_qpos(eef_states[t], qposes[t], actions[t, 0:2])
+    K = 3
+    predicted_Kstep_qpos = []
+    for t in range(actions.shape[0] - K + 1):
+        action_Kstep = np.sum(actions[t:t + K, 0:2], axis=0)
+        qpos_next = predict_next_qpos(eef_states[t], qposes[t], action_Kstep)
         print("prediction:", qpos_next)
-        print("real:", qposes[t + 1])
-        predicted_qpos.append(qpos_next)
-    predicted_qpos = np.stack(predicted_qpos)
+        print("real:", qposes[t + K])
+        predicted_Kstep_qpos.append(qpos_next)
+    predicted_Kstep_qpos = np.stack(predicted_Kstep_qpos)
 
     """
     Init Mujoco env:
@@ -211,7 +213,7 @@ if __name__ == "__main__":
 
     env.sim.forward()
 
-    env.compare_traj("/mnt/ssd1/pallab/locobot_data/data_2-24-18-03", predicted_qpos, imgs)
+    env.compare_traj("/mnt/ssd1/pallab/locobot_data/data_2-24-18-03", predicted_Kstep_qpos, imgs[K:])
 
     # while True:
     #     env.render("human")
