@@ -10,6 +10,7 @@ import cv2
 from src.env.robotics.masks.base_mask_env import MaskEnv
 from src.env.robotics.rotations import euler2quat, mat2quat, quat2euler
 from src.env.robotics.robot_env import RobotEnv
+from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinematics as AIK
 
 
 class LocobotMaskEnv(MaskEnv):
@@ -38,10 +39,10 @@ class LocobotMaskEnv(MaskEnv):
             mask = self.get_robot_mask()
             real_img = real_imgs[i]
             mask_img = real_img.copy()
-            # mask_img[mask] = (0, 255, 255)
-            mask_img = mask_img.astype(int)
-            mask_img[mask] += (100, 0, 0)
-            mask_img = mask_img.astype(np.uint8)
+            mask_img[mask] = (0, 255, 255)
+            # mask_img = mask_img.astype(int)
+            # mask_img[mask] += (100, 0, 0)
+            # mask_img = mask_img.astype(np.uint8)
             comparison = mask_img
             # comparison = np.concatenate([img, real_img, mask_img], axis=1)
             mask_img = cv2.cvtColor(mask_img, cv2.COLOR_BGR2RGB)
@@ -104,6 +105,28 @@ def get_camera_pose_from_apriltag(image):
     return pose_t, pose_R
 
 
+def predict_next_qpos(eef_curr, qpos_curr, action):
+    """
+    eef_curr: (3, ) 3d position of eef
+    qpos_curr: (5, )
+    action: (2, ) planar action
+    """
+    # TODO: record pitch/roll in eef pose in the future
+    PUSH_HEIGHT = 0.15
+    DEFAULT_PITCH = 1.3
+    DEFAULT_ROLL = 0.0
+    eef_next = np.zeros(3)
+    eef_next[0:2] = eef_curr[0:2] + action
+    eef_next[2] = PUSH_HEIGHT
+
+    ik_solver = AIK()
+
+    qpos_next = np.zeros(5)
+    qpos_next[0:4] = ik_solver.ik(eef_next, alpha=-DEFAULT_PITCH, cur_arm_config=qpos_curr[0:4])
+    qpos_next[4] = DEFAULT_ROLL
+    return qpos_next
+
+
 if __name__ == "__main__":
     """
     Load data:
@@ -116,6 +139,16 @@ if __name__ == "__main__":
 
         qposes = np.array(f['qpos'])
         imgs = np.array(f['observations'])
+        eef_states = np.array(f['states'])
+        actions = np.array(f['actions'])
+
+    predicted_qpos = [qposes[0]]
+    for t in range(actions.shape[0]):
+        qpos_next = predict_next_qpos(eef_states[t], qposes[t], actions[t, 0:2])
+        print("prediction:", qpos_next)
+        print("real:", qposes[t + 1])
+        predicted_qpos.append(qpos_next)
+    predicted_qpos = np.stack(predicted_qpos)
 
     """
     Init Mujoco env:
@@ -178,7 +211,7 @@ if __name__ == "__main__":
 
     env.sim.forward()
 
-    env.compare_traj("/mnt/ssd1/pallab/locobot_data/data_2-24-18-03", qposes, imgs)
+    env.compare_traj("/mnt/ssd1/pallab/locobot_data/data_2-24-18-03", predicted_qpos, imgs)
 
-    while True:
-        env.render("human")
+    # while True:
+    #     env.render("human")
