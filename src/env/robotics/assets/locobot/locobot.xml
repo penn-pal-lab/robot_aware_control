@@ -54,12 +54,14 @@
                         <inertial pos="0.042941 4.98645e-05 0.0114267" quat="0.0526331 0.462852 0.0284284 0.884415" mass="0.0605922" diaginertia="2.0979e-05 2.08943e-05 1.73078e-05" />
                         <joint name="joint_4" pos="0 0 0" axis="0 1 0" limited="true" range="-1.57 1.57" />
                         <geom name="wrist_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="wrist_link" />
+                        <geom conaffinity="0" contype="0" pos="0.02 0 0" size="0.02 0.02 0.005" type="box" name="wrist_hole_geom" rgba="1 0 0 1"/>
+                        
                         <body name="gripper_link" pos="0.063 0.0001 0">
                             <inertial pos="0.0303034 -1.00406e-05 0.0150805" quat="0.359874 0.610879 0.606151 0.360414" mass="0.0998368" diaginertia="6.24793e-05 6.16818e-05 4.76112e-05" />
                             <joint name="joint_5" pos="0 0 0" axis="-1 0 0" limited="true" range="-1.57 1.57" />
                             <geom name="gripper_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="gripper_link" />
                             <geom name="ar_tag_geom" pos="0.02695 0 0.04315" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="ar_tag" />
-                            <geom conaffinity="0" contype="0" pos="-0.035 0 0" size="0.02 0.02 0.01" type="box" name="hole_geom" rgba="1 0 0 1"/>
+                            <geom conaffinity="0" contype="0" pos="0.055 0 0" size="0.01 0.045 0.003" type="box" name="gripper_hole_geom" rgba="1 0 0 1"/>
 
                             <body name="finger_r" pos="0.07285 0 0.0050143">
                                 <inertial pos="0.0100191 -0.00843835 -0.0048328" quat="0.475246 0.475678 0.523898 0.522879" mass="0.0121931" diaginertia="3.13241e-06 2.77936e-06 6.51268e-07" />
