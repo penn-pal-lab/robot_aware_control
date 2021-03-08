@@ -418,9 +418,9 @@ class DeterministicConvModel(nn.Module):
         if cf.model_use_robot_state:
             r = robot.repeat(8,8,1,1).permute(2,3,0,1)
             tiled_state = cat([a, r, h], 1)
-            state = self.tiled_state_conv(tiled_state)
-            h_pred = self.frame_predictor(state)
         else:
-            h_pred = self.frame_predictor(cat([a, h], 1))
+            tiled_state = cat([a, h], 1)
+        state = self.tiled_state_conv(tiled_state)
+        h_pred = self.frame_predictor(state)
         x_pred = self.decoder([h_pred, skip])
         return x_pred, skip
