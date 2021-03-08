@@ -24,11 +24,13 @@ class MLPEncoder(nn.Module):
 
 
 def init_weights(m):
-    classname = m.__class__.__name__
-    if classname.find("Conv") != -1 or classname.find("Linear") != -1:
+    cn = m.__class__.__name__
+    if cn.find("ConvDecoder") != -1 or cn.find("ConvEncoder") != -1 or cn.find("ConvLSTM") != -1:
+        return
+    if cn.find("Conv") != -1 or cn.find("Linear") != -1:
         m.weight.data.normal_(0.0, 0.02)
         m.bias.data.fill_(0)
-    elif classname.find("BatchNorm") != -1:
+    elif cn.find("BatchNorm") != -1:
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 

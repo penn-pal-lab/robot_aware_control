@@ -105,5 +105,111 @@ class GaussianLSTM(nn.Module):
         return z, mu, logvar
 
 
+class ConvLSTMCell(nn.Module):
+    """
+    Convolutional LSTM
+    """
+    def __init__(self, in_ch, hid_ch, kernel_size=3, padding=1, stride=1):
+        super().__init__()
+
+        self.in_ch = in_ch
+        self.hid_ch = hid_ch
+        self.kernel_size = kernel_size
+        self.padding = padding
+
+        self.gates = nn.Conv2d(
+            in_ch + hid_ch,
+            4*hid_ch,
+            kernel_size,
+            padding=padding,
+            stride=stride
+        )
+
+    def forward(self, input_, prev_state):
+        prev_hidden, prev_cell = prev_state
+        # data size is [batch, channel, height, width]
+        stacked_inputs = torch.cat((input_, prev_hidden), 1)
+        out_gates = self.gates(stacked_inputs)
+        # chunk across channel dimension
+        in_gate, remember_gate, out_gate, cell_gate = out_gates.chunk(4, 1)
+
+        # apply sigmoid non linearity
+        in_gate = torch.sigmoid(in_gate)
+        remember_gate = torch.sigmoid(remember_gate)
+        out_gate = torch.sigmoid(out_gate)
+
+        # apply tanh non linearity
+        cell_gate = torch.tanh(cell_gate)
+
+        # compute current cell and hidden state
+        cell = (remember_gate * prev_cell) + (in_gate * cell_gate)
+        hidden = out_gate * torch.tanh(cell)
+
+        return hidden, cell
+
+class ConvLSTM(nn.Module):
+    def __init__(self, batch_size, hid_ch):
+        super().__init__()
+
+        self.hid_ch = hid_ch
+        self.lstm = nn.ModuleList(
+            [
+                ConvLSTMCell(hid_ch, hid_ch, 5, 2, 1),
+                ConvLSTMCell(hid_ch, hid_ch, 3, 1, 1),
+            ]
+        )
+        self.batch_size = batch_size
+        self.hidden = self.init_hidden()
+
+    def init_hidden(self, batch_size=None):
+        """ initializes conv weights for hidden and cell states
+        Hidden state shape should be input shape (before conv)
+        Cell state shape should be output shape (after conv)
+        Args:
+            batch_size ([type], optional): [description]. Defaults to None.
+
+        Returns:
+            [type]: List of Weights
+        """
+
+        if batch_size is None:
+            batch_size = self.batch_size
+        hidden = []
+
+        n_layers = len(self.lstm)
+        b = batch_size
+        channels = [self.hid_ch] * n_layers
+        hid_heights = [8, 8]
+        hid_widths = [8, 8]
+
+        cell_heights = [8, 8]
+        cell_widths = [8, 8]
+
+        for i in range(n_layers):
+            c, h, w = channels[i], hid_heights[i], hid_widths[i]
+            h_state = Variable(torch.zeros(b, c, h, w, device=device))
+
+            c, h, w = channels[i], cell_heights[i], cell_widths[i]
+            c_state = Variable(torch.zeros(b, c, h, w, device=device))
+            hidden.append((h_state, c_state))
+
+        return hidden
+
+    def forward(self, input_):
+        h_in = input_
+        for i in range(len(self.lstm)):
+            self.hidden[i] = self.lstm[i](h_in, self.hidden[i])
+            h_in = self.hidden[i][0]
+        return h_in
+
 if __name__ == "__main__":
-    glstm = GaussianLSTM(10, 10, 32, 2, 64)
+    import ipdb
+
+    # conv lstm needs input to have 32 channels
+    conv_lstm = ConvLSTM(batch_size=16, hid_ch=32).to(device)
+    dummy_data = torch.ones(10, 16, 32, 8, 8, device=device) # T x B x C x H x W
+
+    conv_lstm.init_hidden(16)
+    for t in range(dummy_data.shape[0]):
+        pred_t = conv_lstm(dummy_data[t])
+        ipdb.set_trace()

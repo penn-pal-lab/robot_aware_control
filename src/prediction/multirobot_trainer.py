@@ -12,6 +12,7 @@ from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
 from src.prediction.models.dynamics import (
     CopyModel,
     DeterministicModel,
+    DeterministicConvModel,
     GripperStatePredictor,
     JointPosPredictor,
     SVGModel,
@@ -95,7 +96,7 @@ class MultiRobotPredictionTrainer(object):
         if cf.model == "svg":
             self.model = SVGModel(cf).to(self._device)
         elif cf.model == "det":
-            self.model = DeterministicModel(cf).to(self._device)
+            self.model = DeterministicConvModel(cf).to(self._device)
         elif cf.model == "copy":
             self.model = CopyModel()
             return
@@ -111,9 +112,10 @@ class MultiRobotPredictionTrainer(object):
         else:
             raise ValueError("Unknown optimizer: %s" % cf.optimizer)
 
-        self.background_model = Attention(cf).to(self._device)
-        self.background_model.apply(init_weights)
-        params = list(self.model.parameters()) + list(self.background_model.parameters())
+        # self.background_model = Attention(cf).to(self._device)
+        # self.background_model.apply(init_weights)
+        # params = list(self.model.parameters()) + list(self.background_model.parameters())
+        params = list(self.model.parameters())
         self.optimizer = optimizer(params)
 
         if cf.learned_robot_model:
@@ -212,8 +214,8 @@ class MultiRobotPredictionTrainer(object):
         if self._config.reconstruction_loss == "dontcare_mse":
             self._zero_robot_region(mask[0], x[0])
         # outputs B x C x W x H masks [0, 1]
-        bg_mask = self.background_model(x[0], mask[0])
-        bg_img = bg_mask * x[0].clone() # x[0] gets set to black pixels in loop, so make copy for backprop
+        # bg_mask = self.background_model(x[0], mask[0])
+        # bg_img = bg_mask * x[0].clone() # x[0] gets set to black pixels in loop, so make copy for backprop
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
                 x_j = x[i - 1] if self._use_true_token() else x_pred.clone().detach()
@@ -233,7 +235,7 @@ class MultiRobotPredictionTrainer(object):
                 out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
                 x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-            x_pred = bg_img + (1 - bg_mask) * x_pred
+            # x_pred = bg_img + (1 - bg_mask) * x_pred
             # overwrite skip with most recent skip
             if cf.last_frame_skip or i <= cf.n_past:
                 skip = curr_skip
@@ -418,8 +420,8 @@ class MultiRobotPredictionTrainer(object):
         if self._config.reconstruction_loss == "dontcare_mse":
             self._zero_robot_region(mask[0], x[0])
         # outputs B x C x W x H masks [0, 1]
-        bg_mask = self.background_model(x[0], mask[0])
-        bg_img = bg_mask * x[0]
+        # bg_mask = self.background_model(x[0], mask[0])
+        # bg_img = bg_mask * x[0]
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 x_j = x_pred.clone().detach()
@@ -447,7 +449,7 @@ class MultiRobotPredictionTrainer(object):
                     out = self.model(x_j_black, m_j, r_j, a_j, x_i_black, m_i, r_i, skip, force_use_prior=force_use_prior)
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-                x_pred = bg_img + (1 - bg_mask) * x_pred
+                # x_pred = bg_img + (1 - bg_mask) * x_pred
                 # overwrite skip with most recent skip
                 if cf.last_frame_skip or i <= cf.n_past:
                     skip = curr_skip
@@ -541,7 +543,7 @@ class MultiRobotPredictionTrainer(object):
 
         # start training
         for epoch in range(cf.niter):
-            self.background_model.train()
+            # self.background_model.train()
             self.model.train()
             # epoch_losses = defaultdict(float)
             for i in range(cf.epoch_size):
@@ -583,7 +585,7 @@ class MultiRobotPredictionTrainer(object):
                 self._save_checkpoint()
             if epoch % cf.eval_interval == 0:
                 # plot and evaluate on test set
-                self.background_model.eval()
+                # self.background_model.eval()
                 self.model.eval()
                 info = self._compute_epoch_metrics(self.test_loader, "test")
                 wandb.log(info, step=self._step)
@@ -637,7 +639,7 @@ class MultiRobotPredictionTrainer(object):
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
         data = {
-            "background_model": self.background_model.state_dict(),
+            # "background_model": self.background_model.state_dict(),
             "model": self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "step": self._step,
@@ -686,7 +688,7 @@ class MultiRobotPredictionTrainer(object):
             else:
                 print(f"Loading most recent ckpt: {ckpt_path}")
                 ckpt = torch.load(ckpt_path, map_location=self._device)
-                self.background_model.load_state_dict(ckpt["background_model"])
+                # self.background_model.load_state_dict(ckpt["background_model"])
                 self.model.load_state_dict(ckpt["model"])
                 self.optimizer.load_state_dict(ckpt["optimizer"])
                 step = ckpt["step"]
@@ -695,7 +697,7 @@ class MultiRobotPredictionTrainer(object):
             # load given ckpt path
             print(f"Loading ckpt {ckpt_path}")
             ckpt = torch.load(ckpt_path, map_location=self._device)
-            self.background_model.load_state_dict(ckpt["background_model"])
+            # self.background_model.load_state_dict(ckpt["background_model"])
             self.model.load_state_dict(ckpt["model"])
             if self._config.training_regime in ["finetune", "finetune_sawyer_view", "finetune_widowx"]:
                 step = 0
@@ -847,8 +849,8 @@ class MultiRobotPredictionTrainer(object):
                 self._zero_robot_region(mask[0], x[0])
             gen_seq[s].append(x[0])
             # outputs B x C x W x H masks [0, 1]
-            bg_mask = self.background_model(x[0], mask[0])
-            bg_img = bg_mask * x[0]
+            # bg_mask = self.background_model(x[0], mask[0])
+            # bg_img = bg_mask * x[0]
             x_j = x[0]
             for i in range(1, video_len):
                 # let j be i - 1, or previous timestep
@@ -869,7 +871,7 @@ class MultiRobotPredictionTrainer(object):
                         out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
                         x_pred, curr_skip, _, _, _, _ = out
 
-                    x_pred = bg_img + (1 - bg_mask) * x_pred
+                    # x_pred = bg_img + (1 - bg_mask) * x_pred
                     if cf.last_frame_skip or i <= cf.n_past:
                         # feed in the  most recent conditioning frame img's skip
                         skip = curr_skip
@@ -917,9 +919,9 @@ class MultiRobotPredictionTrainer(object):
         wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
 
         # log background mask
-        mask_path = os.path.join(cf.plot_dir, f"{name}_mask_{epoch}.png")
-        save_image(bg_img, mask_path, range=(0,1))
-        wandb.log({f"{name}/bg_mask": wandb.Image(mask_path)}, step=self._step)
+        # mask_path = os.path.join(cf.plot_dir, f"{name}_mask_{epoch}.png")
+        # save_image(bg_img, mask_path, range=(0,1))
+        # wandb.log({f"{name}/bg_mask": wandb.Image(mask_path)}, step=self._step)
 
     def _epoch_save_fid_images(self, random_snippet=False):
         """

@@ -81,6 +81,54 @@ class Encoder(nn.Module):
         return h5.view(-1, self.dim), [h1, h2, h3, h4]
 
 
+class ConvEncoder(nn.Module):
+    name = "conv_encoder_64"
+    def __init__(self, dim, nc=1):
+        """Encoder for convolutional lstm
+
+        Args:
+            dim ([type]): number of output channels
+            nc (int, optional): number of input channels
+        """
+        super(ConvEncoder, self).__init__()
+        self.dim = dim
+        # 64 x 64
+        self.c1 = nn.Sequential(
+            vgg_layer(nc, 64),
+            vgg_layer(64, 64),
+        )
+        # 32 x 32
+        self.c2 = nn.Sequential(
+            vgg_layer(64, 128),
+            vgg_layer(128, 128),
+        )
+        # 16 x 16
+        self.c3 = nn.Sequential(
+            vgg_layer(128, 256),
+            vgg_layer(256, 256),
+            vgg_layer(256, 256),
+        )
+        # 8 x 8
+        self.c4 = nn.Sequential(
+            vgg_layer(256, 512),
+            vgg_layer(512, 512),
+            # vgg_layer(512, 512),
+            nn.Conv2d(512, dim, 3, 1, 1),
+            nn.BatchNorm2d(dim),
+            nn.Tanh()
+        )
+        self.mp = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
+
+    def forward(self, input):
+        """Returns an Cx8x8 feature map where C is g_dim
+        """
+        h1 = self.c1(input)  # 64
+        h2 = self.c2(self.mp(h1))  # 32
+        h3 = self.c3(self.mp(h2))  # 16
+        h4 = self.c4(self.mp(h3))  # 8
+        return h4, [h1, h2, h3, h4]
+
+
 # split the input into 2 images, upsample them, and then recombine
 up = nn.UpsamplingNearest2d(scale_factor=2)
 
@@ -145,6 +193,53 @@ class Decoder(nn.Module):
         return output
 
 
+class ConvDecoder(nn.Module):
+    name = "conv_decoder_64"
+    def __init__(self, dim, nc=1,):
+        """Input is C x 8 x 8 feature map from LSTM output
+
+        Args:
+            dim ([type]): spatial size of the input feature map
+            nc (int, optional): number of output channels
+        """
+        super(ConvDecoder, self).__init__()
+        self.dim = dim
+        # dim x 8 x 8 -> 256 x 16 x 16
+        self.upc2 = nn.Sequential(
+            vgg_layer(dim, 512), vgg_layer(512, 512), vgg_layer(512, 256)
+        )
+        # 256 x 16 x 16 -> 128 x 32 x 32
+        self.upc3 = nn.Sequential(
+            vgg_layer(256 * 2, 256), vgg_layer(256, 256), vgg_layer(256, 128)
+        )
+        # 128 x 32 x 32 -> 64 x 64 x 64
+        self.upc4 = nn.Sequential(vgg_layer(128 * 2, 128), vgg_layer(128, 64))
+        # 64 x 64 x 64 -> nc x 64 x 64
+        self.upc5 = nn.Sequential(
+            vgg_layer(64 * 2, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.Sigmoid()
+        )
+        self.up = nn.UpsamplingNearest2d(scale_factor=2)
+
+    def forward(self, input):
+        """
+        Expects input to be dim x 8 x 8
+
+        Args:
+            input ([type]): Tuple of (latent, skip)
+
+        Returns:
+            [type]: [description]
+        """
+        vec, skip = input
+        d2 = self.upc2(vec)
+        up2 = self.up(d2) # 256 x 16 x 16
+        d3 = self.upc3(torch.cat([up2, skip[2]], 1))  # 16 x 16
+        up3 = self.up(d3)  # 8 -> 32
+        d4 = self.upc4(torch.cat([up3, skip[1]], 1))  # 32 x 32
+        up4 = self.up(d4)  # 32 -> 64
+        output = self.upc5(torch.cat([up4, skip[0]], 1))  # 64 x 64
+        return output
+
 def encoder_test():
     import numpy as np
     from torchvision.transforms import ToTensor
@@ -165,6 +260,22 @@ def encoder_test():
     tensor = torch.stack([ToTensor()(i) for i in img])
     print(tensor.shape)
     enc = Encoder(dim=128, nc=3, multiview=True)
+    out = enc(tensor)
+    print(out[0].shape)
+
+
+
+def conv_encoder_test():
+    import numpy as np
+    from torchvision.transforms import ToTensor
+
+    print("Conv Encoder Tests")
+    # Singleview Test
+    print("Single view Test:")
+    img = np.random.normal(size=(2, 64, 64, 4)).astype(np.float32)
+    tensor = torch.stack([ToTensor()(i) for i in img])
+    print(tensor.shape)
+    enc = ConvEncoder(dim=128, nc=4)
     out = enc(tensor)
     print(out[0].shape)
 
@@ -193,6 +304,23 @@ def decoder_test():
     print(out.shape)
 
 
+def conv_decoder_test():
+    import numpy as np
+    from torchvision.transforms import ToTensor
+
+    print("Conv Decoder Tests")
+    print("Single view Test:")
+    img = np.random.normal(size=(2, 64, 64, 3)).astype(np.float32)
+    tensor = torch.stack([ToTensor()(i) for i in img])
+    enc = ConvEncoder(dim=128, nc=3)
+    out = enc(tensor)
+    dec = ConvDecoder(dim=128, nc=3)
+    out = dec(out)
+    print(out.shape)
+
 if __name__ == "__main__":
-    encoder_test()
+    import ipdb
+    # encoder_test()
     # decoder_test()
+    # conv_encoder_test()
+    conv_decoder_test()

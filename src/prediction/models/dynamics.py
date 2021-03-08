@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from src.prediction.models.base import MLPEncoder, init_weights
-from src.prediction.models.lstm import LSTM, GaussianLSTM
+from src.prediction.models.lstm import ConvLSTM, LSTM, GaussianLSTM
 from torch import cat
 
 
@@ -347,3 +347,86 @@ class CopyModel(nn.Module):
 
     def init_hidden(self, batch_size=None):
         pass
+
+
+
+class DeterministicConvModel(nn.Module):
+    """Deterministic Conv LSTM predictor
+    No longer need robot encoder, action encoder, just tile directly.
+    """
+    def __init__(self, config):
+        super().__init__()
+        self._config = cf = config
+        self._device = config.device
+        self._init_models()
+
+    def _init_models(self):
+        cf = self._config
+
+        hid_channels = cf.g_dim
+        self.frame_predictor = frame_pred = ConvLSTM(
+            cf.batch_size,
+            hid_channels
+        )
+
+        if cf.image_width == 64:
+            from src.prediction.models.vgg_64 import ConvDecoder, ConvEncoder
+        else:
+            raise ValueError
+
+        channels = cf.channels
+        if cf.model_use_mask:
+            # RGB + mask channel
+            channels += 1
+        self.encoder = enc = ConvEncoder(cf.g_dim, channels)
+        # tile robot state, action convolution
+        in_channels = cf.g_dim + cf.action_dim
+        if cf.model_use_robot_state:
+            in_channels += cf.robot_dim
+
+        self.tiled_state_conv = tsv = nn.Conv2d(in_channels, cf.g_dim, 3,1,1)
+        self.decoder = dec = ConvDecoder(cf.g_dim, cf.channels)
+        self.all_models = [frame_pred, enc, dec, tsv]
+
+        self.to(self._device)
+        for model in self.all_models:
+            model.apply(init_weights)
+
+    def init_hidden(self, batch_size=None):
+        """
+        Initialize the recurrent states by batch size
+        """
+        self.frame_predictor.hidden = self.frame_predictor.init_hidden(batch_size)
+
+    def forward(self, image, mask, robot, action, skip=None):
+        """Given current state, predict the next state
+
+        Args:
+            image ([Tensor]): batch of images
+            mask ([Tensor]): batch of robot masks
+            robot ([Tensor]): batch of robot states
+            action ([Tensor]): batch of robot actions
+            skip ([Tensor]): batch of skip connections
+
+        Returns:
+            [Tuple]: Next image, next latent, skip connection
+        """
+        cf = self._config
+        if cf.model_use_mask:
+            h, curr_skip = self.encoder(cat([image, mask], dim=1))
+        else:
+            h, curr_skip = self.encoder(image)
+
+        if skip is None:
+            skip = curr_skip
+        # tile the action and states
+        a = action.repeat(8, 8, 1, 1).permute(2,3,0,1)
+        if cf.model_use_robot_state:
+            r = robot.repeat(8,8,1,1).permute(2,3,0,1)
+            tiled_state = cat([a, r, h], 1)
+            state = self.tiled_state_conv(tiled_state)
+            h_pred = self.frame_predictor(state)
+        else:
+            h_pred = self.frame_predictor(cat([a, h], 1))
+        x_pred = self.decoder([h_pred, skip])
+        return x_pred, skip
