@@ -95,22 +95,14 @@ class DeterministicModel(nn.Module):
         if cf.model_use_mask:
             # RGB + mask channel
             channels += 1
+            if cf.model_use_future_mask:
+                channels += 1
         self.encoder = enc = Encoder(cf.g_dim, channels, cf.multiview, cf.dropout)
         self.decoder = dec = Decoder(cf.g_dim, cf.channels, cf.multiview)
         self.action_enc = ac = MLPEncoder(cf.action_dim, cf.action_enc_dim, 32)
         self.all_models = [frame_pred, enc, dec, ac]
         if cf.model_use_robot_state:
             self.robot_enc = MLPEncoder(cf.robot_dim, cf.robot_enc_dim, 32)
-            # hidden_size = 256
-            # self.robot_enc = nn.Sequential(
-            #     nn.Linear(cf.robot_dim, hidden_size),
-            #     nn.ReLU(inplace=True),
-            #     nn.Linear(hidden_size, hidden_size),
-            #     nn.ReLU(inplace=True),
-            #     nn.Linear(hidden_size, hidden_size),
-            #     nn.ReLU(inplace=True),
-            #     nn.Linear(hidden_size, cf.robot_enc_dim),
-            # )
             self.all_models.append(self.robot_enc)
 
         self.to(self._device)
@@ -378,6 +370,8 @@ class DeterministicConvModel(nn.Module):
         if cf.model_use_mask:
             # RGB + mask channel
             channels += 1
+            if cf.model_use_future_mask:
+                channels += 1
         self.encoder = enc = ConvEncoder(cf.g_dim, channels)
         # tile robot state, action convolution
         in_channels = cf.g_dim + cf.action_dim

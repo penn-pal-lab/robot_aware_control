@@ -198,6 +198,7 @@ def add_prediction_arguments(parser):
 
     parser.add_argument("--model", default="svg", choices=["svg", "det", "copy"])
     parser.add_argument("--model_use_mask", type=str2bool, default=True)
+    parser.add_argument("--model_use_future_mask", type=str2bool, default=False)
     parser.add_argument("--model_use_robot_state", type=str2bool, default=True)
     parser.add_argument("--reconstruction_loss", default="mse", choices=["mse", "l1", "dontcare_mse"])
     parser.add_argument("--scheduled_sampling", type=str2bool, default=False)

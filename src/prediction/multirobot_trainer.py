@@ -126,10 +126,10 @@ class MultiRobotPredictionTrainer(object):
 
     def _schedule_prob(self):
         """Returns probability of using ground truth"""
-        # assume 400k max training steps
+        # assume 50k max training steps
         # https://www.desmos.com/calculator/bo4aoyqje1
         k = 10000
-        use_truth = k / (k + np.exp(self._step / 3900))
+        use_truth = k / (k + np.exp(self._step / 3000))
         use_model = 1 - use_truth
         return [use_truth, use_model]
 
@@ -229,10 +229,19 @@ class MultiRobotPredictionTrainer(object):
             if self._config.reconstruction_loss == "dontcare_mse":
                 self._zero_robot_region(m_j, x_j)
                 self._zero_robot_region(m_i, x_i)
+            m_in = m_j
+            if cf.model_use_future_mask:
+                m_in = torch.cat([m_j, m_i], 1)
             if cf.model == "det":
-                x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
+                x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, skip)
             elif cf.model == "svg":
-                out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
+                m_next_in = m_j
+                if cf.model_use_future_mask:
+                    if i + 1 < cf.n_past + cf.n_future:
+                        m_next_in = torch.cat([m_i, mask[i+1]], 1)
+                    else:
+                        m_next_in = m_i.repeat(1,2,1,1)
+                out = self.model(x_j, m_in, r_j, a_j, x_i, m_next_in, r_i, skip)
                 x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
             # x_pred = bg_img + (1 - bg_mask) * x_pred
@@ -321,10 +330,13 @@ class MultiRobotPredictionTrainer(object):
         data: video data from dataloader
         autoregressive: use model's outputs as input for next timestep
         """
+        num_samples = 1
+        if autoregressive and self._config.model == "svg":
+            num_samples = 3
         x = data["images"]
         T = len(x)
         window = self._config.n_eval
-        all_losses = defaultdict(float)
+        sampled_losses = [defaultdict(float) for _ in range(num_samples)] # list of video sample losses
         for i in range(floor(T / window)):
             s = i * window
             e = (i + 1) * window
@@ -337,12 +349,19 @@ class MultiRobotPredictionTrainer(object):
                 "qpos": data["qpos"][s:e],
                 "file_name": data["file_name"],
             }
-            losses = self._eval_step(batch_data, autoregressive)
-            for k, v in losses.items():
-                all_losses[k] += v
-        for k, v in all_losses.items():
-            all_losses[k] /= floor(T / window)
-        return all_losses
+            for sample in range(num_samples):
+                losses = self._eval_step(batch_data, autoregressive)
+                for k,v in losses.items():
+                    sampled_losses[sample][k] += v
+
+        # now pick the best sample by world error, and average over frames
+        sampled_losses.sort(key=lambda x: x["autoreg_world_loss"])
+        # print([s["autoreg_world_loss"] for s in sampled_losses])
+        best_loss = sampled_losses[0]
+
+        for k, v in best_loss.items():
+            best_loss[k] /= floor(T / window)
+        return best_loss
 
     @torch.no_grad()
     def _eval_step(self, data, autoregressive=False):
@@ -440,13 +459,21 @@ class MultiRobotPredictionTrainer(object):
                 if self._config.reconstruction_loss == "dontcare_mse":
                     x_j_black = self._zero_robot_region(m_j, x_j, False)
                     x_i_black = self._zero_robot_region(m_i, x_i, False)
-
+                m_in = m_j
+                if cf.model_use_future_mask:
+                    m_in = torch.cat([m_j, m_i], 1)
                 if cf.model == "det":
-                    x_pred, curr_skip = self.model(x_j_black, m_j, r_j, a_j, skip)
+                    x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
                 elif cf.model == "svg":
+                    m_next_in = m_j
+                    if cf.model_use_future_mask:
+                        if i + 1 < cf.n_eval:
+                            m_next_in = torch.cat([m_i, mask[i+1]], 1)
+                        else:
+                            m_next_in = m_i.repeat(1,2,1,1)
                     # use prior for autoregressive step and i > conditioning
                     force_use_prior = autoregressive and i > 1
-                    out = self.model(x_j_black, m_j, r_j, a_j, x_i_black, m_i, r_i, skip, force_use_prior=force_use_prior)
+                    out = self.model(x_j_black, m_in, r_j, a_j, x_i_black, m_next_in, r_i, skip, force_use_prior=force_use_prior)
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
                 # x_pred = bg_img + (1 - bg_mask) * x_pred
@@ -511,8 +538,6 @@ class MultiRobotPredictionTrainer(object):
                     losses[f"{prefix}_{r}_world_loss"] += r_world_mse.cpu().item()
 
             if cf.model == "svg":
-                # if x.shape[1] != cf.test_batch_size:
-                #     ipdb.set_trace()
                 kl = kl_criterion(mu, logvar, mu_p, logvar_p, bs)
                 losses[f"{prefix}_kld"] += kl.cpu().item()
 
@@ -714,11 +739,11 @@ class MultiRobotPredictionTrainer(object):
             from src.dataset.multirobot_dataloaders import create_loaders
         elif self._config.training_regime == "singlerobot":
             from src.dataset.finetune_multirobot_dataloaders import (
-                create_loaders
+                create_loaders, create_transfer_loader
             )
-            from src.dataset.finetune_widowx_dataloaders import (
-                create_transfer_loader
-            )
+            # from src.dataset.finetune_widowx_dataloaders import (
+            #     create_transfer_loader
+            # )
 
             # measure zero shot performance on transfer data
             self.transfer_loader = create_transfer_loader(self._config)
@@ -862,13 +887,21 @@ class MultiRobotPredictionTrainer(object):
                     # zero out robot pixels in input for norobot cost
                     if cf.reconstruction_loss == "dontcare_mse":
                         self._zero_robot_region(mask[i], x[i])
-
+                    m_in = m_j
+                    if cf.model_use_future_mask:
+                        m_in = torch.cat([m_j, m_i], 1)
                     if cf.model == "det":
-                        x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
+                        x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, skip)
                     elif cf.model == "svg":
+                        m_next_in = m_j
+                        if cf.model_use_future_mask:
+                            if i + 1 < video_len:
+                                m_next_in = torch.cat([m_i, mask[i+1]], 1)
+                            else:
+                                m_next_in = m_i.repeat(1,2,1,1)
                         if i > cf.n_past:  # don't use posterior
                             x_i, m_i, r_i = None, None, None
-                        out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
+                        out = self.model(x_j, m_in, r_j, a_j, x_i, m_next_in, r_i, skip)
                         x_pred, curr_skip, _, _, _, _ = out
 
                     # x_pred = bg_img + (1 - bg_mask) * x_pred
