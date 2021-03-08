@@ -739,11 +739,11 @@ class MultiRobotPredictionTrainer(object):
             from src.dataset.multirobot_dataloaders import create_loaders
         elif self._config.training_regime == "singlerobot":
             from src.dataset.finetune_multirobot_dataloaders import (
-                create_loaders, create_transfer_loader
+                create_loaders
             )
-            # from src.dataset.finetune_widowx_dataloaders import (
-            #     create_transfer_loader
-            # )
+            from src.dataset.finetune_widowx_dataloaders import (
+                create_transfer_loader
+            )
 
             # measure zero shot performance on transfer data
             self.transfer_loader = create_transfer_loader(self._config)
