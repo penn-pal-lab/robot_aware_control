@@ -359,8 +359,8 @@ class MultiRobotPredictionTrainer(object):
                     sampled_losses[sample][k] += v
 
         # now pick the best sample by world error, and average over frames
-        sampled_losses.sort(key=lambda x: x["autoreg_world_loss"])
-        # print([s["autoreg_world_loss"] for s in sampled_losses])
+        if autoregressive and self._config.model == "svg":
+            sampled_losses.sort(key=lambda x: x["autoreg_world_loss"])
         best_loss = sampled_losses[0]
 
         for k, v in best_loss.items():
