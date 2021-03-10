@@ -244,7 +244,7 @@ class MultiRobotPredictionTrainer(object):
                 out = self.model(x_j, m_in, r_j, a_j, x_i, m_next_in, r_i, skip)
                 x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-            # x_pred = bg_img + (1 - bg_mask) * x_pred
+            x_pred = x_j + x_pred # img diff
             # overwrite skip with most recent skip
             if cf.last_frame_skip or i <= cf.n_past:
                 skip = curr_skip
@@ -476,7 +476,7 @@ class MultiRobotPredictionTrainer(object):
                     out = self.model(x_j_black, m_in, r_j, a_j, x_i_black, m_next_in, r_i, skip, force_use_prior=force_use_prior)
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-                # x_pred = bg_img + (1 - bg_mask) * x_pred
+                    x_pred = x_j + x_pred # img diff
                 # overwrite skip with most recent skip
                 if cf.last_frame_skip or i <= cf.n_past:
                     skip = curr_skip
@@ -904,7 +904,7 @@ class MultiRobotPredictionTrainer(object):
                         out = self.model(x_j, m_in, r_j, a_j, x_i, m_next_in, r_i, skip)
                         x_pred, curr_skip, _, _, _, _ = out
 
-                    # x_pred = bg_img + (1 - bg_mask) * x_pred
+                    x_pred = torch.clamp(x_j + x_pred, 0, 1) # img diff
                     if cf.last_frame_skip or i <= cf.n_past:
                         # feed in the  most recent conditioning frame img's skip
                         skip = curr_skip
