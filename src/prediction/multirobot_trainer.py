@@ -913,7 +913,7 @@ class MultiRobotPredictionTrainer(object):
                         # feed in the  most recent conditioning frame img's skip
                         skip = curr_skip
 
-                    if "dontcare_mse" in cf.reconstruction_loss:
+                    if "dontcare" in cf.reconstruction_loss:
                         self._zero_robot_region(mask[i], x_pred)
                 if i < cf.n_past:
                     x_j = x_i
