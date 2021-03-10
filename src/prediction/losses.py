@@ -25,6 +25,20 @@ def dontcare_mse_criterion(prediction, target, mask, robot_weight):
     mean_squared_err = torch.sum(diff ** 2) / num_world_pixels
     return mean_squared_err
 
+def dontcare_l1_criterion(prediction, target, mask, robot_weight):
+    """
+    Zero out the robot region from the target image before summing up the cost
+    prediction / target is B x C x H x W
+    mask is B x 1 x H x W
+    """
+    diff = target - prediction # 3 x H x W
+    mask = mask.type(torch.bool)
+    repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
+    diff[repeat_mask] *= robot_weight
+    num_world_pixels = (~repeat_mask).sum()
+    mean_squared_err = torch.sum(diff.abs_()) / num_world_pixels
+    return mean_squared_err
+
 def robot_mse_criterion(prediction, target, mask):
     """
     MSE of the robot pixels

@@ -36,6 +36,7 @@ import torch
 import wandb
 from src.prediction.losses import (
     dontcare_mse_criterion,
+    dontcare_l1_criterion,
     kl_criterion,
     l1_criterion,
     mse_criterion,
@@ -149,6 +150,9 @@ class MultiRobotPredictionTrainer(object):
         elif self._config.reconstruction_loss == "dontcare_mse":
             robot_weight = self._config.robot_pixel_weight
             return dontcare_mse_criterion(prediction, target, mask, robot_weight)
+        elif self._config.reconstruction_loss == "dontcare_l1":
+            robot_weight = self._config.robot_pixel_weight
+            return dontcare_l1_criterion(prediction, target, mask, robot_weight)
         else:
             raise NotImplementedError(f"{self._config.reconstruction_loss}")
 
@@ -211,7 +215,7 @@ class MultiRobotPredictionTrainer(object):
         self.model.init_hidden(bs)  # initialize the recurrent states
 
         # background mask
-        if self._config.reconstruction_loss == "dontcare_mse":
+        if "dontcare" in self._config.reconstruction_loss:
             self._zero_robot_region(mask[0], x[0])
         # outputs B x C x W x H masks [0, 1]
         # bg_mask = self.background_model(x[0], mask[0])
@@ -226,7 +230,7 @@ class MultiRobotPredictionTrainer(object):
             x_i, m_i, r_i = x[i], mask[i], states[i]
 
             # zero out robot pixels in input for norobot cost
-            if self._config.reconstruction_loss == "dontcare_mse":
+            if "dontcare" in self._config.reconstruction_loss:
                 self._zero_robot_region(m_j, x_j)
                 self._zero_robot_region(m_i, x_i)
             m_in = m_j
@@ -436,7 +440,7 @@ class MultiRobotPredictionTrainer(object):
             mask = predicted_masks
 
         # background mask
-        if self._config.reconstruction_loss == "dontcare_mse":
+        if "dontcare" in self._config.reconstruction_loss:
             self._zero_robot_region(mask[0], x[0])
         # outputs B x C x W x H masks [0, 1]
         # bg_mask = self.background_model(x[0], mask[0])
@@ -456,7 +460,7 @@ class MultiRobotPredictionTrainer(object):
                 # zero out robot pixels in input for norobot cost
                 x_j_black = x_j
                 x_i_black = x_i
-                if self._config.reconstruction_loss == "dontcare_mse":
+                if "dontcare" in self._config.reconstruction_loss:
                     x_j_black = self._zero_robot_region(m_j, x_j, False)
                     x_i_black = self._zero_robot_region(m_i, x_i, False)
                 m_in = m_j
@@ -1069,7 +1073,7 @@ class MultiRobotPredictionTrainer(object):
             x_i, m_i, r_i = x[i], mask[i], robot[i]
 
             # zero out robot pixels in input for norobot cost
-            if self._config.reconstruction_loss == "dontcare_mse":
+            if "dontcare" in self._config.reconstruction_loss:
                 self._zero_robot_region(m_j, x_j)
                 self._zero_robot_region(m_i, x_i)
 
