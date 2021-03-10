@@ -874,7 +874,7 @@ class MultiRobotPredictionTrainer(object):
         skip = None
         for s in range(nsample):
             self.model.init_hidden(b)
-            if cf.reconstruction_loss == "dontcare_mse" and cf.model != "copy":
+            if "dontcare" in cf.reconstruction_loss and cf.model != "copy":
                 self._zero_robot_region(mask[0], x[0])
             gen_seq[s].append(x[0])
             # outputs B x C x W x H masks [0, 1]
@@ -889,7 +889,7 @@ class MultiRobotPredictionTrainer(object):
                     x_pred = self.model(x_j, m_j, x_i, m_i)
                 else:
                     # zero out robot pixels in input for norobot cost
-                    if cf.reconstruction_loss == "dontcare_mse":
+                    if "dontcare" in cf.reconstruction_loss:
                         self._zero_robot_region(mask[i], x[i])
                     m_in = m_j
                     if cf.model_use_future_mask:
@@ -913,7 +913,7 @@ class MultiRobotPredictionTrainer(object):
                         # feed in the  most recent conditioning frame img's skip
                         skip = curr_skip
 
-                    if cf.reconstruction_loss == "dontcare_mse":
+                    if "dontcare_mse" in cf.reconstruction_loss:
                         self._zero_robot_region(mask[i], x_pred)
                 if i < cf.n_past:
                     x_j = x_i
