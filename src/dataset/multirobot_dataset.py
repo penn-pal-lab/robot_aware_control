@@ -38,8 +38,9 @@ class RobotDataset(data.Dataset):
         self._action_dim = config.action_dim
         self._impute_autograsp_action = config.impute_autograsp_action
         self._augment_img = augment_img
+        # assume image is H x W (64, 85), resize into 48 x 64 and pad the 48
         self._img_transform = tf.Compose(
-            [tf.ToTensor(), tf.CenterCrop(config.image_width)]
+            [tf.ToTensor(), tf.Resize((48, 64)), tf.Pad((0, 8))]
         )
         # if self._augment_img:
         #     r = config.color_jitter_range
@@ -172,7 +173,7 @@ class RobotDataset(data.Dataset):
             mask_tensor = torch.stack(aug_masks)
         else:
             video_tensor = torch.stack([self._img_transform(i) for i in images])
-            mask_tensor = torch.stack([self._img_transform(i) for i in masks])
+            mask_tensor = torch.stack([self._img_transform(i) for i in masks]).type(torch.bool).type(torch.float32)
         return video_tensor, mask_tensor
 
     def _preprocess_states(self, states, low, high):
