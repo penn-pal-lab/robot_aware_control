@@ -235,6 +235,7 @@ class MultiRobotPredictionTrainer(object):
             x_i, m_i, r_i = x[i], mask[i], states[i]
 
             # zero out robot pixels in input for norobot cost
+            x_j_black, x_i_black = x_j, x_i
             if "dontcare" in self._config.reconstruction_loss:
                 x_j_black = self._zero_robot_region(m_j, x_j, False)
                 x_i_black = self._zero_robot_region(m_i, x_i, False)
@@ -465,8 +466,7 @@ class MultiRobotPredictionTrainer(object):
                 x_pred = self.model(x_j, m_j, x_i, m_i)
             else:
                 # zero out robot pixels in input for norobot cost
-                x_j_black = x_j
-                x_i_black = x_i
+                x_j_black, x_i_black = x_j, x_i
                 if "dontcare" in self._config.reconstruction_loss:
                     x_j_black = self._zero_robot_region(m_j, x_j, False)
                     x_i_black = self._zero_robot_region(m_i, x_i, False)
@@ -885,9 +885,6 @@ class MultiRobotPredictionTrainer(object):
             if "dontcare" in cf.reconstruction_loss and cf.model != "copy":
                 self._zero_robot_region(mask[0], x[0])
             gen_seq[s].append(x[0])
-            # outputs B x C x W x H masks [0, 1]
-            # bg_mask = self.background_model(x[0], mask[0])
-            # bg_img = bg_mask * x[0]
             x_j = x[0]
             for i in range(1, video_len):
                 # let j be i - 1, or previous timestep
@@ -898,6 +895,7 @@ class MultiRobotPredictionTrainer(object):
                 else:
                     # zero out robot pixels in input for norobot cost
                     if "dontcare" in cf.reconstruction_loss:
+                        self._zero_robot_region(mask[i-1], x_j)
                         self._zero_robot_region(mask[i], x[i])
                     m_in = m_j
                     if cf.model_use_future_mask:
@@ -1081,6 +1079,8 @@ class MultiRobotPredictionTrainer(object):
             m_j, r_j, a_j = mask[i - 1], robot[i - 1], ac[i - 1]
             x_i, m_i, r_i = x[i], mask[i], robot[i]
 
+            x_j_black = x_j
+            x_i_black = x_i
             # zero out robot pixels in input for norobot cost
             if "dontcare" in self._config.reconstruction_loss:
                 x_j_black = self._zero_robot_region(m_j, x_j, False)
