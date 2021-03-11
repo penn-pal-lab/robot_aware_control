@@ -85,6 +85,7 @@ class MultiRobotPredictionTrainer(object):
         self._img_transform = tf.Compose(
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
         )
+        self._video_sample_rng = np.random.RandomState(self._config.seed)
 
     def _init_models(self, cf):
         """Initialize models and optimizers
@@ -179,8 +180,12 @@ class MultiRobotPredictionTrainer(object):
         window = self._config.n_past + self._config.n_future
         all_losses = defaultdict(float)
         for i in range(floor(T / window)):
-            s = i * window
-            e = (i + 1) * window
+            if self._config.random_snippet:
+                s = self._video_sample_rng.randint(0, (T - window) + 1)
+                e = s + window
+            else:
+                s = i * window
+                e = (i + 1) * window
             batch_data = {
                 "images": x[s:e],
                 "states": data["states"][s:e],
@@ -231,13 +236,13 @@ class MultiRobotPredictionTrainer(object):
 
             # zero out robot pixels in input for norobot cost
             if "dontcare" in self._config.reconstruction_loss:
-                self._zero_robot_region(m_j, x_j)
-                self._zero_robot_region(m_i, x_i)
+                x_j_black = self._zero_robot_region(m_j, x_j, False)
+                x_i_black = self._zero_robot_region(m_i, x_i, False)
             m_in = m_j
             if cf.model_use_future_mask:
                 m_in = torch.cat([m_j, m_i], 1)
             if cf.model == "det":
-                x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, skip)
+                x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
             elif cf.model == "svg":
                 m_next_in = m_j
                 if cf.model_use_future_mask:
@@ -245,10 +250,12 @@ class MultiRobotPredictionTrainer(object):
                         m_next_in = torch.cat([m_i, mask[i+1]], 1)
                     else:
                         m_next_in = m_i.repeat(1,2,1,1)
-                out = self.model(x_j, m_in, r_j, a_j, x_i, m_next_in, r_i, skip)
+                out = self.model(x_j_black, m_in, r_j, a_j, x_i_black, m_next_in, r_i, skip)
                 x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-            x_pred = x_j + x_pred # img diff
+            x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+            x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+
             # overwrite skip with most recent skip
             if cf.last_frame_skip or i <= cf.n_past:
                 skip = curr_skip
@@ -480,7 +487,8 @@ class MultiRobotPredictionTrainer(object):
                     out = self.model(x_j_black, m_in, r_j, a_j, x_i_black, m_next_in, r_i, skip, force_use_prior=force_use_prior)
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-                    x_pred = x_j + x_pred # img diff
+                x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
                 # overwrite skip with most recent skip
                 if cf.last_frame_skip or i <= cf.n_past:
                     skip = curr_skip
@@ -908,7 +916,8 @@ class MultiRobotPredictionTrainer(object):
                         out = self.model(x_j, m_in, r_j, a_j, x_i, m_next_in, r_i, skip)
                         x_pred, curr_skip, _, _, _, _ = out
 
-                    x_pred = torch.clamp(x_j + x_pred, 0, 1) # img diff
+                    x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                    x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
                     if cf.last_frame_skip or i <= cf.n_past:
                         # feed in the  most recent conditioning frame img's skip
                         skip = curr_skip
@@ -1074,13 +1083,13 @@ class MultiRobotPredictionTrainer(object):
 
             # zero out robot pixels in input for norobot cost
             if "dontcare" in self._config.reconstruction_loss:
-                self._zero_robot_region(m_j, x_j)
-                self._zero_robot_region(m_i, x_i)
+                x_j_black = self._zero_robot_region(m_j, x_j, False)
+                x_i_black = self._zero_robot_region(m_i, x_i, False)
 
             if cf.model == "det":
-                x_pred, curr_skip = self.model(x_j, m_j, r_j, a_j, skip)
+                x_pred, curr_skip = self.model(x_j_black, m_j, r_j, a_j, skip)
             elif cf.model == "svg":
-                out = self.model(x_j, m_j, r_j, a_j, x_i, m_i, r_i, skip)
+                out = self.model(x_j_black, m_j, r_j, a_j, x_i_black, m_i, r_i, skip)
                 x_pred, curr_skip, _, _, _, _ = out
             # overwrite skip with most recent skip
             if cf.last_frame_skip or i <= cf.n_past:

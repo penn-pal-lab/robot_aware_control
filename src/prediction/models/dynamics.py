@@ -379,7 +379,7 @@ class DeterministicConvModel(nn.Module):
             in_channels += cf.robot_dim
 
         self.tiled_state_conv = tsv = nn.Conv2d(in_channels, cf.g_dim, 3,1,1)
-        self.decoder = dec = ConvDecoder(cf.g_dim, cf.channels)
+        self.decoder = dec = ConvDecoder(cf.g_dim, cf.channels + 1) # extra channel for attention
         self.all_models = [frame_pred, enc, dec, tsv]
 
         self.to(self._device)

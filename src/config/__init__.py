@@ -237,6 +237,7 @@ def add_dataset_arguments(parser):
     parser.add_argument("--world_error_dict", type=str, default=None)
     parser.add_argument("--finetune_num_train", type=int, default=400)
     parser.add_argument("--finetune_num_test", type=int, default=100)
+    parser.add_argument("--random_snippet", type=str2bool, default=False)
 
 
 
