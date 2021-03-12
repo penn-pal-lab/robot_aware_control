@@ -19,12 +19,12 @@ def apply_cdna_kernels_torch(image, kernels):
 
     # _, image_padded = pad_image(kernels, image)
     # image_padded = torch.from_numpy(image_padded)
-    image_padded = torch.from_numpy(image)
+    # image_padded = torch.from_numpy(image)
+    image_padded = image
     # Treat the color channel dimension as the batch dimension since the same
     # transformation is applied to each color channel.
     # Treat the batch dimension as the channel dimension so that
     # depthwise_conv2d can apply a different transformation to each sample.
-    kernels = torch.from_numpy(kernels)
     kernels = kernels.permute([1, 2, 0, 3])
     kernels = kernels.reshape([kernel_size[0], kernel_size[1], batch_size, num_transformed_images])
 

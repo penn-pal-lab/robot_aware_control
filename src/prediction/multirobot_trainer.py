@@ -10,7 +10,7 @@ from torchvision.utils import save_image
 from src.dataset.multirobot_dataset import get_batch, process_batch
 from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
 from src.prediction.models.dynamics import (
-    CopyModel,
+    CopyModel, DeterministicCDNAModel,
     DeterministicModel,
     DeterministicConvModel,
     GripperStatePredictor,
@@ -99,6 +99,8 @@ class MultiRobotPredictionTrainer(object):
             self.model = SVGModel(cf).to(self._device)
         elif cf.model == "det":
             self.model = DeterministicConvModel(cf).to(self._device)
+        elif cf.model == "cdna_det":
+            self.model = DeterministicCDNAModel(cf).to(self._device)
         elif cf.model == "copy":
             self.model = CopyModel()
             return
@@ -244,6 +246,8 @@ class MultiRobotPredictionTrainer(object):
                 m_in = torch.cat([m_j, m_i], 1)
             if cf.model == "det":
                 x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
+            elif cf.model =="cdna_det":
+                x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, x[0], skip)
             elif cf.model == "svg":
                 m_next_in = m_j
                 if cf.model_use_future_mask:
@@ -254,8 +258,9 @@ class MultiRobotPredictionTrainer(object):
                 out = self.model(x_j_black, m_in, r_j, a_j, x_i_black, m_next_in, r_i, skip)
                 x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-            x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
-            x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+            if cf.model != "cdna_det":
+                x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
 
             # overwrite skip with most recent skip
             if cf.last_frame_skip or i <= cf.n_past:
@@ -475,6 +480,8 @@ class MultiRobotPredictionTrainer(object):
                     m_in = torch.cat([m_j, m_i], 1)
                 if cf.model == "det":
                     x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
+                elif cf.model =="cdna_det":
+                    x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, x[0], skip)
                 elif cf.model == "svg":
                     m_next_in = m_j
                     if cf.model_use_future_mask:
@@ -487,8 +494,9 @@ class MultiRobotPredictionTrainer(object):
                     out = self.model(x_j_black, m_in, r_j, a_j, x_i_black, m_next_in, r_i, skip, force_use_prior=force_use_prior)
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-                x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
-                x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+                if cf.model != "cdna_det":
+                    x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                    x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
                 # overwrite skip with most recent skip
                 if cf.last_frame_skip or i <= cf.n_past:
                     skip = curr_skip
@@ -523,7 +531,8 @@ class MultiRobotPredictionTrainer(object):
                 # black out robot with true mask before computing psnr, ssim
                 x_pred_black = self._zero_robot_region(true_mask[i], x_pred, False)
                 x_i_black = self._zero_robot_region(true_mask[i], x_i, False)
-                p = psnr(x_i_black, x_pred_black).mean().item()
+
+                p = psnr(x_i_black.clamp(0,1), x_pred_black.clamp(0,1)).mean().item()
                 s = ssim(x_i_black, x_pred_black).mean().item()
                 losses[f"{prefix}_psnr"] += p
                 losses[f"{prefix}_ssim"] += s
@@ -902,6 +911,8 @@ class MultiRobotPredictionTrainer(object):
                         m_in = torch.cat([m_j, m_i], 1)
                     if cf.model == "det":
                         x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, skip)
+                    elif cf.model =="cdna_det":
+                        x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, x[0], skip)
                     elif cf.model == "svg":
                         m_next_in = m_j
                         if cf.model_use_future_mask:
@@ -914,8 +925,9 @@ class MultiRobotPredictionTrainer(object):
                         out = self.model(x_j, m_in, r_j, a_j, x_i, m_next_in, r_i, skip)
                         x_pred, curr_skip, _, _, _, _ = out
 
-                    x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
-                    x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+                    if cf.model != "cdna_det":
+                        x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                        x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
                     if cf.last_frame_skip or i <= cf.n_past:
                         # feed in the  most recent conditioning frame img's skip
                         skip = curr_skip
