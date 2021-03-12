@@ -63,11 +63,14 @@ def psnr(estimates, targets, data_dims=3):
     targets = (targets + 1)/2
 
     max_pix_val = 1.0
-    tolerance = 0.001
+    tolerance = 0.01
     # assert (0 - tolerance) <= np.min(targets) and np.max(targets) <= max_pix_val * (1 + tolerance)
     # assert (0 - tolerance) <= np.min(estimates) and np.max(estimates) <= max_pix_val * (1 + tolerance)
-    assert (0 - tolerance) <= targets.min() and targets.max() <= max_pix_val * (1 + tolerance)
-    assert (0 - tolerance) <= estimates.min() and estimates.max() <= max_pix_val * (1 + tolerance)
+    if not(0 - tolerance) <= targets.min() and targets.max() <= max_pix_val * (1 + tolerance):
+        import ipdb; ipdb.set_trace()
+
+    if not (0 - tolerance) <= estimates.min() and estimates.max() <= max_pix_val * (1 + tolerance):
+        import ipdb; ipdb.set_trace()
 
     mse = (estimates - targets).pow(2)
     mse_mean = mse.mean(dim=get_dim_inds(mse)[-data_dims:])

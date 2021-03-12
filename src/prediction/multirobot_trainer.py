@@ -460,7 +460,7 @@ class MultiRobotPredictionTrainer(object):
         # bg_img = bg_mask * x[0]
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
-                x_j = x_pred.clone().detach()
+                x_j = x_pred.clone()
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep
