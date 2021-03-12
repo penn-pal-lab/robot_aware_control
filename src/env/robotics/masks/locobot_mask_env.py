@@ -93,7 +93,7 @@ def get_camera_pose_from_apriltag(image):
                                              612.45,
                                              330.55,
                                              248.61],
-                              tag_size=0.0223)
+                              tag_size=0.0353)
     print("[INFO] {} total AprilTags detected".format(len(results)))
 
     # loop over the AprilTag detection results
@@ -127,13 +127,37 @@ def predict_next_qpos(eef_curr, qpos_curr, action):
     return qpos_next
 
 
+def overlay_trajs(traj_path1, traj_path2):
+    with h5py.File(traj_path1 + ".hdf5", "r") as f:
+        imgs1 = np.array(f['observations'])
+    with h5py.File(traj_path2 + ".hdf5", "r") as f:
+        imgs2 = np.array(f['observations'])
+    avg_img = np.zeros(imgs1[0].shape)
+    for t in range(imgs1.shape[0]):
+        avg_img += imgs1[t]
+    for t in range(imgs2.shape[0]):
+        avg_img += imgs2[t]
+    avg_img /= (imgs1.shape[0] + imgs2.shape[0])
+
+    avg_img = avg_img.astype(np.uint8)
+
+    avg_img = cv2.cvtColor(avg_img, cv2.COLOR_BGR2RGB)
+    cv2.imwrite(f"{traj_path1}_overlay.png", avg_img)
+
+
 if __name__ == "__main__":
     """
     Load data:
     """
-    data_path = "/mnt/ssd1/pallab/locobot_data/data_2-24-18-03.hdf5"
 
-    with h5py.File(data_path, "r") as f:
+    data_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-07_03_48_46"
+
+    traj_path1 = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12_05_00_28"
+    traj_path2 = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12_16_47_37"
+
+    # overlay_trajs(traj_path1, traj_path2)
+
+    with h5py.File(data_path + ".hdf5", "r") as f:
         # List all groups
         print("Keys: %s" % f.keys())
 
@@ -142,7 +166,7 @@ if __name__ == "__main__":
         eef_states = np.array(f['states'])
         actions = np.array(f['actions'])
 
-    K = 3
+    K = 0
     predicted_Kstep_qpos = []
     for t in range(actions.shape[0] - K + 1):
         action_Kstep = np.sum(actions[t:t + K, 0:2], axis=0)
@@ -166,7 +190,8 @@ if __name__ == "__main__":
     camera params:
     """
     t = 1
-    env.sim.data.qpos[env._joint_references] = qposes[t]
+    target_qpos = qposes[t]
+    env.sim.data.qpos[env._joint_references] = target_qpos
     env.sim.forward()
 
     # tag to base transformation
@@ -213,7 +238,7 @@ if __name__ == "__main__":
 
     env.sim.forward()
 
-    env.compare_traj("/mnt/ssd1/pallab/locobot_data/data_2-24-18-03", predicted_Kstep_qpos, imgs[K:])
+    env.compare_traj(data_path, predicted_Kstep_qpos, imgs[K:])
 
-    # while True:
-    #     env.render("human")
+    while True:
+        env.render("human")
