@@ -1,9 +1,8 @@
 
-import tensorflow as tf
 import numpy as np
 import torch
 
-def apply_cdna_kernels_torch(image, kernels, dilation_rate=(1, 1)):
+def apply_cdna_kernels_torch(image, kernels):
     """
     Args:
         image: A 4-D tensor of shape
@@ -11,32 +10,33 @@ def apply_cdna_kernels_torch(image, kernels, dilation_rate=(1, 1)):
         kernels: A 4-D of shape
             `[batch, kernel_size[0], kernel_size[1], num_transformed_images]`.
 
-    Returns:
-        A list of `num_transformed_images` 4-D tensors, each of shape
-            `[batch, in_height, in_width, in_channels]`.
+    Returns: A 5-D tensor of shape
+            `[batch, in_height, in_width, num_transformed_images, in_channels]`.
     """
     batch_size, height, width, color_channels = image.shape
     batch_size, kernel_height, kernel_width, num_transformed_images = kernels.shape
     kernel_size = [kernel_height, kernel_width]
+
+    # _, image_padded = pad_image(kernels, image)
+    # image_padded = torch.from_numpy(image_padded)
+    image_padded = torch.from_numpy(image)
     # Treat the color channel dimension as the batch dimension since the same
     # transformation is applied to each color channel.
     # Treat the batch dimension as the channel dimension so that
     # depthwise_conv2d can apply a different transformation to each sample.
+    kernels = torch.from_numpy(kernels)
     kernels = kernels.permute([1, 2, 0, 3])
     kernels = kernels.reshape([kernel_size[0], kernel_size[1], batch_size, num_transformed_images])
 
-
-    # TODO: figure out padding
-    image_padded = image
     # convert BCHW to CHWB tensor
     # Swap the batch and channel dimensions.
-    image_transposed = image.permute([1,2,3,0])
+    image_transposed = image_padded.permute([3,1,2,0])
     # Transform image.
     outputs = cnn2d_depthwise_torch(image_transposed, kernels)
     # outputs = tf.nn.depthwise_conv2d(image_transposed, kernels, [1, 1, 1, 1], padding='VALID', rate=dilation_rate)
     # Transpose the dimensions to where they belong.
     outputs = outputs.reshape([color_channels, height, width, batch_size, num_transformed_images])
-    outputs = outputs.permute(outputs, [3, 1, 2, 4, 0])
+    outputs = outputs.permute([3, 1, 2, 4, 0])
     return outputs
 
 
@@ -52,6 +52,11 @@ def apply_cdna_kernels_tf(image, kernels, dilation_rate=(1, 1)):
         A list of `num_transformed_images` 4-D tensors, each of shape
             `[batch, in_height, in_width, in_channels]`.
     """
+    tf.enable_eager_execution()
+    image = tf.convert_to_tensor(image, np.float32)
+    kernels = tf.convert_to_tensor(kernels, np.float32)
+
+
     batch_size, height, width, color_channels = image.get_shape().as_list()
     batch_size, kernel_height, kernel_width, num_transformed_images = kernels.get_shape().as_list()
     kernel_size = [kernel_height, kernel_width]
@@ -85,9 +90,8 @@ def cnn2d_depthwise_torch(image: np.ndarray,
     filters_torch = filters_torch.view(cin * cmul, 1, df, df)
 
     features_torch = F.conv2d(image_torch, filters_torch, padding=df // 2, groups=cin)
-    features_torch_ = features_torch.numpy()[0].transpose([2, 1, 0])
-
-    return features_torch_
+    features_torch = features_torch.permute([0, 3, 2, 1])
+    return features_torch
 
 
 def cnn2d_depthwise_tf(image: np.ndarray,
@@ -191,21 +195,21 @@ def pad2d_paddings(inputs, size, strides=(1, 1), rate=(1, 1), padding='SAME'):
 
 def convert_to_torch(image, filters):
     # BHWC -> BCWH
-    image_torch = torch.tensor(image.transpose([0, 3, 2, 1]))
-    filters_torch = torch.tensor(filters.transpose([3, 2, 1, 0]))
+    image_torch = image.permute([0, 3, 2, 1])
+    filters_torch = filters.permute([3, 2, 1, 0])
 
     return image_torch, filters_torch
 
 
 def pad_image(filters, image):
 
-    assert filters.shape[0] == filters.shape[1]
-    assert filters.shape[0] % 2
+    assert filters.shape[1] == filters.shape[2]
+    assert filters.shape[1] % 2
 
-    filter_len = filters.shape[0]
+    filter_len = filters.shape[1]
     pad = filter_len // 2
 
-    image_padded = np.pad(image, [(pad,), (pad,), (0,)], 'constant')
+    image_padded = np.pad(image, [(0, ), (pad,), (pad,), (0,)], 'constant')
 
     return filter_len, image_padded
 
@@ -215,7 +219,7 @@ def cnn2d_depthwise(image: np.ndarray,
     """
     Depthwise convolutions.
     Args:
-        image: (hi, wi, cin).
+        image: (N, hi, wi, cin).
         filters: (hf, wf, cin, cmul).
     Returns:
         (hi, wi, cin * cmul)
@@ -225,36 +229,32 @@ def cnn2d_depthwise(image: np.ndarray,
 
     n_cout_cin = filters.shape[-1]
 
-    out = np.zeros([image.shape[0], image.shape[1], image.shape[2] * n_cout_cin])
-
-    for idx_cin in range(image.shape[2]):
-        for idx_row in range(image.shape[0]):
-            for idx_col in range(image.shape[1]):
-                patch = image_padded[idx_row: idx_row + filter_len, idx_col: idx_col + filter_len, idx_cin]
-                for idx_cmul in range(n_cout_cin):
-                    filter = filters[:, :, idx_cin, idx_cmul]
-                    out[idx_row, idx_col, idx_cin * n_cout_cin + idx_cmul] = (filter * patch).sum()
+    out = np.zeros([image.shape[0], image.shape[1], image.shape[2], image.shape[3] * n_cout_cin])
+    for idx_batch in range(image.shape[0]):
+        for idx_cin in range(image.shape[3]):
+            for idx_row in range(image.shape[1]):
+                for idx_col in range(image.shape[2]):
+                    patch = image_padded[idx_batch, idx_row: idx_row + filter_len, idx_col: idx_col + filter_len, idx_cin]
+                    for idx_cmul in range(n_cout_cin):
+                        filter = filters[:, :, idx_cin, idx_cmul]
+                        out[idx_batch, idx_row, idx_col, idx_cin * n_cout_cin + idx_cmul] = (filter * patch).sum()
 
     return out
 if __name__ == '__main__':
-    H_IMG = 28  # Image height
-    W_IMG = 28  # Image width
-    CIN = 6  # Number input channels
-    FILTER_LEN = 7  # Length of one side of filter
-    CMUL = 11  # Channel multiplier (depthwise cnns)
-    GROUPS = 2  # Number groups (grouped cnns)
-    BATCH = 5
+    import ipdb
+
+    H_IMG = 64  # Image height
+    W_IMG = 64  # Image width
+    CIN = 3  # Number input channels
+    FILTER_LEN = 5  # Length of one side of filter
+    CMUL = 13  # Channel multiplier (depthwise cnns)
+    BATCH = 8
     # Create inputs
     image = np.random.rand(BATCH, H_IMG, W_IMG, CIN)
-    filters = np.random.rand(FILTER_LEN, FILTER_LEN, CIN, CMUL)
-
-    # Convolve
-    features_np = cnn2d_depthwise(image, filters)
-
-    # Compare to pytorch
-    features_torch = cnn2d_depthwise_torch(image, filters)
-    print('Pytorch:', np.isclose(features_np, features_torch).all())
-
-    # Compare to tensorflow
-    features_tf = cnn2d_depthwise_tf(image, filters)
-    print('Tensorflow:', np.isclose(features_tf[0], features_np).all())
+    filters = np.random.rand(BATCH, FILTER_LEN, FILTER_LEN, CMUL)
+    # features_np = cnn2d_depthwise(image, filters)
+    torch_cdna = apply_cdna_kernels_torch(image, filters).numpy()
+    # ipdb.set_trace()
+    import tensorflow as tf
+    tf_cdna = apply_cdna_kernels_tf(image, filters).numpy()
+    print(np.allclose(tf_cdna, torch_cdna))
