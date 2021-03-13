@@ -1,6 +1,8 @@
 
 import numpy as np
 import torch
+import torch.nn.functional as F
+import tensorflow as tf
 
 def apply_cdna_kernels_torch(image, kernels):
     """
@@ -17,11 +19,7 @@ def apply_cdna_kernels_torch(image, kernels):
     batch_size, kernel_height, kernel_width, num_transformed_images = kernels.shape
     kernel_size = [kernel_height, kernel_width]
 
-    # _, image_padded = pad_image(kernels, image)
-    # image_padded = torch.from_numpy(image_padded)
-    # image_padded = torch.from_numpy(image)
-    # TODO: use TF padding algorithm to match for arbitray kernel spatial dimensions
-    image_padded = image
+    image_padded = torch_pad2d(image, kernel_size, padding='SAME', mode='CONSTANT')
     # Treat the color channel dimension as the batch dimension since the same
     # transformation is applied to each color channel.
     # Treat the batch dimension as the channel dimension so that
@@ -90,7 +88,7 @@ def cnn2d_depthwise_torch(image: np.ndarray,
     filters_torch = filters_torch.transpose(0, 1).contiguous()
     filters_torch = filters_torch.view(cin * cmul, 1, df, df)
 
-    features_torch = F.conv2d(image_torch, filters_torch, padding=df // 2, groups=cin)
+    features_torch = F.conv2d(image_torch, filters_torch, groups=cin)
     features_torch = features_torch.permute([0, 3, 2, 1])
     return features_torch
 
@@ -104,6 +102,23 @@ def cnn2d_depthwise_tf(image: np.ndarray,
     features_tf = tf.nn.depthwise_conv2d(image, filters, strides=[1, 1, 1, 1], padding='SAME')
 
     return features_tf
+
+def torch_pad2d(inputs, size, strides=(1, 1), rate=(1, 1), padding='SAME', mode='CONSTANT'):
+    """Assumes the input image is channel last style, aka:
+    B x H x W x C
+    """
+    paddings = pad2d_paddings(inputs, size, strides=strides, rate=rate, padding=padding)
+    if paddings == [[0, 0]] * 4:
+        outputs = inputs
+    else:
+        paddings = sum(paddings[1:3], [])
+        # assumes input is B H W C
+        # convert to B x C x H x W for F.pad
+        inputs = inputs.permute([0, 3, 1 ,2])
+        outputs = F.pad(inputs, paddings)
+        # convert it back
+        outputs = outputs.permute([0, 2, 3, 1])
+    return outputs
 
 def pad2d(inputs, size, strides=(1, 1), rate=(1, 1), padding='SAME', mode='CONSTANT'):
     """
@@ -151,7 +166,13 @@ def pad2d_paddings(inputs, size, strides=(1, 1), rate=(1, 1), padding='SAME'):
     rate = np.array(rate) if isinstance(rate, (tuple, list)) else np.array([rate] * 2)
     if np.any(strides > 1) and np.any(rate > 1):
         raise ValueError("strides > 1 not supported in conjunction with rate > 1")
-    input_shape = inputs.get_shape().as_list()
+    if isinstance(inputs, np.ndarray):
+        input_shape = inputs.shape
+    elif isinstance(inputs, tf.Tensor):
+        input_shape = inputs.get_shape().as_list()
+    elif isinstance(inputs, torch.Tensor):
+        input_shape = inputs.shape
+
     assert len(input_shape) == 4
     input_size = np.array(input_shape[1:3])
     if padding in ('SAME', 'FULL'):
@@ -255,7 +276,6 @@ if __name__ == '__main__':
     filters = np.random.rand(BATCH, FILTER_LEN, FILTER_LEN, CMUL)
     # features_np = cnn2d_depthwise(image, filters)
     torch_cdna = apply_cdna_kernels_torch(image, filters).numpy()
-    # ipdb.set_trace()
     import tensorflow as tf
     tf_cdna = apply_cdna_kernels_tf(image, filters).numpy()
     print(np.allclose(tf_cdna, torch_cdna))
