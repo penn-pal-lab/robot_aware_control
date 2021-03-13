@@ -10,7 +10,8 @@ class vgg_layer(nn.Module):
         super(vgg_layer, self).__init__()
         self.main = nn.Sequential(
             nn.Conv2d(nin, nout, 3, 1, 1),
-            nn.BatchNorm2d(nout),
+            nn.InstanceNorm2d(nout),
+            # nn.BatchNorm2d(nout),
             nn.LeakyReLU(0.2, inplace=True),
         )
 
