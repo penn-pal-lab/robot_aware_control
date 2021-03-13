@@ -132,8 +132,8 @@ class MultiRobotPredictionTrainer(object):
         """Returns probability of using ground truth"""
         # assume 50k max training steps
         # https://www.desmos.com/calculator/bo4aoyqje1
-        k = 10000
-        use_truth = k / (k + np.exp(self._step / 3000))
+        k = self._config.scheduled_sampling_k
+        use_truth = k / (k + np.exp(self._step / k))
         use_model = 1 - use_truth
         return [use_truth, use_model]
 
