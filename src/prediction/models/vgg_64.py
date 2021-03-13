@@ -261,13 +261,13 @@ class MaskDecoder(nn.Module):
         )
         # 256 x 16 x 16 -> 128 x 32 x 32
         self.upc3 = nn.Sequential(
-            vgg_layer(256 * 2, 256), vgg_layer(256, 256), vgg_layer(256, 128)
+            vgg_layer(256, 256), vgg_layer(256, 256), vgg_layer(256, 128)
         )
         # 128 x 32 x 32 -> 64 x 64 x 64
-        self.upc4 = nn.Sequential(vgg_layer(128 * 2, 128), vgg_layer(128, 64))
+        self.upc4 = nn.Sequential(vgg_layer(128, 128), vgg_layer(128, 64))
         # 64 x 64 x 64 -> nc x 64 x 64
         self.upc5 = nn.Sequential(
-            vgg_layer(64 * 2, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.Sigmoid()
+            vgg_layer(64, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.Sigmoid()
         )
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
 
@@ -280,14 +280,14 @@ class MaskDecoder(nn.Module):
         Returns: kernel conv output, mask conv output
             [type]: [description]
         """
-        vec, skip = input
+        vec = input
         d2 = self.upc2(vec)
         up2 = self.up(d2) # 256 x 16 x 16
-        d3 = self.upc3(torch.cat([up2, skip[2]], 1))  # 16 x 16
+        d3 = self.upc3(up2)  # 16 x 16
         up3 = self.up(d3)  # 8 -> 32
-        d4 = self.upc4(torch.cat([up3, skip[1]], 1))  # 32 x 32
+        d4 = self.upc4(up3)  # 32 x 32
         up4 = self.up(d4)  # 32 -> 64
-        output = self.upc5(torch.cat([up4, skip[0]], 1))  # 64 x 64
+        output = self.upc5(up4)  # 64 x 64
         # outputs 26 channels, 13 x 64 x 64 output for predicting CDNA kernel,
         # 13 x 64 x 64 output for predicting mask
         kernel_conv, mask_conv = torch.chunk(output, 2, dim=1)
@@ -322,7 +322,7 @@ class CDNADecoder(nn.Module):
         )
 
 
-    def forward(self, prev_image, pred_image_latent, prev_image_skip, context_image):
+    def forward(self, prev_image, pred_image_latent, context_image):
         """Applies learned pixel flow to image to get next image
 
         Args:
@@ -334,7 +334,7 @@ class CDNADecoder(nn.Module):
         Returns:
             Tensor: [B, 3, 64, 64] the predicted images
         """
-        mask_conv, kernel_conv = self.decoder([pred_image_latent, prev_image_skip])
+        mask_conv, kernel_conv = self.decoder(pred_image_latent)
         # mask_conv, kernel_conv is B x num_flows x 64 x 64
         # reshape kernel conv to B x num_flows x 4096 for kernel prediction
         if len(kernel_conv.shape) != 4:
