@@ -14,7 +14,7 @@ from src.prediction.models.dynamics import (
     DeterministicModel,
     DeterministicConvModel,
     GripperStatePredictor,
-    JointPosPredictor,
+    JointPosPredictor, RobonetCDNAModel,
     SVGModel,
 )
 from src.prediction.models.base import Attention, init_weights
@@ -82,6 +82,7 @@ class MultiRobotPredictionTrainer(object):
         )
         self._img_augmentation = config.img_augmentation
         self._plot_rng = np.random.RandomState(self._config.seed)
+        # TODO: figure out optimal image transform
         self._img_transform = tf.Compose(
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
         )
@@ -100,7 +101,7 @@ class MultiRobotPredictionTrainer(object):
         elif cf.model == "det":
             self.model = DeterministicConvModel(cf).to(self._device)
         elif cf.model == "cdna_det":
-            self.model = DeterministicCDNAModel(cf).to(self._device)
+            self.model = RobonetCDNAModel(cf).to(self._device)
         elif cf.model == "copy":
             self.model = CopyModel()
             return
@@ -229,7 +230,8 @@ class MultiRobotPredictionTrainer(object):
         # bg_img = bg_mask * x[0].clone() # x[0] gets set to black pixels in loop, so make copy for backprop
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
-                x_j = x[i - 1] if self._use_true_token() else x_pred.detach().clone()
+                # let gradients flow through time
+                x_j = x[i - 1] if False else x_pred.clone()
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep
