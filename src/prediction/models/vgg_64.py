@@ -268,7 +268,7 @@ class MaskDecoder(nn.Module):
         self.upc4 = nn.Sequential(vgg_layer(128, 128), vgg_layer(128, 64))
         # 64 x 64 x 64 -> nc x 64 x 64
         self.upc5 = nn.Sequential(
-            vgg_layer(64, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.Sigmoid()
+            vgg_layer(64, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1)
         )
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
 
