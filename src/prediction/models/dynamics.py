@@ -447,7 +447,7 @@ class DeterministicCDNAModel(nn.Module):
         )
 
         if cf.image_width == 64:
-            from src.prediction.models.vgg_64 import ConvDecoder, ConvEncoder
+            from src.prediction.models.vgg_64 import ConvEncoder
         else:
             raise ValueError
 
@@ -464,7 +464,7 @@ class DeterministicCDNAModel(nn.Module):
             in_channels += cf.robot_dim
 
         self.tiled_state_conv = tsv = nn.Conv2d(in_channels, cf.g_dim, 3,1,1)
-        self.decoder = dec = CDNADecoder(cf.g_dim) # extra channel for attention
+        self.decoder = dec = CDNADecoder(cf.g_dim, cf.cdna_kernel_size)
         self.all_models = [frame_pred, enc, dec, tsv]
 
         self.to(self._device)

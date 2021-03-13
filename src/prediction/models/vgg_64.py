@@ -299,21 +299,21 @@ class MaskDecoder(nn.Module):
 
 class CDNADecoder(nn.Module):
     name = "cdna_decoder_64"
-    def __init__(self, dim):
+    def __init__(self, channels, cdna_kernel_size):
         """Makes image using the CDNA compositing strategy from the ConvLSTM latent
 
         Args:
-            dim ([type]): spatial size of the input feature map
+            channels ([type]): spatial size of the input feature map
             nc (int, optional): number of output channels
         """
         super(CDNADecoder, self).__init__()
-        self.dim = dim
+        self.channels = channels
         image_width = 64
         self.num_flows = num_flows = 13
-        self.cdna_kernel_size = cdna_kernel_size = 5
+        self.cdna_kernel_size = cdna_kernel_size
         # outputs 26 channels, 13 x 64 x 64 output for predicting CDNA kernel,
         # 13 x 64 x 64 output for predicting mask
-        self.decoder = MaskDecoder(dim, num_flows * 2)
+        self.decoder = MaskDecoder(channels, num_flows * 2)
 
         # takes in a B x 13 x 64 x 64 prediction from the decoder
         # and maps to 13 x flattend kernel size

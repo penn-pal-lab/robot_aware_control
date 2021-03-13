@@ -82,6 +82,7 @@ class MultiRobotPredictionTrainer(object):
         )
         self._img_augmentation = config.img_augmentation
         self._plot_rng = np.random.RandomState(self._config.seed)
+        # TODO: figure out optimal image transform
         self._img_transform = tf.Compose(
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
         )
