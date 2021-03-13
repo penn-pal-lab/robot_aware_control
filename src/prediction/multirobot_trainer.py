@@ -133,8 +133,8 @@ class MultiRobotPredictionTrainer(object):
         """Returns probability of using ground truth"""
         # assume 50k max training steps
         # https://www.desmos.com/calculator/bo4aoyqje1
-        k = 10000
-        use_truth = k / (k + np.exp(self._step / 3000))
+        k = self._config.scheduled_sampling_k
+        use_truth = k / (k + np.exp(self._step / k))
         use_model = 1 - use_truth
         return [use_truth, use_model]
 
@@ -230,7 +230,7 @@ class MultiRobotPredictionTrainer(object):
         # bg_img = bg_mask * x[0].clone() # x[0] gets set to black pixels in loop, so make copy for backprop
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
-                x_j = x[i - 1] if self._use_true_token() else x_pred.clone().detach()
+                x_j = x[i - 1] if self._use_true_token() else x_pred.detach().clone()
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep
@@ -461,7 +461,7 @@ class MultiRobotPredictionTrainer(object):
         # bg_img = bg_mask * x[0]
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
-                x_j = x_pred.clone().detach()
+                x_j = x_pred.clone()
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep
