@@ -116,10 +116,7 @@ class ConvEncoder(nn.Module):
         self.c4 = nn.Sequential(
             vgg_layer(256, 512),
             vgg_layer(512, 512),
-            # vgg_layer(512, 512),
-            nn.Conv2d(512, dim, 3, 1, 1),
-            nn.BatchNorm2d(dim),
-            nn.Tanh()
+            vgg_layer(512, dim),
         )
         self.mp = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
@@ -268,7 +265,7 @@ class MaskDecoder(nn.Module):
         self.upc4 = nn.Sequential(vgg_layer(128, 128), vgg_layer(128, 64))
         # 64 x 64 x 64 -> nc x 64 x 64
         self.upc5 = nn.Sequential(
-            vgg_layer(64, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1)
+            vgg_layer(64, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.InstanceNorm2d(nc), nn.LeakyReLU(0.2, inplace=True)
         )
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
 

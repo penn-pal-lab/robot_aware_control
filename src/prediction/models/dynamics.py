@@ -524,13 +524,6 @@ class RobonetCDNAModel(nn.Module):
 
     def _init_models(self):
         cf = self._config
-
-        hid_channels = cf.g_dim
-        self.frame_predictor = frame_pred = RobonetConvLSTM(
-            cf.batch_size,
-            hid_channels
-        )
-
         if cf.image_width == 64:
             from src.prediction.models.vgg_64 import ConvEncoder
         else:
@@ -543,14 +536,31 @@ class RobonetCDNAModel(nn.Module):
             if cf.model_use_future_mask:
                 channels += 1
         self.encoder = enc = ConvEncoder(cf.g_dim, channels)
-        # tile robot state, action convolution
-        in_channels = cf.g_dim + cf.action_dim
-        if cf.model_use_robot_state:
-            in_channels += cf.robot_dim
 
-        self.tiled_state_conv = tsv = nn.Conv2d(in_channels, cf.g_dim, 3,1,1)
-        self.decoder = dec = CDNADecoder(cf.g_dim, cf.cdna_kernel_size)
-        self.all_models = [frame_pred, enc, dec, tsv]
+        # 2 channel spatial map for actions
+        self.action_encoder = ac_enc =  nn.Sequential(
+            nn.Linear(cf.action_dim, 8 * 8 * 2)
+        )
+        # 2 channel spatial map for state
+        if cf.model_use_robot_state:
+            self.state_encoder = state_enc = nn.Sequential(
+                nn.Linear(cf.robot_dim, 8 * 8 * 2)
+            )
+
+        # tile robot state, action convolution
+        in_channels = cf.g_dim + 2 + (2 * cf.model_use_robot_state)
+        self.inst_norm = nn.InstanceNorm2d(in_channels)
+
+        self.frame_predictor = frame_pred = RobonetConvLSTM(
+            cf.batch_size,
+            in_channels
+        )
+
+        self.decoder = dec = CDNADecoder(in_channels, cf.cdna_kernel_size)
+
+        self.all_models = [frame_pred, enc, dec, ac_enc, self.inst_norm]
+        if cf.model_use_robot_state:
+            self.all_models.append(state_enc)
 
         self.to(self._device)
         for model in self.all_models:
@@ -584,14 +594,13 @@ class RobonetCDNAModel(nn.Module):
 
         if skip is None:
             skip = curr_skip
-        # tile the action and states
-        a = action.repeat(8, 8, 1, 1).permute(2,3,0,1)
+        ac_enc = self.action_encoder(action).view(action.shape[0], 2, 8, 8)
         if cf.model_use_robot_state:
-            r = robot.repeat(8,8,1,1).permute(2,3,0,1)
-            tiled_state = cat([a, r, h], 1)
+            r = self.state_encoder(robot).view(robot.shape[0], 2, 8, 8)
+            state = torch.cat([h, ac_enc, r], 1)
         else:
-            tiled_state = cat([a, h], 1)
-        state = self.tiled_state_conv(tiled_state)
+            state = torch.cat([h, ac_enc], 1)
+        state = self.inst_norm(state)
         h_pred = self.frame_predictor(state)
         x_pred = self.decoder(image, h_pred, context_image)
         return x_pred, skip
