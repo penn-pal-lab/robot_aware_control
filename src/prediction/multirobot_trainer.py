@@ -230,8 +230,7 @@ class MultiRobotPredictionTrainer(object):
         # bg_img = bg_mask * x[0].clone() # x[0] gets set to black pixels in loop, so make copy for backprop
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
-                # let gradients flow through time
-                x_j = x[i - 1] if False else x_pred.clone()
+                x_j = x[i - 1] if False else x_pred.clone().detach()
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep
