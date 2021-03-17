@@ -9,8 +9,7 @@ class vgg_layer(nn.Module):
     def __init__(self, nin, nout):
         super(vgg_layer, self).__init__()
         self.main = nn.Sequential(
-            nn.Conv2d(nin, nout, 3, 1, 1),
-            # nn.InstanceNorm2d(nout),
+            nn.Conv2d(nin, nout, 3, 1, 1, bias=False),
             nn.BatchNorm2d(nout),
             nn.LeakyReLU(0.2, inplace=True),
         )
@@ -116,7 +115,7 @@ class ConvEncoder(nn.Module):
         self.c4 = nn.Sequential(
             vgg_layer(256, 512),
             vgg_layer(512, 512),
-            vgg_layer(512, dim),
+            vgg_layer(512, dim)
         )
         self.mp = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
@@ -242,6 +241,7 @@ class ConvDecoder(nn.Module):
         return output
 
 
+""" CDNA MODULES """
 class MaskDecoder(nn.Module):
     name = "mask_decoder_64"
     def __init__(self, dim, nc=1):

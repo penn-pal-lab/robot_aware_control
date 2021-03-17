@@ -149,7 +149,7 @@ class ConvLSTMCell(nn.Module):
         return hidden, cell
 
 class ConvLSTM(nn.Module):
-    def __init__(self, batch_size, hid_ch):
+    def __init__(self, config, hid_ch):
         super().__init__()
 
         self.hid_ch = hid_ch
@@ -159,7 +159,9 @@ class ConvLSTM(nn.Module):
                 ConvLSTMCell(hid_ch, hid_ch, 3, 1, 1),
             ]
         )
-        self.batch_size = batch_size
+        self.batch_size = config.batch_size
+        self._width = config.image_width
+        self._height = config.image_height
         self.hidden = self.init_hidden()
 
     def init_hidden(self, batch_size=None):
@@ -180,11 +182,11 @@ class ConvLSTM(nn.Module):
         n_layers = len(self.lstm)
         b = batch_size
         channels = [self.hid_ch] * n_layers
-        hid_heights = [8, 8]
-        hid_widths = [8, 8]
+        hid_heights = [self._height // 8, self._height // 8]
+        hid_widths = [self._width // 8, self._width // 8]
 
-        cell_heights = [8, 8]
-        cell_widths = [8, 8]
+        cell_heights = [self._height // 8, self._height // 8]
+        cell_widths = [self._width // 8, self._width // 8]
 
         for i in range(n_layers):
             c, h, w = channels[i], hid_heights[i], hid_widths[i]
@@ -204,6 +206,33 @@ class ConvLSTM(nn.Module):
         return h_in
 
 
+class GaussianConvLSTM(ConvLSTM):
+    def __init__(self, config, hid_ch, out_ch):
+        """Goes from hid_ch -> z dimension
+
+        Args:
+            config (): [description]
+            hid_ch (int): input channel
+        """
+        super().__init__(config, hid_ch)
+        self.out_ch = out_ch
+
+        # input is (hid_ch, 8, 8) feature map from ConvLSTM
+        # output is (out_ch, 8, 8) feature map
+        self.mu_net = nn.Conv2d(hid_ch, out_ch, 3, 1, 1)
+        self.logvar_net = nn.Conv2d(hid_ch, out_ch, 3, 1, 1)
+
+    def reparameterize(self, mu, logvar):
+        logvar = logvar.mul(0.5).exp_()
+        eps = Variable(logvar.data.new(logvar.size()).normal_())
+        return eps.mul(logvar).add_(mu)
+
+    def forward(self, input_):
+        h_in = super().forward(input_)
+        mu = self.mu_net(h_in)
+        logvar = self.logvar_net(h_in)
+        z = self.reparameterize(mu, logvar)
+        return z, mu, logvar
 
 class RobonetConvLSTM(nn.Module):
     def __init__(self, batch_size, hid_ch):
