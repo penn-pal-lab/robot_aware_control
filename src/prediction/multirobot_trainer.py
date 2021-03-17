@@ -578,7 +578,9 @@ class MultiRobotPredictionTrainer(object):
         # load models and dataset
         self._step = self._load_checkpoint(cf.dynamics_model_ckpt)
         self._setup_data()
-        total = cf.niter * cf.epoch_size
+        T = 31
+        window = cf.n_past + cf.n_future
+        total = cf.niter * cf.epoch_size * floor(T / window)
         desc = "batches seen"
         self.progress = tqdm(initial=self._step, total=total, desc=desc)
 
@@ -586,7 +588,7 @@ class MultiRobotPredictionTrainer(object):
         for epoch in range(cf.niter):
             # self.background_model.train()
             self.model.train()
-            # epoch_losses = defaultdict(float)
+            # number of batches in 1 epoch
             for i in range(cf.epoch_size):
                 # start = time()
                 data = next(self.training_batch_generator)
