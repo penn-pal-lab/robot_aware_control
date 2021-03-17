@@ -206,6 +206,33 @@ class ConvLSTM(nn.Module):
         return h_in
 
 
+class GaussianConvLSTM(ConvLSTM):
+    def __init__(self, config, hid_ch, out_ch):
+        """Goes from hid_ch -> z dimension
+
+        Args:
+            config (): [description]
+            hid_ch (int): input channel
+        """
+        super().__init__(config, hid_ch)
+        self.out_ch = out_ch
+
+        # input is (hid_ch, 8, 8) feature map from ConvLSTM
+        # output is (out_ch, 8, 8) feature map
+        self.mu_net = nn.Conv2d(hid_ch, out_ch, 3, 1, 1)
+        self.logvar_net = nn.Conv2d(hid_ch, out_ch, 3, 1, 1)
+
+    def reparameterize(self, mu, logvar):
+        logvar = logvar.mul(0.5).exp_()
+        eps = Variable(logvar.data.new(logvar.size()).normal_())
+        return eps.mul(logvar).add_(mu)
+
+    def forward(self, input_):
+        h_in = super().forward(input_)
+        mu = self.mu_net(h_in)
+        logvar = self.logvar_net(h_in)
+        z = self.reparameterize(mu, logvar)
+        return z, mu, logvar
 
 class RobonetConvLSTM(nn.Module):
     def __init__(self, batch_size, hid_ch):

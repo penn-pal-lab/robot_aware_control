@@ -29,7 +29,8 @@ def init_weights(m):
         return
     if cn.find("Conv") != -1 or cn.find("Linear") != -1:
         m.weight.data.normal_(0.0, 0.02)
-        m.bias.data.fill_(0)
+        if m.bias is not None:
+            m.bias.data.fill_(0)
     elif cn.find("BatchNorm") != -1:
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)

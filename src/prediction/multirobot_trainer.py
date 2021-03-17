@@ -14,7 +14,7 @@ from src.prediction.models.dynamics import (
     DeterministicModel,
     DeterministicConvModel,
     GripperStatePredictor,
-    JointPosPredictor, RobonetCDNAModel,
+    JointPosPredictor, RobonetCDNAModel, SVGConvModel,
     SVGModel,
 )
 from src.prediction.models.base import Attention, init_weights
@@ -97,7 +97,7 @@ class MultiRobotPredictionTrainer(object):
         - Update save and load ckpt code
         """
         if cf.model == "svg":
-            self.model = SVGModel(cf).to(self._device)
+            self.model = SVGConvModel(cf).to(self._device)
         elif cf.model == "det":
             self.model = DeterministicConvModel(cf).to(self._device)
         elif cf.model == "copy":
@@ -179,6 +179,7 @@ class MultiRobotPredictionTrainer(object):
         x = data["images"]
         T = len(x)
         window = self._config.n_past + self._config.n_future
+        self.steps_per_train_video = floor(T / window)
         all_losses = defaultdict(float)
         for i in range(floor(T / window)):
             if self._config.random_snippet:
@@ -603,14 +604,14 @@ class MultiRobotPredictionTrainer(object):
                 #     epoch_losses[f"train/epoch_{k}"] += v
                 if self._scheduled_sampling:
                     info["sample_schedule"] = self._schedule_prob()[0]
-                self._step += 1
+                self._step += self.steps_per_train_video
 
                 if i == cf.epoch_size - 1:
                     self.plot(data, epoch, "train")
                     # self.plot_rec(data, epoch, "train")
 
                 wandb.log({f"train/{k}": v for k, v in info.items()}, step=self._step)
-                self.progress.update()
+                self.progress.update(self.steps_per_train_video)
 
             # log epoch statistics
             # wandb.log(epoch_losses, step=self._step)
