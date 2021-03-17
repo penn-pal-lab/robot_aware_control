@@ -82,9 +82,9 @@ class MultiRobotPredictionTrainer(object):
         )
         self._img_augmentation = config.img_augmentation
         self._plot_rng = np.random.RandomState(self._config.seed)
-        # TODO: figure out optimal image transform
+        w, h = config.image_width, config.image_height
         self._img_transform = tf.Compose(
-            [tf.ToTensor(), tf.CenterCrop(config.image_width)]
+            [tf.ToTensor(), tf.Resize((h, w))]
         )
         self._video_sample_rng = np.random.RandomState(self._config.seed)
 
@@ -100,8 +100,6 @@ class MultiRobotPredictionTrainer(object):
             self.model = SVGModel(cf).to(self._device)
         elif cf.model == "det":
             self.model = DeterministicConvModel(cf).to(self._device)
-        elif cf.model == "cdna_det":
-            self.model = RobonetCDNAModel(cf).to(self._device)
         elif cf.model == "copy":
             self.model = CopyModel()
             return
@@ -248,8 +246,6 @@ class MultiRobotPredictionTrainer(object):
                 m_in = torch.cat([m_j, m_i], 1)
             if cf.model == "det":
                 x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
-            elif cf.model =="cdna_det":
-                x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, x[0], skip)
             elif cf.model == "svg":
                 m_next_in = m_j
                 if cf.model_use_future_mask:
@@ -260,9 +256,8 @@ class MultiRobotPredictionTrainer(object):
                 out = self.model(x_j_black, m_in, r_j, a_j, x_i_black, m_next_in, r_i, skip)
                 x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-            if cf.model != "cdna_det":
-                x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
-                x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+            x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+            x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
 
             # overwrite skip with most recent skip
             if cf.last_frame_skip or i <= cf.n_past:
@@ -482,8 +477,6 @@ class MultiRobotPredictionTrainer(object):
                     m_in = torch.cat([m_j, m_i], 1)
                 if cf.model == "det":
                     x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
-                elif cf.model =="cdna_det":
-                    x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, x[0], skip)
                 elif cf.model == "svg":
                     m_next_in = m_j
                     if cf.model_use_future_mask:
@@ -496,9 +489,8 @@ class MultiRobotPredictionTrainer(object):
                     out = self.model(x_j_black, m_in, r_j, a_j, x_i_black, m_next_in, r_i, skip, force_use_prior=force_use_prior)
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
-                if cf.model != "cdna_det":
-                    x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
-                    x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+                x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
                 # overwrite skip with most recent skip
                 if cf.last_frame_skip or i <= cf.n_past:
                     skip = curr_skip
@@ -913,8 +905,6 @@ class MultiRobotPredictionTrainer(object):
                         m_in = torch.cat([m_j, m_i], 1)
                     if cf.model == "det":
                         x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, skip)
-                    elif cf.model =="cdna_det":
-                        x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, x[0], skip)
                     elif cf.model == "svg":
                         m_next_in = m_j
                         if cf.model_use_future_mask:
@@ -927,9 +917,8 @@ class MultiRobotPredictionTrainer(object):
                         out = self.model(x_j, m_in, r_j, a_j, x_i, m_next_in, r_i, skip)
                         x_pred, curr_skip, _, _, _, _ = out
 
-                    if cf.model != "cdna_det":
-                        x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
-                        x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+                    x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                    x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
                     if cf.last_frame_skip or i <= cf.n_past:
                         # feed in the  most recent conditioning frame img's skip
                         skip = curr_skip

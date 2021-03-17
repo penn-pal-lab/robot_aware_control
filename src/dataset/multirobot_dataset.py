@@ -38,13 +38,14 @@ class RobotDataset(data.Dataset):
         self._action_dim = config.action_dim
         self._impute_autograsp_action = config.impute_autograsp_action
         self._augment_img = augment_img
-        # assume image is H x W (64, 85), resize into 48 x 64 and pad the 48
-        # self._img_transform = tf.Compose(
-        #     [tf.ToTensor(), tf.Resize((48, 64)), tf.Pad((0, 8))]
-        # )
+        # assume image is H x W (64, 85), resize into 48 x 64
+        w, h = config.image_width, config.image_height
         self._img_transform = tf.Compose(
-            [tf.ToTensor(), tf.CenterCrop(config.image_width)]
+            [tf.ToTensor(), tf.Resize((h, w))]
         )
+        # self._img_transform = tf.Compose(
+        #     [tf.ToTensor(), tf.CenterCrop(config.image_width)]
+        # )
 
         # if self._augment_img:
         #     r = config.color_jitter_range

@@ -351,16 +351,15 @@ class DeterministicConvModel(nn.Module):
         super().__init__()
         self._config = cf = config
         self._device = config.device
+        self._image_width = cf.image_width
+        self._image_height = cf.image_height
         self._init_models()
 
     def _init_models(self):
         cf = self._config
 
         hid_channels = cf.g_dim
-        self.frame_predictor = frame_pred = ConvLSTM(
-            cf.batch_size,
-            hid_channels
-        )
+        self.frame_predictor = frame_pred = ConvLSTM(cf,hid_channels)
 
         if cf.image_width == 64:
             from src.prediction.models.vgg_64 import ConvDecoder, ConvEncoder
@@ -414,10 +413,12 @@ class DeterministicConvModel(nn.Module):
 
         if skip is None:
             skip = curr_skip
+        # TODO: pass through MLP and then reshape to 2d map
         # tile the action and states
-        a = action.repeat(8, 8, 1, 1).permute(2,3,0,1)
+        height, width = self._image_height // 8, self._image_width // 8
+        a = action.repeat(height, width, 1, 1).permute(2,3,0,1)
         if cf.model_use_robot_state:
-            r = robot.repeat(8,8,1,1).permute(2,3,0,1)
+            r = robot.repeat(height,width,1,1).permute(2,3,0,1)
             tiled_state = cat([a, r, h], 1)
         else:
             tiled_state = cat([a, h], 1)

@@ -149,7 +149,7 @@ class ConvLSTMCell(nn.Module):
         return hidden, cell
 
 class ConvLSTM(nn.Module):
-    def __init__(self, batch_size, hid_ch):
+    def __init__(self, config, hid_ch):
         super().__init__()
 
         self.hid_ch = hid_ch
@@ -159,7 +159,9 @@ class ConvLSTM(nn.Module):
                 ConvLSTMCell(hid_ch, hid_ch, 3, 1, 1),
             ]
         )
-        self.batch_size = batch_size
+        self.batch_size = config.batch_size
+        self._width = config.image_width
+        self._height = config.image_height
         self.hidden = self.init_hidden()
 
     def init_hidden(self, batch_size=None):
@@ -180,11 +182,11 @@ class ConvLSTM(nn.Module):
         n_layers = len(self.lstm)
         b = batch_size
         channels = [self.hid_ch] * n_layers
-        hid_heights = [8, 8]
-        hid_widths = [8, 8]
+        hid_heights = [self._height // 8, self._height // 8]
+        hid_widths = [self._width // 8, self._width // 8]
 
-        cell_heights = [8, 8]
-        cell_widths = [8, 8]
+        cell_heights = [self._height // 8, self._height // 8]
+        cell_widths = [self._width // 8, self._width // 8]
 
         for i in range(n_layers):
             c, h, w = channels[i], hid_heights[i], hid_widths[i]

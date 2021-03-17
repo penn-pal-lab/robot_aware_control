@@ -141,9 +141,10 @@ def add_prediction_arguments(parser):
     parser.add_argument(
         "--image_width",
         type=int,
-        default=128,
+        default=64,
         help="the height / width of the input image to network",
     )
+    parser.add_argument("--image_height", type=int, default=48)
     parser.add_argument("--channels", default=3, type=int)
     parser.add_argument("--dataset", default="smmnist", help="dataset to train with")
     parser.add_argument(
