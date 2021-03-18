@@ -345,7 +345,7 @@ class MultiRobotPredictionTrainer(object):
         autoregressive: use model's outputs as input for next timestep
         """
         num_samples = 1
-        if autoregressive and self._config.model == "svg":
+        if autoregressive and self._config.model == "svg" and "finetune" in self._config.training_regime:
             num_samples = 3
         x = data["images"]
         T = len(x)
@@ -625,11 +625,17 @@ class MultiRobotPredictionTrainer(object):
             if epoch % cf.checkpoint_interval == 0 and epoch > 0:
                 self._logger.info(f"Saving checkpoint {epoch}")
                 self._save_checkpoint()
+
+            # always eval at first epoch to get early eval result
             if epoch % cf.eval_interval == 0:
                 # plot and evaluate on test set
                 # self.background_model.eval()
+                start =  time()
                 self.model.eval()
                 info = self._compute_epoch_metrics(self.test_loader, "test")
+                end = time()
+                data_time = end - start
+                print("eval time", data_time)
                 wandb.log(info, step=self._step)
                 test_data = next(self.testing_batch_generator)
                 self.plot(test_data, epoch, "test")
