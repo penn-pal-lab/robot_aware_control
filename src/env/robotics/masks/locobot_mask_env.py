@@ -35,7 +35,7 @@ class LocobotMaskEnv(MaskEnv):
             self.sim.data.qpos[joint_references] = qpos
             self.sim.forward()
             # self.render("human")
-            img = self.render("rgb_array")
+            # img = self.render("rgb_array")
             mask = self.get_robot_mask()
             real_img = real_imgs[i]
             mask_img = real_img.copy()
@@ -46,7 +46,7 @@ class LocobotMaskEnv(MaskEnv):
             comparison = mask_img
             # comparison = np.concatenate([img, real_img, mask_img], axis=1)
             mask_img = cv2.cvtColor(mask_img, cv2.COLOR_BGR2RGB)
-            cv2.imwrite(f"{traj_name}_mask_" + str(i) + ".png", mask_img)
+            # cv2.imwrite(f"{traj_name}_mask_" + str(i) + ".png", mask_img)
             gif.append(comparison)
         imageio.mimwrite(f"{traj_name}_mask.gif", gif)
 
@@ -77,16 +77,47 @@ class LocobotMaskEnv(MaskEnv):
         return mask
 
 
-def get_camera_pose_from_apriltag(image):
-    detector = Detector(families='tag36h11',
-                        nthreads=1,
-                        quad_decimate=1.0,
-                        quad_sigma=0.0,
-                        refine_edges=1,
-                        decode_sharpening=0.25,
-                        debug=0)
+def load_data(filename):
+    with h5py.File(filename, "r") as f:
+        # List all groups
+        all_keys = [key for key in f.keys()]
+
+        qposes, imgs, eef_states, actions = None, None, None, None
+        if 'qpos' in all_keys:
+            qposes = np.array(f['qpos'])
+        else:
+            print("ERROR! No qpos")
+
+        if 'observations' in all_keys:
+            imgs = np.array(f['observations'])
+        else:
+            print("ERROR! No observations")
+
+        if 'states' in all_keys:
+            eef_states = np.array(f['states'])
+        else:
+            print("ERROR! No states")
+
+        if 'actions' in all_keys:
+            actions = np.array(f['actions'])
+        else:
+            print("ERROR! No actions")
+    return qposes, imgs, eef_states, actions
+
+
+def get_camera_pose_from_apriltag(image, detector=None):
+    if detector is None:
+        detector = Detector(families='tag36h11',
+                            nthreads=1,
+                            quad_decimate=1.0,
+                            quad_sigma=0.0,
+                            refine_edges=1,
+                            decode_sharpening=0.25,
+                            debug=0)
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    results = []
     results = detector.detect(gray,
                               estimate_tag_pose=True,
                               camera_params=[612.45,
@@ -96,12 +127,15 @@ def get_camera_pose_from_apriltag(image):
                               tag_size=0.0353)
     print("[INFO] {} total AprilTags detected".format(len(results)))
 
+    if len(results) == 0:
+        return None, None
+
     # loop over the AprilTag detection results
     for r in results:
         pose_t = r.pose_t
         pose_R = r.pose_R
-        print("pose_t", r.pose_t)
-        print("pose_R", r.pose_R)
+        # print("pose_t", r.pose_t)
+        # print("pose_R", r.pose_R)
     return pose_t, pose_R
 
 
@@ -157,14 +191,7 @@ if __name__ == "__main__":
 
     # overlay_trajs(traj_path1, traj_path2)
 
-    with h5py.File(data_path + ".hdf5", "r") as f:
-        # List all groups
-        print("Keys: %s" % f.keys())
-
-        qposes = np.array(f['qpos'])
-        imgs = np.array(f['observations'])
-        eef_states = np.array(f['states'])
-        actions = np.array(f['actions'])
+    qposes, imgs, eef_states, actions = load_data(data_path + ".hdf5")
 
     K = 0
     predicted_Kstep_qpos = []
@@ -223,7 +250,7 @@ if __name__ == "__main__":
     cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
 
     cam_id = 0
-    offset = [0, 0, 0]
+    offset = [0, -0.01, 0.01]
     env.sim.model.cam_pos[cam_id] = cam_pos + offset
     cam_quat = cam_rot.as_quat()
     env.sim.model.cam_quat[cam_id] = [
@@ -240,5 +267,5 @@ if __name__ == "__main__":
 
     env.compare_traj(data_path, predicted_Kstep_qpos, imgs[K:])
 
-    while True:
-        env.render("human")
+    # while True:
+    #     env.render("human")
