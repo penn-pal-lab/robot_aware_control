@@ -17,7 +17,45 @@ from src.env.robotics.masks.locobot_mask_env import (LocobotMaskEnv,
 total_files = 100
 
 
+def world_change_rate(mask_env, traj_name, qpos_data, imgs):
+    joint_references = [mask_env.sim.model.get_joint_qpos_addr(x) for x in mask_env._joints]
+
+    all_pixel_changes = []
+    for t in range(1, imgs.shape[0]):
+        last_img = imgs[t - 1].astype(int)
+        curr_img = imgs[t].astype(int)
+
+        mask_env.sim.data.qpos[joint_references] = qpos_data[t - 1]
+        mask_env.sim.forward()
+        last_mask = mask_env.get_robot_mask()
+
+        mask_env.sim.data.qpos[joint_references] = qpos_data[t]
+        mask_env.sim.forward()
+        curr_mask = mask_env.get_robot_mask()
+
+        world_mask = ~(last_mask | curr_mask)
+        world_mask = np.stack([world_mask, world_mask, world_mask])
+        world_mask = np.transpose(world_mask, axes=(1, 2, 0))
+
+        img_diff = np.abs(last_img - curr_img)
+        world_diff = img_diff * world_mask
+
+        world_diff = np.linalg.norm(world_diff, axis=2)
+
+        pixel_changes = np.count_nonzero(world_diff > 100)
+        print(pixel_changes)
+        all_pixel_changes.append(pixel_changes)
+
+        cv2.imshow("world mask", world_diff.astype(np.uint8))
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    return all_pixel_changes
+
+
 if __name__ == "__main__":
+    all_pixel_changes = np.load("pixel_changes.npy")
+    print(np.sum(all_pixel_changes > 2500) / all_pixel_changes.size)
+
     """
     Load data:
     """
@@ -36,6 +74,7 @@ if __name__ == "__main__":
                         decode_sharpening=0.25,
                         debug=0)
 
+    all_pixel_changes = []
     for filename in os.listdir(data_path):
         if filename.endswith(".hdf5"):
             print(os.path.join(data_path, filename))
@@ -115,19 +154,15 @@ if __name__ == "__main__":
 
             env.sim.forward()
 
-            # env.compare_traj(data_path, predicted_Kstep_qpos, imgs[K:])
-
             """
             Compute interaction rate
-            TODO: apply mask, then compute # of changed pixels 
+            apply mask, then compute # of changed pixels 
             """
-            # for t in range(1, imgs.shape[0]):
-            #     last_img = imgs[t - 1].astype(int)
-            #     curr_img = imgs[t].astype(int)
-            #     diff = np.abs(last_img - curr_img)
-            #     pixel_diff = np.average(diff)
-            #     # print(pixel_diff)
-            #     pixel_changes.append(pixel_diff)
+            pixel_changes = world_change_rate(env,
+                                              os.path.join(data_path, filename),
+                                              qposes,
+                                              imgs)
+            all_pixel_changes += pixel_changes
 
             n_files += 1
             if n_files > total_files:
@@ -142,8 +177,10 @@ if __name__ == "__main__":
     print("cam_pose_mean:", cam_pose_mean)
     print("cam_pose_var:", cam_pose_var)
 
-    # plt.figure()
-    # plt.hist(pixel_changes)
-    # plt.xlabel("average pixel changes")
-    # plt.ylabel("number of frames")
-    # plt.show()
+    np.save("pixel_changes", np.array(all_pixel_changes))
+
+    plt.figure()
+    plt.hist(all_pixel_changes, bins=60)
+    plt.xlabel("# of pixel changes")
+    plt.ylabel("number of frames")
+    plt.show()
