@@ -857,6 +857,11 @@ class MultiRobotPredictionTrainer(object):
                 elif cf.training_regime == "finetune_widowx":
                     env = WidowXMaskEnv()
                     cam_ext = world_to_camera_dict[f"widowx1"]
+                elif cf.training_regime == "finetune_sawyer_view":
+                    env = SawyerMaskEnv()
+                    cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+                else:
+                    raise ValueError
 
                 env.set_opencv_camera_pose("main_cam", cam_ext)
                 self.renderers[v] = env
