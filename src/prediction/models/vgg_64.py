@@ -9,7 +9,7 @@ class vgg_layer(nn.Module):
     def __init__(self, nin, nout):
         super(vgg_layer, self).__init__()
         self.main = nn.Sequential(
-            nn.Conv2d(nin, nout, 3, 1, 1),
+            nn.Conv2d(nin, nout, 3, 1, 1, bias=False),
             nn.BatchNorm2d(nout),
             nn.LeakyReLU(0.2, inplace=True),
         )
@@ -115,10 +115,7 @@ class ConvEncoder(nn.Module):
         self.c4 = nn.Sequential(
             vgg_layer(256, 512),
             vgg_layer(512, 512),
-            # vgg_layer(512, 512),
-            nn.Conv2d(512, dim, 3, 1, 1),
-            nn.BatchNorm2d(dim),
-            nn.Tanh()
+            vgg_layer(512, dim)
         )
         self.mp = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
@@ -244,6 +241,7 @@ class ConvDecoder(nn.Module):
         return output
 
 
+""" CDNA MODULES """
 class MaskDecoder(nn.Module):
     name = "mask_decoder_64"
     def __init__(self, dim, nc=1):
@@ -261,13 +259,13 @@ class MaskDecoder(nn.Module):
         )
         # 256 x 16 x 16 -> 128 x 32 x 32
         self.upc3 = nn.Sequential(
-            vgg_layer(256 * 2, 256), vgg_layer(256, 256), vgg_layer(256, 128)
+            vgg_layer(256, 256), vgg_layer(256, 256), vgg_layer(256, 128)
         )
         # 128 x 32 x 32 -> 64 x 64 x 64
-        self.upc4 = nn.Sequential(vgg_layer(128 * 2, 128), vgg_layer(128, 64))
+        self.upc4 = nn.Sequential(vgg_layer(128, 128), vgg_layer(128, 64))
         # 64 x 64 x 64 -> nc x 64 x 64
         self.upc5 = nn.Sequential(
-            vgg_layer(64 * 2, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.Sigmoid()
+            vgg_layer(64, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.InstanceNorm2d(nc), nn.LeakyReLU(0.2, inplace=True)
         )
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
 
@@ -280,14 +278,14 @@ class MaskDecoder(nn.Module):
         Returns: kernel conv output, mask conv output
             [type]: [description]
         """
-        vec, skip = input
+        vec = input
         d2 = self.upc2(vec)
         up2 = self.up(d2) # 256 x 16 x 16
-        d3 = self.upc3(torch.cat([up2, skip[2]], 1))  # 16 x 16
+        d3 = self.upc3(up2)  # 16 x 16
         up3 = self.up(d3)  # 8 -> 32
-        d4 = self.upc4(torch.cat([up3, skip[1]], 1))  # 32 x 32
+        d4 = self.upc4(up3)  # 32 x 32
         up4 = self.up(d4)  # 32 -> 64
-        output = self.upc5(torch.cat([up4, skip[0]], 1))  # 64 x 64
+        output = self.upc5(up4)  # 64 x 64
         # outputs 26 channels, 13 x 64 x 64 output for predicting CDNA kernel,
         # 13 x 64 x 64 output for predicting mask
         kernel_conv, mask_conv = torch.chunk(output, 2, dim=1)
@@ -299,21 +297,21 @@ class MaskDecoder(nn.Module):
 
 class CDNADecoder(nn.Module):
     name = "cdna_decoder_64"
-    def __init__(self, dim):
+    def __init__(self, channels, cdna_kernel_size):
         """Makes image using the CDNA compositing strategy from the ConvLSTM latent
 
         Args:
-            dim ([type]): spatial size of the input feature map
+            channels ([type]): spatial size of the input feature map
             nc (int, optional): number of output channels
         """
         super(CDNADecoder, self).__init__()
-        self.dim = dim
+        self.channels = channels
         image_width = 64
         self.num_flows = num_flows = 13
-        self.cdna_kernel_size = cdna_kernel_size = 5
+        self.cdna_kernel_size = cdna_kernel_size
         # outputs 26 channels, 13 x 64 x 64 output for predicting CDNA kernel,
         # 13 x 64 x 64 output for predicting mask
-        self.decoder = MaskDecoder(dim, num_flows * 2)
+        self.decoder = MaskDecoder(channels, num_flows * 2)
 
         # takes in a B x 13 x 64 x 64 prediction from the decoder
         # and maps to 13 x flattend kernel size
@@ -322,7 +320,7 @@ class CDNADecoder(nn.Module):
         )
 
 
-    def forward(self, prev_image, pred_image_latent, prev_image_skip, context_image):
+    def forward(self, prev_image, pred_image_latent, context_image):
         """Applies learned pixel flow to image to get next image
 
         Args:
@@ -334,7 +332,7 @@ class CDNADecoder(nn.Module):
         Returns:
             Tensor: [B, 3, 64, 64] the predicted images
         """
-        mask_conv, kernel_conv = self.decoder([pred_image_latent, prev_image_skip])
+        mask_conv, kernel_conv = self.decoder(pred_image_latent)
         # mask_conv, kernel_conv is B x num_flows x 64 x 64
         # reshape kernel conv to B x num_flows x 4096 for kernel prediction
         if len(kernel_conv.shape) != 4:

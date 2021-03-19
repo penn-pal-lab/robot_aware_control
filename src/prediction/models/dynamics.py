@@ -2,7 +2,7 @@ from src.prediction.models.vgg_64 import CDNADecoder
 import torch
 import torch.nn as nn
 from src.prediction.models.base import MLPEncoder, init_weights
-from src.prediction.models.lstm import ConvLSTM, LSTM, GaussianLSTM
+from src.prediction.models.lstm import GaussianConvLSTM, RobonetConvLSTM, ConvLSTM, LSTM, GaussianLSTM
 from torch import cat
 
 
@@ -351,17 +351,12 @@ class DeterministicConvModel(nn.Module):
         super().__init__()
         self._config = cf = config
         self._device = config.device
+        self._image_width = cf.image_width
+        self._image_height = cf.image_height
         self._init_models()
 
     def _init_models(self):
         cf = self._config
-
-        hid_channels = cf.g_dim
-        self.frame_predictor = frame_pred = ConvLSTM(
-            cf.batch_size,
-            hid_channels
-        )
-
         if cf.image_width == 64:
             from src.prediction.models.vgg_64 import ConvDecoder, ConvEncoder
         else:
@@ -374,14 +369,25 @@ class DeterministicConvModel(nn.Module):
             if cf.model_use_future_mask:
                 channels += 1
         self.encoder = enc = ConvEncoder(cf.g_dim, channels)
-        # tile robot state, action convolution
-        in_channels = cf.g_dim + cf.action_dim
-        if cf.model_use_robot_state:
-            in_channels += cf.robot_dim
 
-        self.tiled_state_conv = tsv = nn.Conv2d(in_channels, cf.g_dim, 3,1,1)
-        self.decoder = dec = ConvDecoder(cf.g_dim, cf.channels + 1) # extra channel for attention
-        self.all_models = [frame_pred, enc, dec, tsv]
+        # 2 channel spatial map for actions
+        height, width = self._image_height // 8, self._image_width // 8
+        self.action_encoder = ac_enc =  nn.Sequential(
+            nn.Linear(cf.action_dim, height * width * 2)
+        )
+        # 2 channel spatial map for state
+        if cf.model_use_robot_state:
+            self.state_encoder = state_enc = nn.Sequential(
+                nn.Linear(cf.robot_dim, height * width * 2)
+            )
+
+        # tile robot state, action convolution
+        in_channels = cf.g_dim + 2 + (2 * cf.model_use_robot_state)
+        self.frame_predictor = frame_pred = ConvLSTM(cf, in_channels)
+        self.decoder = dec = ConvDecoder(in_channels, cf.channels + 1) # extra channel for attention
+        self.all_models = [frame_pred, enc, dec, ac_enc]
+        if cf.model_use_robot_state:
+            self.all_models.append(state_enc)
 
         self.to(self._device)
         for model in self.all_models:
@@ -414,19 +420,148 @@ class DeterministicConvModel(nn.Module):
 
         if skip is None:
             skip = curr_skip
+        # TODO: pass through MLP and then reshape to 2d map
         # tile the action and states
-        a = action.repeat(8, 8, 1, 1).permute(2,3,0,1)
+        height, width = self._image_height // 8, self._image_width // 8
+        ac_enc = self.action_encoder(action).view(action.shape[0], 2, height, width)
         if cf.model_use_robot_state:
-            r = robot.repeat(8,8,1,1).permute(2,3,0,1)
-            tiled_state = cat([a, r, h], 1)
+            r = self.state_encoder(robot).view(robot.shape[0], 2, height, width)
+            state = torch.cat([h, ac_enc, r], 1)
         else:
-            tiled_state = cat([a, h], 1)
-        state = self.tiled_state_conv(tiled_state)
+            state = torch.cat([h, ac_enc], 1)
         h_pred = self.frame_predictor(state)
         x_pred = self.decoder([h_pred, skip])
         return x_pred, skip
 
 
+class SVGConvModel(nn.Module):
+    """Conv SVG LSTM predictor
+    """
+    def __init__(self, config):
+        super().__init__()
+        self._config = cf = config
+        self._device = config.device
+        self._image_width = cf.image_width
+        self._image_height = cf.image_height
+        self._init_models()
+
+    def _init_models(self):
+        cf = self._config
+        if cf.image_width == 64:
+            from src.prediction.models.vgg_64 import ConvDecoder, ConvEncoder
+        else:
+            raise ValueError
+
+        channels = cf.channels
+        if cf.model_use_mask:
+            # RGB + mask channel
+            channels += 1
+            if cf.model_use_future_mask:
+                channels += 1
+        self.encoder = enc = ConvEncoder(cf.g_dim, channels)
+
+        # 2 channel spatial map for actions
+        height, width = self._image_height // 8, self._image_width // 8
+        self.action_encoder = ac_enc =  nn.Sequential(
+            nn.Linear(cf.action_dim, height * width * 2)
+        )
+        # 2 channel spatial map for state
+        if cf.model_use_robot_state:
+            self.state_encoder = state_enc = nn.Sequential(
+                nn.Linear(cf.robot_dim, height * width * 2)
+            )
+
+        post_dim = cf.g_dim
+        prior_dim = cf.g_dim + 2 # ac channels
+        if cf.model_use_robot_state:
+            post_dim += 2
+            prior_dim += 2
+
+        self.posterior = post = GaussianConvLSTM(cf, post_dim, cf.z_dim)
+        self.prior = prior = GaussianConvLSTM(cf, prior_dim, cf.z_dim)
+
+        # encoder channels, noise channels, ac channels, state channels
+        in_channels = cf.g_dim + cf.z_dim + 2 + (2 * cf.model_use_robot_state)
+        self.frame_predictor = frame_pred = ConvLSTM(cf, in_channels)
+        self.decoder = dec = ConvDecoder(in_channels, cf.channels + 1) # extra channel for attention
+
+        self.all_models = [frame_pred, enc, dec, ac_enc, post, prior]
+        if cf.model_use_robot_state:
+            self.all_models.append(state_enc)
+
+        self.to(self._device)
+        for model in self.all_models:
+            model.apply(init_weights)
+
+    def init_hidden(self, batch_size=None):
+        """
+        Initialize the recurrent states by batch size
+        """
+        self.frame_predictor.hidden = self.frame_predictor.init_hidden(batch_size)
+        self.posterior.hidden = self.posterior.init_hidden(batch_size)
+        self.prior.hidden = self.prior.init_hidden(batch_size)
+
+    def forward(
+        self, image, mask, robot, action, next_image, next_mask, next_robot, skip=None, force_use_prior=False
+    ):
+        """Predict the next state using the learned prior or posterior
+        If next_image, next_mask, next_robot are None, learned prior is used
+        If skip is None, use current image as skip
+
+        Args:
+            image ([Tensor]): batch of images
+            mask ([Tensor]): batch of robot masks
+            robot ([Tensor]): batch of robot states
+            action ([Tensor]): batch of robot actions
+            skip ([Tensor]): batch of skip connections
+            force_use_prior: use prior z even if posterior z is computed. Use this when we want to use the prior, but need to compute metrics about the posterior z for training.
+
+        Returns:
+            [Tuple]: Next image, next latent, skip connection
+        """
+        cf = self._config
+        if cf.model_use_mask:
+            h, curr_skip = self.encoder(cat([image, mask], dim=1))
+        else:
+            h, curr_skip = self.encoder(image)
+        if skip is None:
+            skip = curr_skip
+
+        # tile the action and states
+        height, width = self._image_height // 8, self._image_width // 8
+        a = self.action_encoder(action).view(action.shape[0], 2, height, width)
+        z_t, mu, logvar, mu_p, logvar_p = None, None, None, None, None
+        if cf.model_use_robot_state:
+            r = self.state_encoder(robot).view(robot.shape[0], 2, height, width)
+            # whether to use posterior or learned prior
+            z_p, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
+        else:
+            z_p, mu_p, logvar_p = self.prior(cat([a, h], 1))
+        # use prior's z by default
+        z = z_p
+
+        # if future image is supplied, calculate the posterior
+        if next_image is not None:
+            if cf.model_use_mask:
+                h_target = self.encoder(cat([next_image, next_mask], dim=1))[0]
+            else:
+                h_target = self.encoder(next_image)[0]
+            if cf.model_use_robot_state:
+                r_target = self.state_encoder(next_robot).view(next_robot.shape[0], 2, height, width)
+                z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
+            else:
+                z_t, mu, logvar = self.posterior(h_target)
+            if not force_use_prior:
+                z = z_t
+
+        # add z to the latent before prediction
+        if cf.model_use_robot_state:
+            h_pred = self.frame_predictor(cat([a, r, h, z], 1))
+        else:
+            h_pred = self.frame_predictor(cat([a, h, z], 1))
+
+        x_pred = self.decoder([h_pred, skip])
+        return x_pred, skip, mu, logvar, mu_p, logvar_p
 
 class DeterministicCDNAModel(nn.Module):
     """Deterministic CDNA LSTM predictor
@@ -447,7 +582,7 @@ class DeterministicCDNAModel(nn.Module):
         )
 
         if cf.image_width == 64:
-            from src.prediction.models.vgg_64 import ConvDecoder, ConvEncoder
+            from src.prediction.models.vgg_64 import ConvEncoder
         else:
             raise ValueError
 
@@ -464,7 +599,7 @@ class DeterministicCDNAModel(nn.Module):
             in_channels += cf.robot_dim
 
         self.tiled_state_conv = tsv = nn.Conv2d(in_channels, cf.g_dim, 3,1,1)
-        self.decoder = dec = CDNADecoder(cf.g_dim) # extra channel for attention
+        self.decoder = dec = CDNADecoder(cf.g_dim, cf.cdna_kernel_size)
         self.all_models = [frame_pred, enc, dec, tsv]
 
         self.to(self._device)
@@ -509,4 +644,98 @@ class DeterministicCDNAModel(nn.Module):
         state = self.tiled_state_conv(tiled_state)
         h_pred = self.frame_predictor(state)
         x_pred = self.decoder(image, h_pred, skip, context_image)
+        return x_pred, skip
+
+
+
+class RobonetCDNAModel(nn.Module):
+    """Enc -> Enc LSTM -> attention -> Dec LSTM ->  CDNA Decoder
+    """
+    def __init__(self, config):
+        super().__init__()
+        self._config = cf = config
+        self._device = config.device
+        self._init_models()
+
+    def _init_models(self):
+        cf = self._config
+        if cf.image_width == 64:
+            from src.prediction.models.vgg_64 import ConvEncoder
+        else:
+            raise ValueError
+
+        channels = cf.channels
+        if cf.model_use_mask:
+            # RGB + mask channel
+            channels += 1
+            if cf.model_use_future_mask:
+                channels += 1
+        self.encoder = enc = ConvEncoder(cf.g_dim, channels)
+
+        # 2 channel spatial map for actions
+        self.action_encoder = ac_enc =  nn.Sequential(
+            nn.Linear(cf.action_dim, 8 * 8 * 2)
+        )
+        # 2 channel spatial map for state
+        if cf.model_use_robot_state:
+            self.state_encoder = state_enc = nn.Sequential(
+                nn.Linear(cf.robot_dim, 8 * 8 * 2)
+            )
+
+        # tile robot state, action convolution
+        in_channels = cf.g_dim + 2 + (2 * cf.model_use_robot_state)
+        self.inst_norm = nn.InstanceNorm2d(in_channels)
+
+        self.frame_predictor = frame_pred = RobonetConvLSTM(
+            cf.batch_size,
+            in_channels
+        )
+
+        self.decoder = dec = CDNADecoder(in_channels, cf.cdna_kernel_size)
+
+        self.all_models = [frame_pred, enc, dec, ac_enc, self.inst_norm]
+        if cf.model_use_robot_state:
+            self.all_models.append(state_enc)
+
+        self.to(self._device)
+        for model in self.all_models:
+            model.apply(init_weights)
+
+    def init_hidden(self, batch_size=None):
+        """
+        Initialize the recurrent states by batch size
+        """
+        self.frame_predictor.hidden = self.frame_predictor.init_hidden(batch_size)
+
+    def forward(self, image, mask, robot, action, context_image, skip=None):
+        """Given current state, predict the next state
+
+        Args:
+            image ([Tensor]): batch of images
+            mask ([Tensor]): batch of robot masks
+            robot ([Tensor]): batch of robot states
+            action ([Tensor]): batch of robot actions
+            context_image ([Tensor]): batch of ground truth image
+            skip ([Tensor]): batch of skip connections
+
+        Returns:
+            [Tuple]: Next image, next latent, skip connection
+        """
+        cf = self._config
+        if cf.model_use_mask:
+            h, curr_skip = self.encoder(cat([image, mask], dim=1))
+        else:
+            h, curr_skip = self.encoder(image)
+
+        if skip is None:
+            skip = curr_skip
+        ac_enc = self.action_encoder(action).view(action.shape[0], 2, 8, 8)
+        if cf.model_use_robot_state:
+            r = self.state_encoder(robot).view(robot.shape[0], 2, 8, 8)
+            state = torch.cat([h, ac_enc, r], 1)
+        else:
+            state = torch.cat([h, ac_enc], 1)
+        state = self.inst_norm(state)
+        h_pred = self.frame_predictor(state)
+        x_pred = self.decoder(image, h_pred, context_image)
         return x_pred, skip

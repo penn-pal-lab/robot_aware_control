@@ -141,9 +141,10 @@ def add_prediction_arguments(parser):
     parser.add_argument(
         "--image_width",
         type=int,
-        default=128,
+        default=64,
         help="the height / width of the input image to network",
     )
+    parser.add_argument("--image_height", type=int, default=48)
     parser.add_argument("--channels", default=3, type=int)
     parser.add_argument("--dataset", default="smmnist", help="dataset to train with")
     parser.add_argument(
@@ -202,6 +203,7 @@ def add_prediction_arguments(parser):
     parser.add_argument("--model_use_robot_state", type=str2bool, default=True)
     parser.add_argument("--reconstruction_loss", default="mse", choices=["mse", "l1", "dontcare_mse", "dontcare_l1"])
     parser.add_argument("--scheduled_sampling", type=str2bool, default=False)
+    parser.add_argument("--scheduled_sampling_k", type=int, default=4000)
     parser.add_argument(
         "--robot_pixel_weight", type=float, default=0, help="weighting on robot pixels"
     )
@@ -238,6 +240,7 @@ def add_dataset_arguments(parser):
     parser.add_argument("--finetune_num_train", type=int, default=400)
     parser.add_argument("--finetune_num_test", type=int, default=100)
     parser.add_argument("--random_snippet", type=str2bool, default=False)
+    parser.add_argument("--cdna_kernel_size", type=int, default=5)
 
 
 

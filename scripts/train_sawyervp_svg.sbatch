@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --cpus-per-gpu=13
+#SBATCH --cpus-per-gpu=6
 #SBATCH --gpus=1
 #SBATCH --time=40:00:00
 #SBATCH --partition=dinesh-compute
@@ -8,19 +8,20 @@
 #SBATCH -w node-2080ti-5
 
 # Train vanilla model
-# DATA_ROOT="/scratch/edward/Robonet"
-# COST="mse"
-# ACTION="raw"
-# NAME="sawyer8vp_vanilla_${ACTION}"
-
-# python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root $DATA_ROOT --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --multiview False --image_width 64 --z_dim 64 --model svg --niter 1000 --epoch_size 300 --checkpoint_interval 5 --g_dim 256 --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling False --action_dim 5 --action_enc_dim 5 --robot_dim 5 --robot_enc_dim 10 --data_threads 4 --lr 0.0003 --training_regime train_sawyer_multiview --preprocess_action $ACTION --img_augmentation False >"${NAME}.out" 2>&1 &
-
-# Train norobot model
 DATA_ROOT="/scratch/edward/Robonet"
-COST="dontcare_mse"
-ACTION="camera_raw"
-NAME="sawyer8vp_norobot_${ACTION}_fixrng"
 
-python -um src.prediction.multirobot_trainer --jobname $NAME --wandb True --data_root $DATA_ROOT --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --multiview False --image_width 64 --z_dim 64 --g_dim 256  --model svg --niter 1000 --epoch_size 300 --checkpoint_interval 5  --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling False --action_dim 5 --action_enc_dim 32 --robot_dim 5 --robot_enc_dim 32 --data_threads 4 --lr 0.0003 --training_regime train_sawyer_multiview --preprocess_action $ACTION --img_augmentation False >"${NAME}.out" 2>&1 &
+# >>>>>>>>>>>>>>>> vanilla conv SVG
+# COST="l1"
+# ACTION="raw"
+# NAME="sawyer8vp_vanilla_${ACTION}_svg_l1_256g2"
+
+# python -um src.prediction.multirobot_trainer  --jobname $NAME --wandb True --data_root /scratch/edward/Robonet --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --g_dim 256 --z_dim 64 --model svg --niter 1000 --epoch_size 300 --eval_interval 15 --checkpoint_interval 5  --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --training_regime train_sawyer_multiview --preprocess_action $ACTION --train_val_split 0.95 --model_use_robot_state False --model_use_mask False --random_snippet True --world_error_dict sudri2_c1_world_error.pkl >"${NAME}.out" 2>&1 &
+
+# >>>>>>>>>>>>>>>>> roboaware conv SVG
+COST="dontcare_l1"
+ACTION="raw"
+NAME="sawyer8vp_norobot_${ACTION}_svg_l1_256g2_nofuturemask"
+
+python -um src.prediction.multirobot_trainer  --jobname $NAME --wandb True --data_root /scratch/edward/Robonet --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --g_dim 256 --z_dim 64 --model svg --niter 1000 --epoch_size 300 --eval_interval 15 --checkpoint_interval 5 --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --training_regime train_sawyer_multiview --preprocess_action $ACTION --train_val_split 0.95 --model_use_robot_state True --model_use_mask True --model_use_future_mask False --random_snippet True --world_error_dict sudri2_c1_world_error.pkl >"${NAME}.out" 2>&1 &
 
 wait
