@@ -10,6 +10,7 @@ robonet_images/
 visualize_actions.pkl
 figures/
 MUJOCO_LOG.TXT
+pixel_changes.npy
 
 # IDE
 *.swp

@@ -436,7 +436,7 @@ class RobotPredictionTrainer(object):
         Setup the dataset and dataloaders
         """
         if self._config.training_regime == "singlerobot":
-            from src.dataset.sawyer_joint_pos_dataloaders import create_loaders
+            from src.dataset.sawyer_joint_pos_dataloaders import create_joint_pos_loaders as create_loaders
         elif self._config.training_regime == "finetune":
             from src.dataset.baxter_joint_pos_dataloaders import create_finetune_loaders as create_loaders
         elif  self._config.training_regime == "finetune_widowx":

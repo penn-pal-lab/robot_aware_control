@@ -174,6 +174,7 @@ def create_loaders(config):
         shuffle=True,
         drop_last=False,
         pin_memory=True,
+        generator=torch.Generator().manual_seed(config.seed),
     )
 
     test_loader = DataLoader(
@@ -183,6 +184,7 @@ def create_loaders(config):
         shuffle=True,
         drop_last=False,
         pin_memory=True,
+        generator=torch.Generator().manual_seed(config.seed),
     )
 
     # create a small deterministic dataloader for comparison across runs

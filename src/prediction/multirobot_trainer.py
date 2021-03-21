@@ -229,8 +229,7 @@ class MultiRobotPredictionTrainer(object):
         # bg_img = bg_mask * x[0].clone() # x[0] gets set to black pixels in loop, so make copy for backprop
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
-                # let gradients flow through time
-                x_j = x[i - 1] if False else x_pred.clone()
+                x_j = x[i - 1] if False else x_pred.clone().detach()
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep
@@ -346,7 +345,7 @@ class MultiRobotPredictionTrainer(object):
         autoregressive: use model's outputs as input for next timestep
         """
         num_samples = 1
-        if autoregressive and self._config.model == "svg":
+        if autoregressive and self._config.model == "svg" and "finetune" in self._config.training_regime:
             num_samples = 3
         x = data["images"]
         T = len(x)
@@ -626,11 +625,17 @@ class MultiRobotPredictionTrainer(object):
             if epoch % cf.checkpoint_interval == 0 and epoch > 0:
                 self._logger.info(f"Saving checkpoint {epoch}")
                 self._save_checkpoint()
+
+            # always eval at first epoch to get early eval result
             if epoch % cf.eval_interval == 0:
                 # plot and evaluate on test set
                 # self.background_model.eval()
+                start =  time()
                 self.model.eval()
                 info = self._compute_epoch_metrics(self.test_loader, "test")
+                end = time()
+                data_time = end - start
+                print("eval time", data_time)
                 wandb.log(info, step=self._step)
                 test_data = next(self.testing_batch_generator)
                 self.plot(test_data, epoch, "test")
@@ -852,6 +857,11 @@ class MultiRobotPredictionTrainer(object):
                 elif cf.training_regime == "finetune_widowx":
                     env = WidowXMaskEnv()
                     cam_ext = world_to_camera_dict[f"widowx1"]
+                elif cf.training_regime == "finetune_sawyer_view":
+                    env = SawyerMaskEnv()
+                    cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+                else:
+                    raise ValueError
 
                 env.set_opencv_camera_pose("main_cam", cam_ext)
                 self.renderers[v] = env
@@ -883,7 +893,9 @@ class MultiRobotPredictionTrainer(object):
             mask = predicted_masks
 
         gen_seq = [[] for i in range(nsample)]
+        gen_mask = [[] for i in range(nsample)]
         gt_seq = [x[i] for i in range(len(x))]
+        gt_mask = [mask[i] for i in range(len(mask))]
 
         skip = None
         for s in range(nsample):
@@ -891,6 +903,7 @@ class MultiRobotPredictionTrainer(object):
             if "dontcare" in cf.reconstruction_loss and cf.model != "copy":
                 self._zero_robot_region(mask[0], x[0])
             gen_seq[s].append(x[0])
+            gen_mask[s].append(mask[0])
             x_j = x[0]
             for i in range(1, video_len):
                 # let j be i - 1, or previous timestep
@@ -933,45 +946,45 @@ class MultiRobotPredictionTrainer(object):
                 else:
                     x_j = x_pred
                 gen_seq[s].append(x_j)
+                gen_mask[s].append(x_pred_mask)
 
         to_plot = []
+        mask_to_plot = []
         gifs = [[] for t in range(video_len)]
+        mask_gifs = [[] for t in range(video_len)]
         nrow = b
         for i in range(nrow):
             # ground truth sequence
             row = []
+            mask_row = []
             for t in range(video_len):
                 row.append(gt_seq[t][i])
+                mask_row.append(gt_mask[t][i])
             to_plot.append(row)
+            mask_to_plot.append(mask_row)
             if cf.model == "svg":
                 s_list = range(nsample)
             else:
                 s_list = [0]
-            for ss in range(len(s_list)):
-                s = s_list[ss]
-                row = []
-                for t in range(video_len):
-                    row.append(gen_seq[s][t][i])
-                to_plot.append(row)
             for t in range(video_len):
                 row = []
+                mask_row = []
                 row.append(gt_seq[t][i])
+                mask_row.append(gt_mask[t][i])
                 for ss in range(len(s_list)):
                     s = s_list[ss]
                     row.append(gen_seq[s][t][i])
+                    mask_row.append(gen_mask[s][t][i])
                 gifs[t].append(row)
+                mask_gifs[t].append(mask_row)
         # gifs is T x B x S x |I|
-        fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.png")
-        save_tensors_image(fname, to_plot)
-
         fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.gif")
         save_gif(fname, gifs)
         wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
 
-        # log background mask
-        # mask_path = os.path.join(cf.plot_dir, f"{name}_mask_{epoch}.png")
-        # save_image(bg_img, mask_path, range=(0,1))
-        # wandb.log({f"{name}/bg_mask": wandb.Image(mask_path)}, step=self._step)
+        fname = os.path.join(cf.plot_dir, f"{name}_{epoch}_masks.gif")
+        save_gif(fname, mask_gifs)
+        wandb.log({f"{name}/masks_gifs": wandb.Video(fname, format="gif")}, step=self._step)
 
     def _epoch_save_fid_images(self, random_snippet=False):
         """
