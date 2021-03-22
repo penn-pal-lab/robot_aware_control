@@ -545,7 +545,7 @@ class SVGConvModel(nn.Module):
             if cf.model_use_future_robot_state:
                 r, r_next = robot
                 r = self.state_encoder(r).view(r.shape[0], 2, height, width)
-                r_next = self.fut_state_encoder(r_next).view(r_next.shape[0], 2, height, width)
+                r_next = self.future_state_encoder(r_next).view(r_next.shape[0], 2, height, width)
                 z_p, mu_p, logvar_p = self.prior(cat([a, r, r_next, h], 1))
             else:
                 r = self.state_encoder(robot).view(robot.shape[0], 2, height, width)
