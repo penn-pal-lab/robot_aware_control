@@ -470,24 +470,33 @@ class SVGConvModel(nn.Module):
             self.state_encoder = state_enc = nn.Sequential(
                 nn.Linear(cf.robot_dim, height * width * 2)
             )
-
+        if cf.model_use_future_robot_state:
+            self.future_state_encoder = fut_state_enc = nn.Sequential(
+                nn.Linear(cf.robot_dim, height * width * 2)
+            )
         post_dim = cf.g_dim
         prior_dim = cf.g_dim + 2 # ac channels
         if cf.model_use_robot_state:
             post_dim += 2
+            prior_dim += 2
+        if cf.model_use_future_robot_state:
+            # posterior doesn't need 2 extra channels for future robot state,
+            # since it only needs the r_i to produce z.
             prior_dim += 2
 
         self.posterior = post = GaussianConvLSTM(cf, post_dim, cf.z_dim)
         self.prior = prior = GaussianConvLSTM(cf, prior_dim, cf.z_dim)
 
         # encoder channels, noise channels, ac channels, state channels
-        in_channels = cf.g_dim + cf.z_dim + 2 + (2 * cf.model_use_robot_state)
+        in_channels = cf.g_dim + cf.z_dim + 2 + (2 * cf.model_use_robot_state) + (2 * cf.model_use_future_robot_state)
         self.frame_predictor = frame_pred = ConvLSTM(cf, in_channels)
         self.decoder = dec = ConvDecoder(in_channels, cf.channels + 1) # extra channel for attention
 
         self.all_models = [frame_pred, enc, dec, ac_enc, post, prior]
         if cf.model_use_robot_state:
             self.all_models.append(state_enc)
+        if cf.model_use_future_robot_state:
+            self.all_models.append(fut_state_enc)
 
         self.to(self._device)
         for model in self.all_models:
@@ -531,10 +540,17 @@ class SVGConvModel(nn.Module):
         height, width = self._image_height // 8, self._image_width // 8
         a = self.action_encoder(action).view(action.shape[0], 2, height, width)
         z_t, mu, logvar, mu_p, logvar_p = None, None, None, None, None
+
         if cf.model_use_robot_state:
-            r = self.state_encoder(robot).view(robot.shape[0], 2, height, width)
-            # whether to use posterior or learned prior
-            z_p, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
+            if cf.model_use_future_robot_state:
+                r, r_next = robot
+                r = self.state_encoder(r).view(r.shape[0], 2, height, width)
+                r_next = self.fut_state_encoder(r_next).view(r_next.shape[0], 2, height, width)
+                z_p, mu_p, logvar_p = self.prior(cat([a, r, r_next, h], 1))
+            else:
+                r = self.state_encoder(robot).view(robot.shape[0], 2, height, width)
+                # whether to use posterior or learned prior
+                z_p, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
         else:
             z_p, mu_p, logvar_p = self.prior(cat([a, h], 1))
         # use prior's z by default
@@ -556,7 +572,10 @@ class SVGConvModel(nn.Module):
 
         # add z to the latent before prediction
         if cf.model_use_robot_state:
-            h_pred = self.frame_predictor(cat([a, r, h, z], 1))
+            if cf.model_use_future_robot_state:
+                h_pred = self.frame_predictor(cat([a, r, r_next, h, z], 1))
+            else:
+                h_pred = self.frame_predictor(cat([a, r, h, z], 1))
         else:
             h_pred = self.frame_predictor(cat([a, h, z], 1))
 

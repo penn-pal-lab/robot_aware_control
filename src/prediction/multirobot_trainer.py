@@ -325,9 +325,6 @@ class MultiRobotPredictionTrainer(object):
         # background mask
         if "dontcare" in self._config.reconstruction_loss:
             self._zero_robot_region(mask[0], x[0])
-        # outputs B x C x W x H masks [0, 1]
-        # bg_mask = self.background_model(x[0], mask[0])
-        # bg_img = bg_mask * x[0].clone() # x[0] gets set to black pixels in loop, so make copy for backprop
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
                 x_j = x[i - 1] if False else x_pred.clone().detach()
@@ -342,20 +339,22 @@ class MultiRobotPredictionTrainer(object):
             if "dontcare" in self._config.reconstruction_loss:
                 x_j_black = self._zero_robot_region(m_j, x_j, False)
                 x_i_black = self._zero_robot_region(m_i, x_i, False)
+
             m_in = m_j
             if cf.model_use_future_mask:
                 m_in = torch.cat([m_j, m_i], 1)
+            r_in = r_j
+            if cf.model_use_future_robot_state:
+                r_in = (r_j, r_i)
+
             if cf.model == "det":
                 x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
             elif cf.model == "svg":
-                m_next_in = m_j
+                m_next_in = m_i
                 if cf.model_use_future_mask:
-                    if i + 1 < cf.n_past + cf.n_future:
-                        m_next_in = torch.cat([m_i, mask[i + 1]], 1)
-                    else:
-                        m_next_in = m_i.repeat(1, 2, 1, 1)
+                    m_next_in = m_i.repeat(1, 2, 1, 1)
                 out = self.model(
-                    x_j_black, m_in, r_j, a_j, x_i_black, m_next_in, r_i, skip
+                    x_j_black, m_in, r_in, a_j, x_i_black, m_next_in, r_i, skip
                 )
                 x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
@@ -426,9 +425,9 @@ class MultiRobotPredictionTrainer(object):
         progress = tqdm(total=len(data_loader), desc=f"computing {name} epoch")
         for data in data_loader:
             data = process_batch(data, self._device)
-            info = self._eval_video(data)
-            for k, v in info.items():
-                losses[k].append(v)
+            # info = self._eval_video(data)
+            # for k, v in info.items():
+            #     losses[k].append(v)
             info = self._eval_video(data, autoregressive=True)
             for k, v in info.items():
                 losses[k].append(v)
@@ -513,12 +512,8 @@ class MultiRobotPredictionTrainer(object):
         if autoregressive and cf.learned_robot_model:
             states, mask = self._generate_learned_masks_states(data)
 
-        # background mask
         if "dontcare" in self._config.reconstruction_loss:
             self._zero_robot_region(mask[0], x[0])
-        # outputs B x C x W x H masks [0, 1]
-        # bg_mask = self.background_model(x[0], mask[0])
-        # bg_img = bg_mask * x[0]
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 x_j = x_pred.clone()
@@ -536,30 +531,30 @@ class MultiRobotPredictionTrainer(object):
                 if "dontcare" in self._config.reconstruction_loss:
                     x_j_black = self._zero_robot_region(m_j, x_j, False)
                     x_i_black = self._zero_robot_region(m_i, x_i, False)
+
                 m_in = m_j
                 if cf.model_use_future_mask:
                     m_in = torch.cat([m_j, m_i], 1)
+                r_in = r_j
+                if cf.model_use_future_robot_state:
+                    r_in = (r_j, r_i)
+
                 if cf.model == "det":
                     x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
                 elif cf.model == "svg":
-                    m_next_in = m_j
+                    m_next_in = m_i
                     if cf.model_use_future_mask:
-                        if i + 1 < cf.n_eval:
-                            m_next_in = torch.cat([m_i, mask[i + 1]], 1)
-                        else:
-                            m_next_in = m_i.repeat(1, 2, 1, 1)
-                    # use prior for autoregressive step and i > conditioning
-                    force_use_prior = autoregressive and i > 1
+                        m_next_in = m_i.repeat(1, 2, 1, 1)
                     out = self.model(
                         x_j_black,
                         m_in,
-                        r_j,
+                        r_in,
                         a_j,
                         x_i_black,
                         m_next_in,
                         r_i,
                         skip,
-                        force_use_prior=force_use_prior,
+                        force_use_prior=True
                     )
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
@@ -635,8 +630,7 @@ class MultiRobotPredictionTrainer(object):
         temp_k_losses = {}
         for k, v in k_losses.items():
             num_steps = float(k[0])
-            if num_steps != 1:  # 1-step is redundant
-                temp_k_losses[k] = v / num_steps
+            temp_k_losses[k] = v / num_steps
         losses.update(temp_k_losses)
         return losses
 
@@ -949,18 +943,16 @@ class MultiRobotPredictionTrainer(object):
                     m_in = m_j
                     if cf.model_use_future_mask:
                         m_in = torch.cat([m_j, m_i], 1)
+                    r_in = r_j
+                    if cf.model_use_future_robot_state:
+                        r_in = (r_j, r_i)
+
                     if cf.model == "det":
                         x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, skip)
                     elif cf.model == "svg":
-                        m_next_in = m_j
-                        if cf.model_use_future_mask:
-                            if i + 1 < video_len:
-                                m_next_in = torch.cat([m_i, mask[i + 1]], 1)
-                            else:
-                                m_next_in = m_i.repeat(1, 2, 1, 1)
-                        if i > cf.n_past:  # don't use posterior
-                            x_i, m_i, r_i = None, None, None
-                        out = self.model(x_j, m_in, r_j, a_j, x_i, m_next_in, r_i, skip)
+                        # don't use posterior.
+                        x_i, m_next_in, r_i = None, None, None
+                        out = self.model(x_j, m_in, r_in, a_j, x_i, m_next_in, r_i, skip)
                         x_pred, curr_skip, _, _, _, _ = out
 
                     x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
