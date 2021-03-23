@@ -323,11 +323,11 @@ class MultiRobotPredictionTrainer(object):
         self.model.init_hidden(bs)  # initialize the recurrent states
 
         # background mask
-        if "dontcare" in self._config.reconstruction_loss:
+        if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
             self._zero_robot_region(mask[0], x[0])
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
-                x_j = x[i - 1] if False else x_pred.clone().detach()
+                x_j = x[i - 1] if self._use_true_token() else x_pred.clone().detach()
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep
@@ -336,9 +336,12 @@ class MultiRobotPredictionTrainer(object):
 
             # zero out robot pixels in input for norobot cost
             x_j_black, x_i_black = x_j, x_i
-            if "dontcare" in self._config.reconstruction_loss:
+            if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
                 x_j_black = self._zero_robot_region(m_j, x_j, False)
                 x_i_black = self._zero_robot_region(m_i, x_i, False)
+
+            if cf.last_frame_skip:
+                skip = None
 
             m_in = m_j
             if cf.model_use_future_mask:
@@ -512,7 +515,7 @@ class MultiRobotPredictionTrainer(object):
         if autoregressive and cf.learned_robot_model:
             states, mask = self._generate_learned_masks_states(data)
 
-        if "dontcare" in self._config.reconstruction_loss:
+        if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
             self._zero_robot_region(mask[0], x[0])
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
@@ -528,9 +531,12 @@ class MultiRobotPredictionTrainer(object):
             else:
                 # zero out robot pixels in input for norobot cost
                 x_j_black, x_i_black = x_j, x_i
-                if "dontcare" in self._config.reconstruction_loss:
+                if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
                     x_j_black = self._zero_robot_region(m_j, x_j, False)
                     x_i_black = self._zero_robot_region(m_i, x_i, False)
+
+                if cf.last_frame_skip:
+                    skip = None
 
                 m_in = m_j
                 if cf.model_use_future_mask:
@@ -921,10 +927,10 @@ class MultiRobotPredictionTrainer(object):
         gt_seq = [x[i] for i in range(len(x))]
         gt_mask = [mask[i] for i in range(len(mask))]
 
-        skip = None
         for s in range(nsample):
+            skip = None
             self.model.init_hidden(b)
-            if "dontcare" in cf.reconstruction_loss and cf.model != "copy":
+            if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
                 self._zero_robot_region(mask[0], x[0])
             gen_seq[s].append(x[0])
             gen_mask[s].append(mask[0])
@@ -937,7 +943,7 @@ class MultiRobotPredictionTrainer(object):
                     x_pred = self.model(x_j, m_j, x_i, m_i)
                 else:
                     # zero out robot pixels in input for norobot cost
-                    if "dontcare" in cf.reconstruction_loss:
+                    if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
                         self._zero_robot_region(mask[i - 1], x_j)
                         self._zero_robot_region(mask[i], x[i])
                     m_in = m_j
@@ -957,11 +963,12 @@ class MultiRobotPredictionTrainer(object):
 
                     x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
                     x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
-                    if cf.last_frame_skip or i <= cf.n_past:
-                        # feed in the  most recent conditioning frame img's skip
+
+                    if i <= cf.n_past:
+                        # store the most recent conditioning frame's skip
                         skip = curr_skip
 
-                    if "dontcare" in cf.reconstruction_loss:
+                    if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
                         self._zero_robot_region(mask[i], x_pred)
                 if i < cf.n_past:
                     x_j = x_i
