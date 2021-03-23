@@ -21,7 +21,7 @@ def dontcare_mse_criterion(prediction, target, mask, robot_weight):
     mask = mask.type(torch.bool)
     repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
     diff[repeat_mask] *= robot_weight
-    num_world_pixels = (~repeat_mask).sum((1,2,3))
+    num_world_pixels = (~repeat_mask).sum((1,2,3)) + 1
     mean_err = torch.mean((diff ** 2).sum((1,2,3)) / num_world_pixels)
     return mean_err
 
@@ -35,7 +35,7 @@ def dontcare_l1_criterion(prediction, target, mask, robot_weight):
     mask = mask.type(torch.bool)
     repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
     diff[repeat_mask] *= robot_weight
-    num_world_pixels = (~repeat_mask).sum((1,2,3))
+    num_world_pixels = (~repeat_mask).sum((1,2,3)) + 1
     mean_err = torch.mean((diff.abs_()).sum((1,2,3)) / num_world_pixels)
     return mean_err
 
@@ -49,7 +49,7 @@ def robot_mse_criterion(prediction, target, mask):
     mask = mask.type(torch.bool)
     repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
     diff[~repeat_mask] = 0
-    num_robot_pixels = repeat_mask.sum((1,2,3))
+    num_robot_pixels = repeat_mask.sum((1,2,3)) + 1
     mean_err = torch.mean((diff ** 2).sum((1,2,3)) / num_robot_pixels)
     return mean_err
 
@@ -63,7 +63,7 @@ def world_mse_criterion(prediction, target, mask):
     mask = mask.type(torch.bool)
     repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
     diff[repeat_mask] = 0
-    num_world_pixels = (~repeat_mask).sum((1,2,3))
+    num_world_pixels = (~repeat_mask).sum((1,2,3)) + 1
     mean_err = torch.mean((diff ** 2).sum((1,2,3)) / num_world_pixels)
     return mean_err
 
