@@ -66,7 +66,7 @@ class MultiRobotPredictionTrainer(object):
         # init WandB
         if not config.wandb:
             os.environ["WANDB_MODE"] = "dryrun"
-        os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
+        assert "WANDB_API_KEY" in os.environ, "set WANDB_API_KEY env var."
         wandb.init(
             resume=config.jobname,
             project=config.wandb_project,
@@ -364,8 +364,8 @@ class MultiRobotPredictionTrainer(object):
             x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
             x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
 
-            # overwrite skip with most recent skip
-            if cf.last_frame_skip or i <= cf.n_past:
+            if i <= cf.n_past:
+                # overwrite skip with most recent conditioning frame skip
                 skip = curr_skip
             # calculate loss per view and log it
             if cf.multiview:
@@ -566,8 +566,8 @@ class MultiRobotPredictionTrainer(object):
 
                 x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
                 x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
-                # overwrite skip with most recent skip
-                if cf.last_frame_skip or i <= cf.n_past:
+                if i <= cf.n_past:
+                    # overwrite skip with most recent conditioning frame skip
                     skip = curr_skip
             if cf.multiview:
                 num_views = x_pred.shape[2] // cf.image_width
@@ -953,6 +953,10 @@ class MultiRobotPredictionTrainer(object):
                     if cf.model_use_future_robot_state:
                         r_in = (r_j, r_i)
 
+                    if cf.last_frame_skip:
+                        # overwrite conditioning frame skip if necessary
+                        skip = None
+
                     if cf.model == "det":
                         x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, skip)
                     elif cf.model == "svg":
@@ -1016,147 +1020,6 @@ class MultiRobotPredictionTrainer(object):
         wandb.log(
             {f"{name}/masks_gifs": wandb.Video(fname, format="gif")}, step=self._step
         )
-
-    def _epoch_save_fid_images(self, random_snippet=False):
-        """
-        Save all model outputs and test set into a folder for FID calculations.
-        """
-        if random_snippet:
-            self._snippet_rng = np.random.RandomState(self._config.seed)
-
-        for i, (data, robot_name) in enumerate(
-            tqdm(self.test_loader, "FID calculation")
-        ):
-            self._video_save_fid(
-                i, data, autoregressive=True, random_snippet=random_snippet
-            )
-
-    def _video_save_fid(self, idx, data, autoregressive=False, random_snippet=False):
-        """Evaluates over an entire video
-        data: video data from dataloader
-        autoregressive: use model's outputs as input for next timestep
-        """
-        x = data["images"]
-        r = data["states"]
-        a = data["actions"]
-        m = data["masks"]
-        name = data["robot"]
-        T = len(x)
-        window = self._config.n_past + self._config.n_future
-        fid_folder = os.path.join(self._config.log_dir, "fid")
-        target_folder = os.path.join(fid_folder, f"target_{self._step}")
-        pred_folder = os.path.join(fid_folder, f"pred_{self._step}")
-        os.makedirs(fid_folder, exist_ok=True)
-        os.makedirs(target_folder, exist_ok=True)
-        os.makedirs(pred_folder, exist_ok=True)
-        if random_snippet:
-            start = np.random.randint(0, floor(T / window))
-            s = start * window
-            e = (start + 1) * window
-            batch = (x[s:e], r[s:e], a[s : e - 1], m[s:e]), name
-            preds = self._get_preds_from_snippet(batch, autoregressive)
-            # save the target images
-            for j, imgs in enumerate(x[s + 1 : e]):
-                # imgs is (T x B x C x W x H), T is window length - 1
-                for t, img in enumerate(imgs):
-                    img_name = f"vid_{idx}_snip_{s}_batch_{j}_time_{t}.png"
-                    img_path = os.path.join(target_folder, img_name)
-                    # convert image to H x W x C, [0,255] uint8
-                    img = (255 * img.permute(1, 2, 0).cpu().numpy()).astype(np.uint8)
-                    imageio.imwrite(img_path, img)
-
-                    pred_img_name = f"vid_{idx}_snip_{s}_batch_{j}_time_{t}.png"
-                    pred_img_path = os.path.join(pred_folder, pred_img_name)
-                    # ipdb.set_trace()
-                    pred_img = preds[0][j][t]
-                    pred_img = (255 * pred_img.permute(1, 2, 0).cpu().numpy()).astype(
-                        np.uint8
-                    )
-                    imageio.imwrite(pred_img_path, pred_img)
-        else:
-            for i in range(floor(T / window)):
-                s = i * window
-                e = (i + 1) * window
-                batch = (x[s:e], r[s:e], a[s : e - 1], m[s:e]), name
-                preds = self._get_preds_from_snippet(batch, autoregressive)
-                # save the target images
-                for j, imgs in enumerate(x[s + 1 : e]):
-                    # imgs is (T x B x C x W x H), T is window length - 1
-                    for t, img in enumerate(imgs):
-                        img_name = f"vid_{idx}_snip_{s}_batch_{j}_time_{t}.png"
-                        img_path = os.path.join(target_folder, img_name)
-                        # convert image to H x W x C, [0,255] uint8
-                        img = (255 * img.permute(1, 2, 0).cpu().numpy()).astype(
-                            np.uint8
-                        )
-                        imageio.imwrite(img_path, img)
-
-                        pred_img_name = f"vid_{idx}_snip_{s}_batch_{j}_time_{t}.png"
-                        pred_img_path = os.path.join(target_folder, pred_img_name)
-                        # ipdb.set_trace()
-                        pred_img = preds[0][j][t]
-                        pred_img = (
-                            255 * pred_img.permute(1, 2, 0).cpu().numpy()
-                        ).astype(np.uint8)
-                        imageio.imwrite(pred_img_path, pred_img)
-
-    @torch.no_grad()
-    def _get_preds_from_snippet(self, data, autoregressive=False):
-        """
-        Gets model predictions from a snippet of video of length n_past + n_future
-        autoregressive: use model's outputs as input for next timestep
-        Returns a dictionary where key is viewpoint, value is model outputs
-        """
-        # one step evaluation loss
-        cf = self._config
-        bs = cf.test_batch_size
-        # initialize the recurrent states
-        self.model.init_hidden(bs)
-        x = data["images"]
-        robot = data["states"]
-        ac = data["actions"]
-        mask = data["masks"]
-        robot_name = data["robot"]
-        robot_name = np.array(robot_name)
-        all_preds = defaultdict(list)
-        x_pred = None
-        for i in range(1, cf.n_past + cf.n_future):
-            if autoregressive and i > 1:
-                x_j = x_pred.clone().detach()
-            else:
-                x_j = x[i - 1]
-            # let j be i - 1, or previous timestep
-            m_j, r_j, a_j = mask[i - 1], robot[i - 1], ac[i - 1]
-            x_i, m_i, r_i = x[i], mask[i], robot[i]
-
-            x_j_black = x_j
-            x_i_black = x_i
-            # zero out robot pixels in input for norobot cost
-            if "dontcare" in self._config.reconstruction_loss:
-                x_j_black = self._zero_robot_region(m_j, x_j, False)
-                x_i_black = self._zero_robot_region(m_i, x_i, False)
-
-            if cf.model == "det":
-                x_pred, curr_skip = self.model(x_j_black, m_j, r_j, a_j, skip)
-            elif cf.model == "svg":
-                out = self.model(x_j_black, m_j, r_j, a_j, x_i_black, m_i, r_i, skip)
-                x_pred, curr_skip, _, _, _, _ = out
-            # overwrite skip with most recent skip
-            if cf.last_frame_skip or i <= cf.n_past:
-                skip = curr_skip
-
-            if cf.multiview:
-                num_views = x_pred.shape[2] // cf.image_width
-                for n in range(num_views):
-                    start, end = n * cf.image_width, (n + 1) * cf.image_width
-                    view_pred = x_pred[:, :, start:end, :]
-                    # view = x[i][:, :, start:end, :]
-                    # view_mask = mask[i][:, :, start:end, :]
-                    all_preds[n].append(view_pred)
-            else:
-                all_preds[0].append(x_pred)
-        return all_preds
-
 
 def make_log_folder(config):
     # make folder for exp logs

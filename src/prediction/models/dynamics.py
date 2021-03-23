@@ -533,7 +533,9 @@ class SVGConvModel(nn.Module):
             h, curr_skip = self.encoder(cat([image, mask], dim=1))
         else:
             h, curr_skip = self.encoder(image)
-        if skip is None:
+
+        if cf.last_frame_skip or skip is None:
+            # use the current image's skip to decoder
             skip = curr_skip
 
         # tile the action and states
