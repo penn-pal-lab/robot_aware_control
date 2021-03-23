@@ -1021,6 +1021,215 @@ class MultiRobotPredictionTrainer(object):
             {f"{name}/masks_gifs": wandb.Video(fname, format="gif")}, step=self._step
         )
 
+    def predict_video(self, data):
+        """Generate predictions for the video
+        Used to compute FID scores
+        data: video data from dataloader
+        Outputs the ground truth and predicted videos
+        """
+        num_samples = 1
+        if (self._config.model == "svg"
+            and "finetune" in self._config.training_regime
+        ):
+            num_samples = 3
+        x = data["images"]
+        T = len(x)
+        window = self._config.n_eval
+        sampled_losses = [
+            defaultdict(float) for _ in range(num_samples)
+        ]  # list of video sample losses
+        for i in range(floor(T / window)):
+            s = i * window
+            e = (i + 1) * window
+            batch_data = {
+                "images": x[s:e],
+                "states": data["states"][s:e],
+                "actions": data["actions"][s : e - 1],
+                "masks": data["masks"][s:e],
+                "robot": data["robot"],
+                "qpos": data["qpos"][s:e],
+                "file_name": data["file_name"],
+            }
+            for sample in range(num_samples):
+                losses = self._predict_video(batch_data)
+                for k, v in losses.items():
+                    if k in ["true_imgs", "gen_imgs"]:
+                        sampled_losses[sample][k] = v
+                    else:
+                        sampled_losses[sample][k] += v
+
+        # now pick the best sample by world error, and average over frames
+        if self._config.model == "svg":
+            sampled_losses.sort(key=lambda x: x["autoreg_world_loss"])
+        best_loss = sampled_losses[0]
+
+        for k, v in best_loss.items():
+            if k in ["true_imgs", "gen_imgs"]:
+                continue
+            best_loss[k] /= floor(T / window)
+        return best_loss
+
+    @torch.no_grad()
+    def _predict_video(self, data, autoregressive=True):
+        """
+        Evals over a snippet of video of length n_past + n_future
+        autoregressive: use model's outputs as input for next timestep
+        """
+        # one step evaluation loss
+        cf = self._config
+
+        x = data["images"]
+        states = data["states"]
+        ac = data["actions"]
+        true_mask = mask = data["masks"]
+        robot_name = data["robot"]
+        bs = min(cf.test_batch_size, x.shape[1])
+        # initialize the recurrent states
+        self.model.init_hidden(bs)
+
+        losses = defaultdict(float)
+        k_losses = defaultdict(float)
+        robot_name = np.array(robot_name)
+        all_robots = set(robot_name)
+
+        # store for computing FID metric
+        all_x_pred_black = []
+        all_x_i_black = []
+
+        x_pred = skip = None
+        prefix = "autoreg" if autoregressive else "1step"
+        if autoregressive and cf.learned_robot_model:
+            states, mask = self._generate_learned_masks_states(data)
+
+        if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+            self._zero_robot_region(mask[0], x[0])
+        for i in range(1, cf.n_eval):
+            if autoregressive and i > 1:
+                x_j = x_pred.clone()
+            else:
+                x_j = x[i - 1]
+            # let j be i - 1, or previous timestep
+            m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
+            x_i, m_i, r_i = x[i], mask[i], states[i]
+
+            if cf.model == "copy":
+                x_pred = self.model(x_j, m_j, x_i, m_i)
+            else:
+                # zero out robot pixels in input for norobot cost
+                x_j_black, x_i_black = x_j, x_i
+                if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+                    x_j_black = self._zero_robot_region(m_j, x_j, False)
+                    x_i_black = self._zero_robot_region(m_i, x_i, False)
+
+                if cf.last_frame_skip:
+                    skip = None
+
+                m_in = m_j
+                if cf.model_use_future_mask:
+                    m_in = torch.cat([m_j, m_i], 1)
+                r_in = r_j
+                if cf.model_use_future_robot_state:
+                    r_in = (r_j, r_i)
+
+                if cf.model == "det":
+                    x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
+                elif cf.model == "svg":
+                    m_next_in = m_i
+                    if cf.model_use_future_mask:
+                        m_next_in = m_i.repeat(1, 2, 1, 1)
+                    out = self.model(
+                        x_j_black,
+                        m_in,
+                        r_in,
+                        a_j,
+                        x_i_black,
+                        m_next_in,
+                        r_i,
+                        skip,
+                        force_use_prior=True
+                    )
+                    x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
+
+                x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+                if i <= cf.n_past:
+                    # overwrite skip with most recent conditioning frame skip
+                    skip = curr_skip
+            if cf.multiview:
+                num_views = x_pred.shape[2] // cf.image_width
+                for n in range(num_views):
+                    start, end = n * cf.image_width, (n + 1) * cf.image_width
+                    view_pred = x_pred[:, :, start:end, :]
+                    view = x[i][:, :, start:end, :]
+                    view_mask = mask[i][:, :, start:end, :]
+                    view_loss = self._recon_loss(view_pred, view, view_mask)
+                    view_loss_scalar = view_loss.cpu().item()
+                    robot_mse = robot_mse_criterion(view_pred, view, view_mask)
+                    robot_mse_scalar = robot_mse.cpu().item()
+                    world_mse = world_mse_criterion(view_pred, view, view_mask)
+                    world_mse_scalar = world_mse.cpu().item()
+                    losses[f"{prefix}_view_{n}_robot"] += robot_mse_scalar
+                    losses[f"{prefix}_view_{n}_world"] += world_mse_scalar
+                    losses[f"{prefix}_view_{n}_recon"] += view_loss_scalar
+                    losses[f"{prefix}_total_recon_loss"] += view_loss_scalar
+                    losses[f"{prefix}_total_robot_loss"] += robot_mse_scalar
+                    losses[f"{prefix}_total_world_loss"] += world_mse_scalar
+            else:
+                view_loss = self._recon_loss(x_pred, x[i], true_mask[i])
+                losses[f"{prefix}_recon_loss"] += view_loss.cpu().item()
+                robot_mse = robot_mse_criterion(x_pred, x[i], true_mask[i])
+                world_mse = world_mse_criterion(x_pred, x[i], true_mask[i])
+                losses[f"{prefix}_robot_loss"] += robot_mse.cpu().item()
+                world_mse_value = world_mse.cpu().item()
+                losses[f"{prefix}_world_loss"] += world_mse_value
+
+                # black out robot with true mask before computing psnr, ssim
+                x_pred_black = self._zero_robot_region(true_mask[i], x_pred, False)
+                x_i_black = self._zero_robot_region(true_mask[i], x_i, False)
+                all_x_pred_black.append(x_pred_black)
+                all_x_i_black.append(x_i_black)
+
+                p = psnr(x_i_black.clamp(0, 1), x_pred_black.clamp(0, 1)).mean().item()
+                s = ssim(x_i_black, x_pred_black).mean().item()
+                losses[f"{prefix}_psnr"] += p
+                losses[f"{prefix}_ssim"] += s
+
+                # k-step rollouts.
+                if autoregressive:
+                    for k in range(i, cf.n_eval - 1):
+                        k_losses[f"{k}_step_psnr"] += p
+                        k_losses[f"{k}_step_ssim"] += s
+                        k_losses[f"{k}_step_world_loss"] += world_mse_value
+
+                # robot specific metrics
+                for r in all_robots:
+                    if len(all_robots) == 1:
+                        break
+                    r_idx = r == robot_name
+                    r_pred = x_pred[r_idx]
+                    r_img = x[i][r_idx]
+                    r_mask = true_mask[i][r_idx]
+                    r_robot_mse = robot_mse_criterion(r_pred, r_img, r_mask)
+                    r_world_mse = world_mse_criterion(r_pred, r_img, r_mask)
+                    losses[f"{prefix}_{r}_robot_loss"] += r_robot_mse.cpu().item()
+                    losses[f"{prefix}_{r}_world_loss"] += r_world_mse.cpu().item()
+
+            if cf.model == "svg":
+                kl = kl_criterion(mu, logvar, mu_p, logvar_p, bs)
+                losses[f"{prefix}_kld"] += kl.cpu().item()
+
+        for k, v in losses.items():
+            losses[k] = v / (cf.n_eval - 1)  # don't count the first step
+
+        temp_k_losses = {}
+        for k, v in k_losses.items():
+            num_steps = float(k[0])
+            temp_k_losses[k] = v / num_steps
+        losses.update(temp_k_losses)
+        losses["gen_imgs"] = (255 * all_x_pred_black).permute(0,2,3,1).cpu().numpy().astype(np.uint8)
+        losses["true_imgs"] = (255 * all_x_i_black).permute(0,2,3,1).cpu().numpy().astype(np.uint8)
+        return losses
+
 def make_log_folder(config):
     # make folder for exp logs
     formatter = colorlog.ColoredFormatter(
