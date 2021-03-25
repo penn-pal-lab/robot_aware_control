@@ -64,7 +64,7 @@ def _is_in_graph(tensor_name):
   return True
 
 
-def create_id3_embedding(videos):
+def create_id3_embedding(videos, batch_size=16):
   """Embeds the given videos using the Inflated 3D Convolution network.
 
   Downloads the graph of the I3D from tf.hub and adds it to the graph on the
@@ -82,7 +82,6 @@ def create_id3_embedding(videos):
     ValueError: when a provided embedding_layer is not supported.
   """
 
-  batch_size = 16
   module_spec = "https://tfhub.dev/deepmind/i3d-kinetics-400/1"
 
 
