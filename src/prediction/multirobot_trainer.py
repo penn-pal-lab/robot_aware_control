@@ -1054,10 +1054,11 @@ class MultiRobotPredictionTrainer(object):
                 losses = self._predict_video(batch_data)
                 for k, v in losses.items():
                     if k in ["true_imgs", "gen_imgs"]:
-                        sampled_losses[sample][k] = v
+                        if k not in sampled_losses[sample]:
+                            sampled_losses[sample][k] = []
+                        sampled_losses[sample][k].append(v)
                     else:
                         sampled_losses[sample][k] += v
-
         # now pick the best sample by world error, and average over frames
         if self._config.model == "svg":
             sampled_losses.sort(key=lambda x: x["autoreg_world_loss"])
@@ -1186,6 +1187,7 @@ class MultiRobotPredictionTrainer(object):
                 # black out robot with true mask before computing psnr, ssim
                 x_pred_black = self._zero_robot_region(true_mask[i], x_pred, False)
                 x_i_black = self._zero_robot_region(true_mask[i], x_i, False)
+
                 all_x_pred_black.append(x_pred_black)
                 all_x_i_black.append(x_i_black)
 
@@ -1226,8 +1228,12 @@ class MultiRobotPredictionTrainer(object):
             num_steps = float(k[0])
             temp_k_losses[k] = v / num_steps
         losses.update(temp_k_losses)
-        losses["gen_imgs"] = (255 * all_x_pred_black).permute(0,2,3,1).cpu().numpy().astype(np.uint8)
-        losses["true_imgs"] = (255 * all_x_i_black).permute(0,2,3,1).cpu().numpy().astype(np.uint8)
+        # make this B x T x C x H x W
+        all_x_pred_black = torch.stack(all_x_pred_black).transpose(0,1)
+        all_x_i_black = torch.stack(all_x_i_black).transpose(0,1)
+
+        losses["gen_imgs"] = (255 * all_x_pred_black).permute(0,1,3,4,2).cpu().numpy().astype(np.uint8)
+        losses["true_imgs"] = (255 * all_x_i_black).permute(0,1,3,4,2).cpu().numpy().astype(np.uint8)
         return losses
 
 def make_log_folder(config):
