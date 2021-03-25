@@ -11,7 +11,7 @@ import tensorflow as tf
 from robonet.robonet.datasets.util.hdf5_loader import default_loader_hparams, load_actions, load_camera_imgs, load_qpos, load_states
 from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
 from tqdm import tqdm
-from src.utils.camera_calibration import world_to_camera_dict
+from src.utils.camera_calibration import camera_to_world_dict
 
 
 robonet_root = "/scratch/edward/Robonet/hdf5"
@@ -88,7 +88,7 @@ def generate_sawyer_data(cam_config, cam_idx):
     sawyer_df = df.loc["sawyer" == df["robot"]]
     sawyer_subset = sawyer_df[f"{cam_config}" == sawyer_df["camera_configuration"]]
 
-    camera_extrinsics = world_to_camera_dict[f"sawyer_{cam_config}_c{hparams.cams_to_load[0]}"]
+    camera_extrinsics = camera_to_world_dict[f"sawyer_{cam_config}_c{hparams.cams_to_load[0]}"]
     env = SawyerMaskEnv()
     env.set_opencv_camera_pose("main_cam", camera_extrinsics)
     hdf5_list = sawyer_subset.index

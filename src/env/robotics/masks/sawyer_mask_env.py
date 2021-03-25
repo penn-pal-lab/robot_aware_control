@@ -205,7 +205,7 @@ if __name__ == "__main__":
     )
     from robonet.robonet.datasets.util.metadata_helper import load_metadata
     from tqdm import tqdm
-    from src.utils.camera_calibration import world_to_camera_dict
+    from src.utils.camera_calibration import camera_to_world_dict
 
     robonet_root = "/media/ed/hdd/Datasets/Robonet/hdf5/"
     metadata_path = "/media/ed/hdd/Datasets/Robonet/hdf5/meta_data.pkl"
@@ -219,7 +219,7 @@ if __name__ == "__main__":
     sawyer_df = df.loc["sawyer" == df["robot"]]
     sawyer_subset = sawyer_df["sudri0" == sawyer_df["camera_configuration"]]
 
-    camera_extrinsics = world_to_camera_dict[
+    camera_extrinsics = camera_to_world_dict[
         f"sawyer_sudri0_c{hparams.cams_to_load[0]}"
     ]
     env = SawyerMaskEnv()

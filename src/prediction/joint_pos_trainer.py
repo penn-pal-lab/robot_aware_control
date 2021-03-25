@@ -28,7 +28,7 @@ from src.prediction.losses import mse_criterion
 from src.utils.plot import save_gif
 from torch import optim
 from tqdm import tqdm
-from src.utils.camera_calibration import world_to_camera_dict
+from src.utils.camera_calibration import camera_to_world_dict
 import torchvision.transforms as tf
 
 
@@ -482,7 +482,7 @@ class RobotPredictionTrainer(object):
         mask = data["masks"]
         qpos = data["qpos"]
         # initialize rendering environments for projection
-        viewpoints = set(data["file_name"])
+        viewpoints = set(data["folder"])
         if not hasattr(self, "renderers"):
             self.renderers = {}
         for v in viewpoints:
@@ -490,14 +490,14 @@ class RobotPredictionTrainer(object):
                 continue
             if cf.training_regime == "singlerobot":
                 env = SawyerMaskEnv()
-                cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+                cam_ext = camera_to_world_dict[f"sawyer_{v}"]
             elif cf.training_regime == "finetune":
                 env = BaxterMaskEnv()
                 env.arm = "left"
-                cam_ext = world_to_camera_dict[f"baxter_left"]
+                cam_ext = camera_to_world_dict[f"baxter_left"]
             elif cf.training_regime == "finetune_widowx":
                 env = WidowXMaskEnv()
-                cam_ext = world_to_camera_dict["widowx1"]
+                cam_ext = camera_to_world_dict["widowx1"]
 
             env.set_opencv_camera_pose("main_cam", cam_ext)
             self.renderers[v] = env
@@ -536,7 +536,7 @@ class RobotPredictionTrainer(object):
         all_masks = []
         all_iou = []
         for idx in range(b):
-            vp = data["file_name"][idx] # get vp for each batch sample
+            vp = data["folder"][idx] # get vp for each batch sample
             env = self.renderers[vp]
             qpos_list = []
             for i in range(video_len):

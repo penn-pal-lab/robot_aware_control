@@ -15,7 +15,7 @@ import torchvision.transforms.functional as F
 import torch.utils.data as data
 from tqdm import trange
 from time import time
-from src.utils.camera_calibration import world_to_camera_dict
+from src.utils.camera_calibration import camera_to_world_dict
 
 
 class JointPosDataset(data.Dataset):
@@ -97,7 +97,7 @@ class JointPosDataset(data.Dataset):
             "actions": actions,
             "masks": masks,
             "robot": robot,
-            "file_name": os.path.basename(os.path.dirname(name)),
+            "folder": os.path.basename(os.path.dirname(name)),
             "file_path": hdf5_path,
             "idx": idx,
             "qpos": qpos
@@ -209,29 +209,29 @@ class JointPosDataset(data.Dataset):
             robot_type = self._traj_robots[idx]
             if robot_type == "sawyer":
                 # TODO: account for camera config and index
-                world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
+                cam2world = camera_to_world_dict["sawyer_sudri0_c0"]
             elif robot_type == "widowx":
-                world2cam = world_to_camera_dict["widowx1"]
+                cam2world = camera_to_world_dict["widowx1"]
             elif robot_type == "baxter":
                 arm = "left" if "left" in filename else "right"
-                world2cam = world_to_camera_dict[f"baxter_{arm}"]
+                cam2world = camera_to_world_dict[f"baxter_{arm}"]
 
         elif self._config.training_regime == "singlerobot":
             # train on sawyer, convert actions to camera space
-            world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
+            cam2world = camera_to_world_dict["sawyer_sudri0_c0"]
         elif self._config.training_regime == "train_sawyer_multiview":
-            world2cam = world_to_camera_dict["sawyer_" + robot_type]
+            cam2world = camera_to_world_dict["sawyer_" + robot_type]
         elif self._config.training_regime == "finetune":
             # finetune on baxter, convert to camera frame
             # Assumes the baxter arm is right arm!
             arm = "left" if "left" in filename else "right"
-            world2cam = world_to_camera_dict[f"baxter_{arm}"]
+            cam2world = camera_to_world_dict[f"baxter_{arm}"]
 
         states = states.copy()
         if strategy == "camera_raw":
-            self._convert_actions(states, actions, world2cam, low, high)
+            self._convert_actions(states, actions, cam2world, low, high)
         elif strategy == "camera_state_infer":
-            self._impute_camera_actions(states, actions, world2cam, low, high)
+            self._impute_camera_actions(states, actions, cam2world, low, high)
         return torch.from_numpy(actions)
 
     def __len__(self):
@@ -239,7 +239,7 @@ class JointPosDataset(data.Dataset):
 
 def process_batch(data, device):
     data_keys = ["qpos", "states", "actions", "masks"]
-    meta_keys = ["robot", "file_name", "file_path", "idx"]
+    meta_keys = ["robot", "folder", "file_path", "idx"]
     # transpose from (B, L, C, W, H) to (L, B, C, W, H)
     for k in data_keys:
         data[k] = data[k].transpose_(1, 0).to(device, non_blocking=True)

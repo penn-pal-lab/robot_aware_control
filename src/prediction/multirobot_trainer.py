@@ -15,7 +15,7 @@ from src.prediction.models.dynamics import (
     JointPosPredictor,
     SVGConvModel,
 )
-from src.utils.camera_calibration import world_to_camera_dict
+from src.utils.camera_calibration import camera_to_world_dict
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 from warnings import simplefilter  # disable tensorflow warnings
@@ -175,7 +175,7 @@ class MultiRobotPredictionTrainer(object):
         ac = data["actions"]
         mask = data["masks"]
         qpos = data["qpos"]
-        viewpoints = set(data["file_name"])
+        viewpoints = set(data["folder"])
         if not hasattr(self, "renderers"):
             self.renderers = {}
         for v in viewpoints:
@@ -183,17 +183,17 @@ class MultiRobotPredictionTrainer(object):
                 continue
             if cf.training_regime == "singlerobot":
                 env = SawyerMaskEnv()
-                cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+                cam_ext = camera_to_world_dict[f"sawyer_{v}"]
             elif cf.training_regime == "finetune":
                 env = BaxterMaskEnv()
                 env.arm = "left"
-                cam_ext = world_to_camera_dict[f"baxter_left"]
+                cam_ext = camera_to_world_dict[f"baxter_left"]
             elif cf.training_regime == "finetune_widowx":
                 env = WidowXMaskEnv()
-                cam_ext = world_to_camera_dict[f"widowx1"]
+                cam_ext = camera_to_world_dict[f"widowx1"]
             elif cf.training_regime == "finetune_sawyer_view":
                 env = SawyerMaskEnv()
-                cam_ext = world_to_camera_dict[f"sawyer_{v}"]
+                cam_ext = camera_to_world_dict[f"sawyer_{v}"]
             else:
                 raise ValueError
 
@@ -213,7 +213,7 @@ class MultiRobotPredictionTrainer(object):
             predicted_states[i] = r_pred
             # generate mask for each qpos prediction
             for b in range(q_pred.shape[0]):
-                vp = data["file_name"][b]
+                vp = data["folder"][b]
                 q_pred_b = q_pred[b].cpu().numpy()
                 env = self.renderers[vp]
                 m = env.generate_masks([q_pred_b])[0]
@@ -253,9 +253,9 @@ class MultiRobotPredictionTrainer(object):
         #     # collect the indices of files that are not cached,
         #     # group them into a batch, and then generate them
         #     not_cached_idxs = []
-        #     for idx, file_name in enumerate(data["file_name"]):
-        #         if file_name in self._state_mask_cache:
-        #             states, masks = self._state_mask_cache[file_name]
+        #     for idx, folder in enumerate(data["folder"]):
+        #         if folder in self._state_mask_cache:
+        #             states, masks = self._state_mask_cache[folder]
         #             data["states"][:, idx] = states
         #             data["masks"][:, idx] = masks
         #         else:
@@ -266,14 +266,14 @@ class MultiRobotPredictionTrainer(object):
         #     not_cached_data["actions"] = torch.stack([data["actions"][:, i] for i in not_cached_idxs], 1)
         #     not_cached_data["masks"] = torch.stack([data["masks"][:, i] for i in not_cached_idxs], 1)
         #     not_cached_data["qpos"] = torch.stack([data["qpos"][:, i] for i in not_cached_idxs], 1)
-        #     not_cached_data["file_name"] =[data["file_name"][i] for i in not_cached_idxs]
+        #     not_cached_data["folder"] =[data["folder"][i] for i in not_cached_idxs]
 
         #     states, masks = self._generate_learned_masks_states(not_cached_data)
         #     for idx in not_cached_idxs:
         #         s = data["states"][:, idx] = states[:, idx]
         #         m = data["masks"][:, idx] = masks[:, idx]
-        #         file_name = not_cached_data["file_name"][idx]
-        #         self._state_mask_cache["file_name"] = (s,m)
+        #         file_name = not_cached_data["folder"][idx]
+        #         self._state_mask_cache["folder"] = (s,m)
 
         for i in range(floor(T / window)):
             if cf.random_snippet:
@@ -289,7 +289,7 @@ class MultiRobotPredictionTrainer(object):
                 "masks": data["masks"][s:e],
                 "qpos": data["qpos"][s:e],
                 "robot": data["robot"],
-                "file_name": data["file_name"],
+                "folder": data["folder"],
             }
             if cf.learned_robot_model and "finetune" in cf.training_regime:
                 states, masks = self._generate_learned_masks_states(batch_data)
@@ -472,7 +472,7 @@ class MultiRobotPredictionTrainer(object):
                 "masks": data["masks"][s:e],
                 "robot": data["robot"],
                 "qpos": data["qpos"][s:e],
-                "file_name": data["file_name"],
+                "folder": data["folder"],
             }
             for sample in range(num_samples):
                 losses = self._eval_step(batch_data, autoregressive)
@@ -834,6 +834,9 @@ class MultiRobotPredictionTrainer(object):
         if self._config.training_regime == "multirobot":
             from src.dataset.multirobot_dataloaders import create_loaders
         elif self._config.training_regime == "singlerobot":
+            # for debugging on desktop
+            # from src.dataset.finetune_multirobot_dataloaders import create_loaders, create_transfer_loader
+
             from src.dataset.finetune_multirobot_dataloaders import create_loaders
             from src.dataset.finetune_widowx_dataloaders import create_transfer_loader
 
@@ -909,7 +912,7 @@ class MultiRobotPredictionTrainer(object):
         ac = ac[start : end - 1, :b]
         mask = mask[start:end, :b]
         qpos = qpos[start:end, :b]
-        file_name = data["file_name"][:b]
+        folder = data["folder"][:b]
 
         if cf.learned_robot_model:
             data = dict(
@@ -918,7 +921,7 @@ class MultiRobotPredictionTrainer(object):
                 actions=ac,
                 masks=mask,
                 qpos=qpos,
-                file_name=file_name,
+                folder=folder,
             )
             states, mask = self._generate_learned_masks_states(data)
 
@@ -1048,7 +1051,7 @@ class MultiRobotPredictionTrainer(object):
                 "masks": data["masks"][s:e],
                 "robot": data["robot"],
                 "qpos": data["qpos"][s:e],
-                "file_name": data["file_name"],
+                "folder": data["folder"],
             }
             for sample in range(num_samples):
                 losses = self._predict_video(batch_data)

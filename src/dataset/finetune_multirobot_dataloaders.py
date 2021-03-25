@@ -100,6 +100,8 @@ def create_transfer_loader(config):
                 if high_error:
                     files.append(d.path)
                     file_labels.append("baxter_left")
+                # files.append(d.path)
+                # file_labels.append("baxter_left")
 
     files = sorted(files)
     random.seed(config.seed)

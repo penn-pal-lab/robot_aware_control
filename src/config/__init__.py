@@ -212,6 +212,7 @@ def add_prediction_arguments(parser):
 
     parser.add_argument("--learned_robot_model", type=str2bool, default=False)
     parser.add_argument("--robot_model_ckpt", type=str, default=None)
+    parser.add_argument("--cdna_kernel_size", type=int, default=5)
 
 def add_dataset_arguments(parser):
     parser.add_argument(
@@ -242,9 +243,7 @@ def add_dataset_arguments(parser):
     parser.add_argument("--finetune_num_train", type=int, default=400)
     parser.add_argument("--finetune_num_test", type=int, default=100)
     parser.add_argument("--random_snippet", type=str2bool, default=False)
-    parser.add_argument("--cdna_kernel_size", type=int, default=5)
-
-
+    parser.add_argument("--load_eef_heatmap", type=str2bool, default=False)
 
 # CEM Hyperparameters
 def add_cem_arguments(parser):

@@ -1,9 +1,9 @@
 import numpy as np
 
-"""
-Holds world to cam matrices for various robots
-"""
-world_to_camera_dict = {
+# holds the transform from camera space to world space.
+# most notably, the translation and rotation parts of this matrix correspond
+# to the camera's position and rotation in the world space.
+camera_to_world_dict = {
     "baxter_left": np.array(
         [
             [0.05010049, 0.5098481, -0.85880432, 1.70268951],
@@ -100,4 +100,12 @@ world_to_camera_dict = {
             [0.0, 0.0, 0.0, 1.0],
         ]
     ),
+}
+
+# also known as the camera extrinsics
+world_to_camera_dict = {k: np.linalg.inv(v) for k, v in camera_to_world_dict.items()}
+
+cam_intrinsics_dict = {
+    # captured 320 x 240 images in robonet
+    "logitech_c420": np.array([[320.75, 0, 160], [0, 320.75, 120], [0, 0, 1]])
 }
