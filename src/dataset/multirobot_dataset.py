@@ -131,9 +131,12 @@ class RobotDataset(data.Dataset):
             eef_pos[:, 2] -= 0.15
             wTc = world_to_camera_dict[f"sawyer_{folder}"]
         elif robot == "baxter":
-            raise NotImplementedError
+            #TODO: account for baxter arm, and viewpoint
+            wTc = world_to_camera_dict[f"baxter_left"]
         elif robot == "widowx":
-            raise NotImplementedError
+            # since widowx is mounted upside down, we add positive z
+            eef_pos[:, 2] += 0.05
+            wTc = world_to_camera_dict[f"widowx1"]
         else:
             raise ValueError
 
@@ -333,6 +336,8 @@ class RobotDataset(data.Dataset):
             # Assumes the baxter arm is right arm!
             arm = "left" if "left" in filename else "right"
             world2cam = world_to_camera_dict[f"baxter_{arm}"]
+        else:
+            raise ValueError
         states = states.copy()
         if strategy == "camera_raw":
             self._convert_actions(states, actions, world2cam, low, high)
@@ -389,7 +394,7 @@ if __name__ == "__main__":
     from src.utils.camera_calibration import camera_to_world_dict
 
     config, _ = argparser()
-    config.data_root = "/home/ed/Robonet"
+    config.data_root = "/scratch/edward/Robonet"
     config.batch_size = 16  # needs to be multiple of the # of robots
     config.video_length = 31
     config.image_width = 64
@@ -398,10 +403,12 @@ if __name__ == "__main__":
     config.action_dim = 5
     config.model_use_heatmap = True
 
-    from src.dataset.sawyer_multiview_dataloaders import create_loaders
-    train, test, comp = create_loaders(config)
+    # from src.dataset.sawyer_multiview_dataloaders import create_loaders
+    from src.dataset.finetune_multirobot_dataloaders import create_transfer_loader
+    # from src.dataset.finetune_widowx_dataloaders import create_transfer_loader
+    loader = create_transfer_loader(config)
 
-    for data in test:
+    for data in loader:
         images = data["images"]
         # states = data["states"]
         heatmaps = data["heatmaps"].repeat(1,1,3,1,1)
