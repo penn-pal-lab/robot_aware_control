@@ -105,7 +105,7 @@ class RobotDataset(data.Dataset):
             states = self._preprocess_states(states, low, high)
             robot = hf.attrs["robot"]
             folder = os.path.basename(os.path.dirname(name))
-            if self._config.load_eef_heatmap:
+            if self._config.model_use_heatmap:
                 heatmaps = self._create_heatmaps(states, low, high, images, robot, folder)
         out = {
             "images": images,
@@ -118,7 +118,7 @@ class RobotDataset(data.Dataset):
             "idx": idx,
             "qpos": qpos,
         }
-        if self._config.load_eef_heatmap:
+        if self._config.model_use_heatmap:
             out["heatmaps"] = heatmaps
         return out
 
@@ -167,7 +167,7 @@ class RobotDataset(data.Dataset):
                 z = np.zeros((48, 64))
             heatmaps.append(z)
         heatmaps = np.asarray(heatmaps)
-        heatmaps = np.expand_dims(heatmaps, 1)
+        heatmaps = np.expand_dims(heatmaps, 1).astype(np.float32)
         return heatmaps
 
     def _load_actions(self, file_pointer, low, high, start, end):
@@ -396,7 +396,7 @@ if __name__ == "__main__":
     # config.impute_autograsp_action = True
     config.data_threads = 0
     config.action_dim = 5
-    config.load_eef_heatmap = True
+    config.model_use_heatmap = True
 
     from src.dataset.sawyer_multiview_dataloaders import create_loaders
     train, test, comp = create_loaders(config)

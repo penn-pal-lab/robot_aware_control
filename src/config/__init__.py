@@ -202,6 +202,8 @@ def add_prediction_arguments(parser):
     parser.add_argument("--model_use_future_mask", type=str2bool, default=False)
     parser.add_argument("--model_use_robot_state", type=str2bool, default=True)
     parser.add_argument("--model_use_future_robot_state", type=str2bool, default=False)
+    parser.add_argument("--model_use_heatmap", type=str2bool, default=True)
+    parser.add_argument("--model_use_future_heatmap", type=str2bool, default=False)
     parser.add_argument("--black_robot_input", type=str2bool, default=False)
     parser.add_argument("--reconstruction_loss", default="mse", choices=["mse", "l1", "dontcare_mse", "dontcare_l1"])
     parser.add_argument("--scheduled_sampling", type=str2bool, default=False)
@@ -243,7 +245,6 @@ def add_dataset_arguments(parser):
     parser.add_argument("--finetune_num_train", type=int, default=400)
     parser.add_argument("--finetune_num_test", type=int, default=100)
     parser.add_argument("--random_snippet", type=str2bool, default=False)
-    parser.add_argument("--load_eef_heatmap", type=str2bool, default=False)
 
 # CEM Hyperparameters
 def add_cem_arguments(parser):

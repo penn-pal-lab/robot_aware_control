@@ -458,6 +458,12 @@ class SVGConvModel(nn.Module):
             channels += 1
             if cf.model_use_future_mask:
                 channels += 1
+
+        if cf.model_use_heatmap:
+            channels += 1
+            if cf.model_use_future_heatmap:
+                channels += 1
+
         self.encoder = enc = ConvEncoder(cf.g_dim, channels)
 
         # 2 channel spatial map for actions
@@ -511,7 +517,7 @@ class SVGConvModel(nn.Module):
         self.prior.hidden = self.prior.init_hidden(batch_size)
 
     def forward(
-        self, image, mask, robot, action, next_image, next_mask, next_robot, skip=None, force_use_prior=False
+        self, image, mask, robot, heatmap, action, next_image, next_mask, next_robot, next_heatmap, skip=None, force_use_prior=False
     ):
         """Predict the next state using the learned prior or posterior
         If next_image, next_mask, next_robot are None, learned prior is used
@@ -529,10 +535,15 @@ class SVGConvModel(nn.Module):
             [Tuple]: Next image, next latent, skip connection
         """
         cf = self._config
+
+        # combine image, mask, heatmap, in channel dimension
+        img = image
+        if cf.model_use_heatmap:
+            img = cat([img, heatmap], dim=1)
         if cf.model_use_mask:
-            h, curr_skip = self.encoder(cat([image, mask], dim=1))
-        else:
-            h, curr_skip = self.encoder(image)
+            img = cat([img, mask], dim=1)
+
+        h, curr_skip = self.encoder(img)
 
         if cf.last_frame_skip or skip is None:
             # use the current image's skip to decoder
@@ -560,10 +571,13 @@ class SVGConvModel(nn.Module):
 
         # if future image is supplied, calculate the posterior
         if next_image is not None:
+            next_img = next_image
+            if cf.model_use_heatmap:
+                next_img = cat([next_img, next_heatmap], dim=1)
             if cf.model_use_mask:
-                h_target = self.encoder(cat([next_image, next_mask], dim=1))[0]
-            else:
-                h_target = self.encoder(next_image)[0]
+                next_img = cat([next_img, next_mask], dim=1)
+            h_target = self.encoder(img)[0]
+
             if cf.model_use_robot_state:
                 r_target = self.state_encoder(next_robot).view(next_robot.shape[0], 2, height, width)
                 z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))

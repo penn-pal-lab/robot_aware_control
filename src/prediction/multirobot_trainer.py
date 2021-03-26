@@ -291,6 +291,9 @@ class MultiRobotPredictionTrainer(object):
                 "robot": data["robot"],
                 "folder": data["folder"],
             }
+            if cf.model_use_heatmap:
+                batch_data["heatmaps"] = data["heatmaps"][s:e]
+
             if cf.learned_robot_model and "finetune" in cf.training_regime:
                 states, masks = self._generate_learned_masks_states(batch_data)
                 batch_data["states"] = states
@@ -312,6 +315,8 @@ class MultiRobotPredictionTrainer(object):
         states = data["states"]
         ac = data["actions"]
         mask = data["masks"]
+        if cf.model_use_heatmap:
+            heatmaps = data["heatmaps"]
         robot_name = data["robot"]
         robot_name = np.array(robot_name)
         all_robots = set(robot_name)
@@ -333,6 +338,9 @@ class MultiRobotPredictionTrainer(object):
             # let j be i - 1, or previous timestep
             m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
             x_i, m_i, r_i = x[i], mask[i], states[i]
+            hm_j, hm_i = None, None
+            if cf.model_use_heatmap:
+                hm_j, hm_i = heatmaps[i - 1], heatmaps[i]
 
             # zero out robot pixels in input for norobot cost
             x_j_black, x_i_black = x_j, x_i
@@ -340,7 +348,7 @@ class MultiRobotPredictionTrainer(object):
                 x_j_black = self._zero_robot_region(m_j, x_j, False)
                 x_i_black = self._zero_robot_region(m_i, x_i, False)
 
-            if cf.last_frame_skip:
+            if cf.last_frame_skip: # always use skip of current img
                 skip = None
 
             m_in = m_j
@@ -349,6 +357,9 @@ class MultiRobotPredictionTrainer(object):
             r_in = r_j
             if cf.model_use_future_robot_state:
                 r_in = (r_j, r_i)
+            hm_in = hm_j
+            if cf.model_use_future_heatmap:
+                hm_in = torch.cat([hm_j, hm_i], 1)
 
             if cf.model == "det":
                 x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
@@ -356,8 +367,11 @@ class MultiRobotPredictionTrainer(object):
                 m_next_in = m_i
                 if cf.model_use_future_mask:
                     m_next_in = m_i.repeat(1, 2, 1, 1)
+                hm_next_in = hm_i
+                if cf.model_use_future_heatmap:
+                    hm_next_in = hm_i.repeat(1, 2, 1, 1)
                 out = self.model(
-                    x_j_black, m_in, r_in, a_j, x_i_black, m_next_in, r_i, skip
+                    x_j_black, m_in, r_in, hm_in, a_j, x_i_black, m_next_in, r_i, hm_next_in, skip
                 )
                 x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
@@ -474,6 +488,9 @@ class MultiRobotPredictionTrainer(object):
                 "qpos": data["qpos"][s:e],
                 "folder": data["folder"],
             }
+            if self._config.model_use_heatmap:
+                batch_data["heatmaps"] = data["heatmaps"][s:e]
+
             for sample in range(num_samples):
                 losses = self._eval_step(batch_data, autoregressive)
                 for k, v in losses.items():
@@ -501,6 +518,9 @@ class MultiRobotPredictionTrainer(object):
         states = data["states"]
         ac = data["actions"]
         true_mask = mask = data["masks"]
+        if cf.model_use_heatmap:
+            # TODO: calculate predicted heatmaps
+            heatmaps = data["heatmaps"]
         robot_name = data["robot"]
         bs = min(cf.test_batch_size, x.shape[1])
         # initialize the recurrent states
@@ -525,6 +545,9 @@ class MultiRobotPredictionTrainer(object):
             # let j be i - 1, or previous timestep
             m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
             x_i, m_i, r_i = x[i], mask[i], states[i]
+            hm_j, hm_i = None, None
+            if cf.model_use_heatmap:
+                hm_j, hm_i = heatmaps[i - 1], heatmaps[i]
 
             if cf.model == "copy":
                 x_pred = self.model(x_j, m_j, x_i, m_i)
@@ -544,6 +567,9 @@ class MultiRobotPredictionTrainer(object):
                 r_in = r_j
                 if cf.model_use_future_robot_state:
                     r_in = (r_j, r_i)
+                hm_in = hm_j
+                if cf.model_use_future_heatmap:
+                    hm_in = torch.cat([hm_j, hm_i], 1)
 
                 if cf.model == "det":
                     x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
@@ -551,14 +577,19 @@ class MultiRobotPredictionTrainer(object):
                     m_next_in = m_i
                     if cf.model_use_future_mask:
                         m_next_in = m_i.repeat(1, 2, 1, 1)
+                    hm_next_in = hm_i
+                    if cf.model_use_future_heatmap:
+                        hm_next_in = hm_i.repeat(1, 2, 1, 1)
                     out = self.model(
                         x_j_black,
                         m_in,
                         r_in,
+                        hm_in,
                         a_j,
                         x_i_black,
                         m_next_in,
                         r_i,
+                        hm_next_in,
                         skip,
                         force_use_prior=True
                     )
@@ -891,6 +922,8 @@ class MultiRobotPredictionTrainer(object):
         ac = data["actions"]
         mask = data["masks"]
         qpos = data["qpos"]
+        if cf.model_use_heatmap:
+            heatmaps = data["heatmaps"]
         nsample = 1
         if cf.model == "svg":
             nsample = 3
@@ -913,6 +946,8 @@ class MultiRobotPredictionTrainer(object):
         mask = mask[start:end, :b]
         qpos = qpos[start:end, :b]
         folder = data["folder"][:b]
+        if cf.model_use_heatmap:
+            heatmaps = heatmaps[start:end, :b]
 
         if cf.learned_robot_model:
             data = dict(
@@ -942,6 +977,9 @@ class MultiRobotPredictionTrainer(object):
                 # let j be i - 1, or previous timestep
                 m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
                 x_i, m_i, r_i = x[i], mask[i], states[i]
+                hm_j, hm_i = None, None
+                if cf.model_use_heatmap:
+                    hm_j, hm_i = heatmaps[i - 1], heatmaps[i]
                 if cf.model == "copy":
                     x_pred = self.model(x_j, m_j, x_i, m_i)
                 else:
@@ -955,6 +993,9 @@ class MultiRobotPredictionTrainer(object):
                     r_in = r_j
                     if cf.model_use_future_robot_state:
                         r_in = (r_j, r_i)
+                    hm_in = hm_j
+                    if cf.model_use_future_heatmap:
+                        hm_in = torch.cat([hm_j, hm_i], 1)
 
                     if cf.last_frame_skip:
                         # overwrite conditioning frame skip if necessary
@@ -964,8 +1005,8 @@ class MultiRobotPredictionTrainer(object):
                         x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, skip)
                     elif cf.model == "svg":
                         # don't use posterior.
-                        x_i, m_next_in, r_i = None, None, None
-                        out = self.model(x_j, m_in, r_in, a_j, x_i, m_next_in, r_i, skip)
+                        x_i, m_next_in, r_i, hm_next_in = None, None, None, None
+                        out = self.model(x_j, m_in, r_in, hm_in, a_j, x_i, m_next_in, r_i, hm_next_in, skip)
                         x_pred, curr_skip, _, _, _, _ = out
 
                     x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
