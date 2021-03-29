@@ -295,6 +295,8 @@ class RobotDataset(data.Dataset):
             # Assumes the baxter arm is right arm!
             arm = "left" if "left" in filename else "right"
             world2cam = world_to_camera_dict[f"baxter_{arm}"]
+        elif self._config.training_regime == "finetune_sawyer_view":
+            world2cam = world_to_camera_dict["sawyer_" + robot_type]
         else:
             raise ValueError
         states = states.copy()
@@ -351,6 +353,11 @@ def get_batch(loader, device):
 def denormalize(states, low, high):
     states = states * (high - low)
     states = states + low
+    return states
+
+def normalize(states, low, high):
+    states = states - low
+    states = states / (high - low)
     return states
 
 def create_heatmaps(states, low, high, robot, viewpoint):

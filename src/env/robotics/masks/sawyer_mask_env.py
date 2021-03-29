@@ -195,6 +195,10 @@ class SawyerMaskEnv(MaskEnv):
         """
         return T.mat2quat(self._right_hand_orn)
 
+    def get_gripper_pos(self, qpos):
+        self.sim.data.qpos[self._joint_references] = qpos
+        self.sim.forward()
+        return self.sim.data.get_body_xpos("right_hand").copy()
 
 if __name__ == "__main__":
     import pandas as pd

@@ -77,6 +77,10 @@ class WidowXMaskEnv(MaskEnv):
                     mask[ids == i] = True
         return mask
 
+    def get_gripper_pos(self, qpos):
+        self.sim.data.qpos[self._robot_sim._joint_references] = qpos
+        self.sim.forward()
+        return self.sim.data.get_body_xpos("wrist_2_link").copy()
 
 if __name__ == "__main__":
     import pandas as pd
