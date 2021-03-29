@@ -91,6 +91,8 @@ class RobotDataset(data.Dataset):
             low = hf["low_bound"][:]
             high = hf["high_bound"][:]
             actions = self._load_actions(hf, low, high, start, end - 1)
+            if self._config.preprocess_action != "raw":
+                raw_actions = actions.copy()
             masks = hf["mask"][start:end].astype(np.float32)
             qpos = hf["qpos"][start:end].astype(np.float32)
             # qpos = np.zeros((31, 7))
@@ -106,7 +108,7 @@ class RobotDataset(data.Dataset):
             robot = hf.attrs["robot"]
             folder = os.path.basename(os.path.dirname(name))
             if self._config.model_use_heatmap:
-                heatmaps = self._create_heatmaps(states, low, high, images, robot, folder)
+                heatmaps = create_heatmaps(states, low, high, robot, folder)
         out = {
             "images": images,
             "states": states,
@@ -120,58 +122,15 @@ class RobotDataset(data.Dataset):
         }
         if self._config.model_use_heatmap:
             out["heatmaps"] = heatmaps
+            if "finetune" in self._config.training_regime:
+                # needed to compute the future heatmaps
+                out["low"] = low
+                out["high"] = high
+        if self._config.preprocess_action != "raw":
+            out["raw_actions"] = raw_actions
         return out
 
-    def _create_heatmaps(self, states, low, high, images, robot, folder):
-         # first denormalize the eef states
-        states[:, :3] = self._denormalize(states[:, :3], low[:3], high[:3])
-        eef_pos = states[:, :3].numpy()
-        # depending on the robot configuration, add Z offset to the gripper
-        if robot =="sawyer":
-            eef_pos[:, 2] -= 0.15
-            wTc = world_to_camera_dict[f"sawyer_{folder}"]
-        elif robot == "baxter":
-            #TODO: account for baxter arm, and viewpoint
-            wTc = world_to_camera_dict[f"baxter_left"]
-        elif robot == "widowx":
-            # since widowx is mounted upside down, we add positive z
-            eef_pos[:, 2] += 0.05
-            wTc = world_to_camera_dict[f"widowx1"]
-        else:
-            raise ValueError
 
-        eef_pos = np.concatenate([eef_pos, np.ones((eef_pos.shape[0], 1))], 1).T
-        # assumes image is (240, 320)
-        # assumes image was captured from robonet, logitech 420 camera intrinsics
-        cam_intrinsics = cam_intrinsics_dict["logitech_c420"]
-        # projM = cam_intrinsics @ wTc[:3]
-        # all_pix_3d = projM @ eef_pos
-        # all_pix_3d /= all_pix_3d[2]
-        # all_pix_2d = all_pix_3d[:2]
-        # all_pix_2d[0] *= 64 / 320
-        # all_pix_2d[1] *= 48 / 240
-
-        tdim = (64, 48) # horizontal, vertical dim
-        odim = (320, 240)
-        all_pix_2d = get_2d_eef_pos(eef_pos, cam_intrinsics, wTc, tdim, odim)
-        # only get 2d coordinates in image range
-        valid_timesteps = ((0 <= all_pix_2d[0]) & (all_pix_2d[0] < 64))& ((0 <= all_pix_2d[1]) & (all_pix_2d[1]< 48))
-
-        # define normalized 2D gaussian
-        x = np.arange(0, 64)
-        y = np.arange(0, 48)
-        x, y = np.meshgrid(x, y) # get 2D variables instead of 1D
-        heatmaps = []
-        for i in range(all_pix_2d.shape[1]):
-            if valid_timesteps[i]:
-                z = gaus2d(x, y, mx=all_pix_2d[0, i], my=all_pix_2d[1, i], sx=5, sy=5,height=100)
-                z = np.clip(z, 0, 1)
-            else:
-                z = np.zeros((48, 64))
-            heatmaps.append(z)
-        heatmaps = np.asarray(heatmaps)
-        heatmaps = np.expand_dims(heatmaps, 1).astype(np.float32)
-        return heatmaps
 
     def _load_actions(self, file_pointer, low, high, start, end):
         actions = file_pointer["actions"][:].astype(np.float32)
@@ -267,7 +226,7 @@ class RobotDataset(data.Dataset):
         """
         Concert raw actions to camera frame displacements
         """
-        states[:, :3] = self._denormalize(states[:, :3], low[:3], high[:3])
+        states[:, :3] = denormalize(states[:, :3], low[:3], high[:3])
         old_actions = actions.copy()
         for t in range(len(actions)):
             state = states[t]
@@ -282,7 +241,7 @@ class RobotDataset(data.Dataset):
         """
         Just calculate the true offset between states instead of using  the recorded actions.
         """
-        states[:, :3] = self._denormalize(states[:, :3], low[:3], high[:3])
+        states[:, :3] = denormalize(states[:, :3], low[:3], high[:3])
         for t in range(len(actions)):
             state = states[t]
             pos_c = self._convert_world_to_camera_pos(state, w_to_c)
@@ -295,7 +254,7 @@ class RobotDataset(data.Dataset):
         """
         Set the action to what happened between states, not recorded actions.
         """
-        states[:, :3] = self._denormalize(states[:, :3], low[:3], high[:3])
+        states[:, :3] = denormalize(states[:, :3], low[:3], high[:3])
         for t in range(len(actions)):
             state = states[t][:3]
             next_state = states[t + 1][:3]
@@ -363,7 +322,9 @@ def get_2d_eef_pos(state, cam_intrinsics, world_to_cam, target_dim, orig_dim):
     return all_pix_2d
 
 def process_batch(data, device):
-    data_keys = ["qpos", "images", "states", "actions", "masks", "heatmaps"]
+    """Changes tensor idx from batch-first to time-first
+    """
+    data_keys = ["qpos", "images", "states", "actions", "masks", "heatmaps", "raw_actions"]
     meta_keys = ["robot", "folder", "file_path", "idx"]
     # transpose from (B, L, C, W, H) to (L, B, C, W, H)
     for k in data_keys:
@@ -387,6 +348,63 @@ def get_batch(loader, device):
         for data in loader:
             yield process_batch(data, device)
 
+def denormalize(states, low, high):
+    states = states * (high - low)
+    states = states + low
+    return states
+
+def create_heatmaps(states, low, high, robot, viewpoint):
+    """Create eef heatmaps of the robot
+
+    Args:
+        states (numpy array): normalized states
+        low (numpy array): lower bound
+        high (numpy array): upper bound
+        robot (str): type of robot
+        viewpoint (str): robot viewpoint
+    """
+        # first denormalize the eef states
+    states[:, :3] = denormalize(states[:, :3], low[:3], high[:3])
+    eef_pos = states[:, :3].numpy()
+    # depending on the robot configuration, add Z offset to the gripper
+    if robot =="sawyer":
+        eef_pos[:, 2] -= 0.15
+        wTc = world_to_camera_dict[f"sawyer_{viewpoint}"]
+    elif robot == "baxter":
+        #TODO: account for baxter arm, and viewpoint
+        wTc = world_to_camera_dict[f"baxter_left"]
+    elif robot == "widowx":
+        # since widowx is mounted upside down, we add positive z
+        eef_pos[:, 2] += 0.05
+        wTc = world_to_camera_dict[f"widowx1"]
+    else:
+        raise ValueError
+
+    eef_pos = np.concatenate([eef_pos, np.ones((eef_pos.shape[0], 1))], 1).T
+    # assumes image was captured from robonet, logitech 420 camera intrinsics
+    cam_intrinsics = cam_intrinsics_dict["logitech_c420"]
+    tdim = (64, 48) # horizontal, vertical dim
+    # assumes image is (240, 320)
+    odim = (320, 240)
+    all_pix_2d = get_2d_eef_pos(eef_pos, cam_intrinsics, wTc, tdim, odim)
+    # only get 2d coordinates within image dims
+    valid_timesteps = ((0 <= all_pix_2d[0]) & (all_pix_2d[0] < 64))& ((0 <= all_pix_2d[1]) & (all_pix_2d[1]< 48))
+
+    # define normalized 2D gaussian
+    x = np.arange(0, 64)
+    y = np.arange(0, 48)
+    x, y = np.meshgrid(x, y) # get 2D variables instead of 1D
+    heatmaps = []
+    for i in range(all_pix_2d.shape[1]):
+        if valid_timesteps[i]:
+            z = gaus2d(x, y, mx=all_pix_2d[0, i], my=all_pix_2d[1, i], sx=5, sy=5,height=100)
+            z = np.clip(z, 0, 1)
+        else:
+            z = np.zeros((48, 64))
+        heatmaps.append(z)
+    heatmaps = np.asarray(heatmaps)
+    heatmaps = np.expand_dims(heatmaps, 1).astype(np.float32)
+    return heatmaps
 
 if __name__ == "__main__":
     from src.utils.plot import save_gif
