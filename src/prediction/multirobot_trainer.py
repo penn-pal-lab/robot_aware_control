@@ -1127,6 +1127,9 @@ class MultiRobotPredictionTrainer(object):
         states = data["states"]
         ac = data["actions"]
         true_mask = mask = data["masks"]
+        if cf.model_use_heatmap:
+            # TODO: calculate predicted heatmaps
+            heatmaps = data["heatmaps"]
         robot_name = data["robot"]
         bs = min(cf.test_batch_size, x.shape[1])
         # initialize the recurrent states
@@ -1156,6 +1159,9 @@ class MultiRobotPredictionTrainer(object):
             # let j be i - 1, or previous timestep
             m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
             x_i, m_i, r_i = x[i], mask[i], states[i]
+            hm_j, hm_i = None, None
+            if cf.model_use_heatmap:
+                hm_j, hm_i = heatmaps[i - 1], heatmaps[i]
 
             if cf.model == "copy":
                 x_pred = self.model(x_j, m_j, x_i, m_i)
@@ -1175,6 +1181,9 @@ class MultiRobotPredictionTrainer(object):
                 r_in = r_j
                 if cf.model_use_future_robot_state:
                     r_in = (r_j, r_i)
+                hm_in = hm_j
+                if cf.model_use_future_heatmap:
+                    hm_in = torch.cat([hm_j, hm_i], 1)
 
                 if cf.model == "det":
                     x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
@@ -1182,14 +1191,19 @@ class MultiRobotPredictionTrainer(object):
                     m_next_in = m_i
                     if cf.model_use_future_mask:
                         m_next_in = m_i.repeat(1, 2, 1, 1)
+                    hm_next_in = hm_i
+                    if cf.model_use_future_heatmap:
+                        hm_next_in = hm_i.repeat(1, 2, 1, 1)
                     out = self.model(
                         x_j_black,
                         m_in,
                         r_in,
+                        hm_in,
                         a_j,
                         x_i_black,
                         m_next_in,
                         r_i,
+                        hm_next_in,
                         skip,
                         force_use_prior=True
                     )
