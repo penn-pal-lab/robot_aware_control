@@ -32,7 +32,7 @@ def create_finetune_loaders(config):
             high_error = any([x["high_error"] for x in motion_info[d.path]])
             if high_error:
                 files.append(d.path)
-                file_labels.append(SAWYER_TEST_DIRS[0])
+                file_labels.append("sawyer_" + SAWYER_TEST_DIRS[0])
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
@@ -99,7 +99,7 @@ def create_transfer_loader(config):
             high_error = any([x["high_error"] for x in motion_info[d.path]])
             if high_error:
                 files.append(d.path)
-                file_labels.append(SAWYER_TEST_DIRS[0])
+                file_labels.append("sawyer_" + SAWYER_TEST_DIRS[0])
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
@@ -146,7 +146,7 @@ def create_loaders(config):
             for d in os.scandir(folder.path):
                 if d.is_file() and has_file_allowed_extension(d.path, file_type):
                     files.append(d.path)
-                    file_labels.append(folder.name)
+                    file_labels.append("sawyer_" + folder.name)
 
     file_and_labels = zip(files, file_labels)
     file_and_labels = sorted(file_and_labels, key=lambda x: x[0])

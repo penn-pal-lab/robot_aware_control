@@ -11,29 +11,38 @@ from torch.utils.data import DataLoader
 from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision.datasets.folder import has_file_allowed_extension
 
+BAXTER_TRAIN_DIRS = ["left_c0"]
+BAXTER_TEST_DIRS = []
+WIDOWX_TRAIN_DIRS = ["widowx1"]
+WIDOWX_TEST_DIRS = []
+SAWYER_TRAIN_DIRS = ["sudri0_c0", "sudri0_c1", "sudri0_c2", "sudri2_c0", "sudri2_c1", "sudri2_c2", "vestri_table2_c0", "vestri_table2_c1", "vestri_table2_c2"]
+SAWYER_TEST_DIRS = []
+
 
 def create_loaders(config):
-    file_type = "hdf5"
-    files = []
-    file_labels = []
-    robots = ["baxter", "sawyer", "widowx"]
-    data_path = os.path.join(config.data_root, "new_hdf5")
-    for d in os.scandir(data_path):
-        if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            files.append(d.path)
-            robot = None
-            for r in robots:
-                if r in d.path:
-                    robot = r
-                    break
-            assert robot is not None, d.path
-            file_labels.append(robot)
+    """
+    Creates non-stratified dataset of robots.
+    We assume the dataset is a folder of robot folders. Each robot folder has a viewpoint folder containing trajectories of that viewpoint.
+    sawyer/
+        view0/
+            traj0.hdf5
+            traj1.hdf5
+        view1/
+    widowx/
+        view0/
+        view1/
+    baxter/
+        view0/
+    """
+    baxter_fl = get_baxter_data(config)
+    widowx_fl = get_widowx_data(config)
+    sawyer_fl = get_sawyer_data(config)
 
-    # create a small deterministic dataloader for comparison across runs
-    # because train / test loaders have multiple workers, RNG is tricky.
-    num_gifs = config.batch_size
-    file_and_labels = zip(files, file_labels)
-    file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
+    print("baxter data", len(baxter_fl))
+    print("widowx data", len(widowx_fl))
+    print("sawyer data", len(sawyer_fl))
+
+    file_and_labels = baxter_fl + widowx_fl + sawyer_fl
     random.seed(config.seed)
     random.shuffle(file_and_labels)
 
@@ -45,7 +54,7 @@ def create_loaders(config):
         files,
         file_labels,
         test_size=1 - config.train_val_split,
-        stratify=file_labels,
+        # stratify=file_labels,
         random_state=split_rng,
     )
     augment_img = config.img_augmentation
@@ -93,7 +102,7 @@ def create_loaders(config):
         sampler=test_sampler,
     )
 
-    # get 5 of each robot in the test set
+    # get 5 of each robot in the comparison set
     count = {r: 5 for r in robots}
     comp_files = []
     comp_file_labels = []
@@ -104,13 +113,89 @@ def create_loaders(config):
             comp_file_labels.append(y)
         if sum(count.values()) == 0:
             break
-
+    # create a small deterministic dataloader for comparison across runs
+    # because train / test loaders have multiple workers, RNG is tricky.
+    num_gifs = len(comp_files)
     comp_data = RobotDataset(comp_files, comp_file_labels, config, load_snippet=True)
     comp_loader = DataLoader(
         comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
     )
 
     return train_loader, test_loader, comp_loader
+
+
+def get_baxter_data(config):
+    """
+    Load all the robonet baxter data.
+    For the robonet baxter data, there are two types of videos, baxter_left and baxter_right
+    that correspond to which arm was recorded.
+    Each arm has 3 cameras.
+
+    Returns a list of hdf5 files, and a list of the viewpoint names
+    """
+    file_type = "hdf5"
+    files = []
+    file_labels = []
+    data_path = os.path.join(config.data_root, "baxter_views")
+    for folder in os.scandir(data_path):
+        if folder.is_dir() and folder.name in BAXTER_TRAIN_DIRS:
+            for d in os.scandir(folder.path):
+                if d.is_file() and has_file_allowed_extension(d.path, file_type):
+                    files.append(d.path)
+                    file_labels.append(f"baxter_{folder.name}")
+
+    file_and_labels = zip(files, file_labels)
+    file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
+    random.seed(config.seed)
+    random.shuffle(file_and_labels)
+    return file_and_labels
+
+def get_widowx_data(config):
+    """
+    Load all the robonet widowx data.
+    For the robonet widowx data, there are 5 types of widowx videos.
+    Returns a list of hdf5 files, and a list of the viewpoint names
+    """
+    file_type = "hdf5"
+    files = []
+    file_labels = []
+    data_path = os.path.join(config.data_root, "widowx_views")
+    for folder in os.scandir(data_path):
+        if folder.is_dir() and folder.name in WIDOWX_TRAIN_DIRS:
+            for d in os.scandir(folder.path):
+                if d.is_file() and has_file_allowed_extension(d.path, file_type):
+                    files.append(d.path)
+                    file_labels.append(f"widowx_{folder.name}")
+
+    file_and_labels = zip(files, file_labels)
+    file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
+    random.seed(config.seed)
+    random.shuffle(file_and_labels)
+    return file_and_labels
+
+def get_sawyer_data(config):
+    """
+    Load all the robonet sawyer data.
+    For the robonet sawyer data, there are 5 types of sawyer videos.
+    Returns a list of hdf5 files, and a list of the viewpoint names
+    """
+    file_type = "hdf5"
+    files = []
+    file_labels = []
+    data_path = os.path.join(config.data_root, "sawyer_views")
+    for folder in os.scandir(data_path):
+        if folder.is_dir() and folder.name in SAWYER_TRAIN_DIRS:
+            for d in os.scandir(folder.path):
+                if d.is_file() and has_file_allowed_extension(d.path, file_type):
+                    files.append(d.path)
+                    file_labels.append(f"sawyer_{folder.name}")
+
+    file_and_labels = zip(files, file_labels)
+    file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
+    random.seed(config.seed)
+    random.shuffle(file_and_labels)
+    return file_and_labels
+
 
 
 if __name__ == "__main__":

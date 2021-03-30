@@ -42,7 +42,7 @@ from src.prediction.losses import (
     world_mse_criterion,
 )
 from src.utils.metrics import psnr, ssim
-from src.utils.plot import save_gif, save_tensors_image
+from src.utils.plot import save_gif
 from torch import optim
 from tqdm import tqdm
 
@@ -155,7 +155,7 @@ class MultiRobotPredictionTrainer(object):
         else:
             raise NotImplementedError(f"{self._config.reconstruction_loss}")
 
-    def _zero_robot_region(self, mask, image, inplace=True):
+    def _zero_robot_region(self, mask, image, inplace=False):
         """
         Set the robot region to zero
         """
@@ -193,11 +193,11 @@ class MultiRobotPredictionTrainer(object):
                 from src.env.robotics.masks.baxter_mask_env import BaxterMaskEnv
                 env = BaxterMaskEnv()
                 env.arm = "left"
-                cam_ext = camera_to_world_dict[f"baxter_left"]
+                cam_ext = camera_to_world_dict[f"baxter_{v}"]
             elif cf.training_regime == "finetune_widowx":
                 from src.env.robotics.masks.widowx_mask_env import WidowXMaskEnv
                 env = WidowXMaskEnv()
-                cam_ext = camera_to_world_dict[f"widowx1"]
+                cam_ext = camera_to_world_dict[f"widowx_{v}"]
             elif cf.training_regime == "finetune_sawyer_view":
                 from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
                 env = SawyerMaskEnv()
@@ -340,7 +340,7 @@ class MultiRobotPredictionTrainer(object):
 
         # background mask
         if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-            self._zero_robot_region(mask[0], x[0])
+            self._zero_robot_region(mask[0], x[0], inplace=True)
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
                 x_j = x[i - 1] if self._use_true_token() else x_pred.clone().detach()
@@ -356,8 +356,8 @@ class MultiRobotPredictionTrainer(object):
             # zero out robot pixels in input for norobot cost
             x_j_black, x_i_black = x_j, x_i
             if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-                x_j_black = self._zero_robot_region(m_j, x_j, False)
-                x_i_black = self._zero_robot_region(m_i, x_i, False)
+                x_j_black = self._zero_robot_region(m_j, x_j)
+                x_i_black = self._zero_robot_region(m_i, x_i)
 
             if cf.last_frame_skip:  # always use skip of current img
                 skip = None
@@ -564,7 +564,7 @@ class MultiRobotPredictionTrainer(object):
                 states, mask = out
 
         if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-            self._zero_robot_region(mask[0], x[0])
+            self._zero_robot_region(mask[0], x[0], inplace=True)
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 x_j = x_pred.clone()
@@ -583,8 +583,8 @@ class MultiRobotPredictionTrainer(object):
                 # zero out robot pixels in input for norobot cost
                 x_j_black, x_i_black = x_j, x_i
                 if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-                    x_j_black = self._zero_robot_region(m_j, x_j, False)
-                    x_i_black = self._zero_robot_region(m_i, x_i, False)
+                    x_j_black = self._zero_robot_region(m_j, x_j)
+                    x_i_black = self._zero_robot_region(m_i, x_i)
 
                 if cf.last_frame_skip:
                     skip = None
@@ -657,8 +657,8 @@ class MultiRobotPredictionTrainer(object):
                 losses[f"{prefix}_world_loss"] += world_mse_value
 
                 # black out robot with true mask before computing psnr, ssim
-                x_pred_black = self._zero_robot_region(true_mask[i], x_pred, False)
-                x_i_black = self._zero_robot_region(true_mask[i], x_i, False)
+                x_pred_black = self._zero_robot_region(true_mask[i], x_pred)
+                x_i_black = self._zero_robot_region(true_mask[i], x_i)
 
                 p = psnr(x_i_black.clamp(0, 1), x_pred_black.clamp(0, 1)).mean().item()
                 s = ssim(x_i_black, x_pred_black).mean().item()
@@ -1015,7 +1015,7 @@ class MultiRobotPredictionTrainer(object):
             skip = None
             self.model.init_hidden(b)
             if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-                self._zero_robot_region(mask[0], x[0])
+                self._zero_robot_region(mask[0], x[0], inplace=True)
             gen_seq[s].append(x[0])
             gen_mask[s].append(mask[0])
             x_j = x[0]
@@ -1031,8 +1031,8 @@ class MultiRobotPredictionTrainer(object):
                 else:
                     # zero out robot pixels in input for norobot cost
                     if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-                        self._zero_robot_region(mask[i - 1], x_j)
-                        self._zero_robot_region(mask[i], x[i])
+                        self._zero_robot_region(mask[i - 1], x_j, inplace=True)
+                        self._zero_robot_region(mask[i], x[i], inplace=True)
                     m_in = m_j
                     if cf.model_use_future_mask:
                         m_in = torch.cat([m_j, m_i], 1)
@@ -1074,7 +1074,7 @@ class MultiRobotPredictionTrainer(object):
                         skip = curr_skip
 
                     if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-                        self._zero_robot_region(mask[i], x_pred)
+                        self._zero_robot_region(mask[i], x_pred, inplace=True)
                 if i < cf.n_past:
                     x_j = x_i
                 else:
@@ -1218,7 +1218,7 @@ class MultiRobotPredictionTrainer(object):
                 states, mask = out
 
         if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-            self._zero_robot_region(mask[0], x[0])
+            self._zero_robot_region(mask[0], x[0], inplace=True)
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 x_j = x_pred.clone()
@@ -1237,8 +1237,8 @@ class MultiRobotPredictionTrainer(object):
                 # zero out robot pixels in input for norobot cost
                 x_j_black, x_i_black = x_j, x_i
                 if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-                    x_j_black = self._zero_robot_region(m_j, x_j, False)
-                    x_i_black = self._zero_robot_region(m_i, x_i, False)
+                    x_j_black = self._zero_robot_region(m_j, x_j)
+                    x_i_black = self._zero_robot_region(m_i, x_i)
 
                 if cf.last_frame_skip:
                     skip = None
@@ -1311,8 +1311,8 @@ class MultiRobotPredictionTrainer(object):
                 losses[f"{prefix}_world_loss"] += world_mse_value
 
                 # black out robot with true mask before computing psnr, ssim
-                x_pred_black = self._zero_robot_region(true_mask[i], x_pred, False)
-                x_i_black = self._zero_robot_region(true_mask[i], x_i, False)
+                x_pred_black = self._zero_robot_region(true_mask[i], x_pred)
+                x_i_black = self._zero_robot_region(true_mask[i], x_i)
 
                 all_x_pred_black.append(x_pred_black)
                 all_x_i_black.append(x_i_black)

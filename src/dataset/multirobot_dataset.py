@@ -24,7 +24,7 @@ class RobotDataset(data.Dataset):
     ):
         """
         hdf5_list: list of hdf5 files to load
-        robot_list: list of robot type for each hdf5 file
+        robot_list: list of robot_viewpoint names
         split: load a random snippet, or the entire video depending on split.
         """
         self._traj_names = hdf5_list
@@ -276,27 +276,19 @@ class RobotDataset(data.Dataset):
             # convert everything to camera coordinates.
             filename = self._traj_names[idx]
             robot_type = self._traj_robots[idx]
-            if robot_type == "sawyer":
-                # TODO: account for camera config and index
-                world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
-            elif robot_type == "widowx":
-                world2cam = world_to_camera_dict["widowx1"]
-            elif robot_type == "baxter":
-                arm = "left" if "left" in filename else "right"
-                world2cam = world_to_camera_dict[f"baxter_{arm}"]
-
+            world2cam = world_to_camera_dict[robot_type]
         elif self._config.training_regime == "singlerobot":
             # train on sawyer, convert actions to camera space
             world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
         elif self._config.training_regime == "train_sawyer_multiview":
-            world2cam = world_to_camera_dict["sawyer_" + robot_type]
+            world2cam = world_to_camera_dict[robot_type]
         elif self._config.training_regime == "finetune":
             # finetune on baxter, convert to camera frame
             # Assumes the baxter arm is right arm!
             arm = "left" if "left" in filename else "right"
             world2cam = world_to_camera_dict[f"baxter_{arm}"]
         elif self._config.training_regime == "finetune_sawyer_view":
-            world2cam = world_to_camera_dict["sawyer_" + robot_type]
+            world2cam = world_to_camera_dict[robot_type]
         else:
             raise ValueError
         states = states.copy()
@@ -379,11 +371,11 @@ def create_heatmaps(states, low, high, robot, viewpoint):
         wTc = world_to_camera_dict[f"sawyer_{viewpoint}"]
     elif robot == "baxter":
         #TODO: account for baxter arm, and viewpoint
-        wTc = world_to_camera_dict[f"baxter_left"]
+        wTc = world_to_camera_dict[f"baxter_{viewpoint}"]
     elif robot == "widowx":
         # since widowx is mounted upside down, we add positive z
         eef_pos[:, 2] += 0.05
-        wTc = world_to_camera_dict[f"widowx1"]
+        wTc = world_to_camera_dict[f"widowx_{viewpoint}"]
     else:
         raise ValueError
 
@@ -416,7 +408,6 @@ def create_heatmaps(states, low, high, robot, viewpoint):
 if __name__ == "__main__":
     from src.utils.plot import save_gif
     from src.config import argparser
-    from src.utils.camera_calibration import camera_to_world_dict
 
     config, _ = argparser()
     config.data_root = "/scratch/edward/Robonet"
