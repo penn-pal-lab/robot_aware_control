@@ -13,7 +13,7 @@ from src.env.robotics.masks.locobot_mask_env import (LocobotMaskEnv,
                                                      predict_next_qpos,
                                                      load_data)
 
-total_files = 100
+total_files = 10000
 
 
 if __name__ == "__main__":
@@ -34,9 +34,11 @@ if __name__ == "__main__":
     n_files = 0
     for filename in os.listdir(data_path):
         if filename.endswith(".hdf5"):
+            overwrite = False
             with h5py.File(os.path.join(data_path, filename), "r") as f:
-                if 'gt_masks' in f.keys():
-                    continue
+                if 'masks' in f.keys():
+                    # TODO: overwrite for now, change to continue in the future
+                    overwrite = True
 
             print(os.path.join(data_path, filename))
 
@@ -135,12 +137,10 @@ if __name__ == "__main__":
             # imageio.mimwrite(f"{data_path}masks.gif", masks.astype(np.float32))
             # env.compare_traj(data_path + "mask_overlap", predicted_Kstep_qpos, imgs[K:])
 
-            import ipdb
-            ipdb.set_trace()
-
             with h5py.File(os.path.join(data_path, filename), "a") as f:
-                # TODO: log mask, we also need to overwrite old masks sometimes
-                pass
+                if overwrite:
+                    del f['masks']
+                f.create_dataset('masks', data=masks)
 
             n_files += 1
             if n_files > total_files:
