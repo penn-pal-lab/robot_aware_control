@@ -5,9 +5,6 @@ from functools import partial
 
 import torchvision.transforms as tf
 from src.dataset.multirobot_dataset import get_batch, process_batch
-from src.env.robotics.masks.baxter_mask_env import BaxterMaskEnv
-from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
-from src.env.robotics.masks.widowx_mask_env import WidowXMaskEnv
 from src.prediction.models.dynamics import (
     CopyModel,
     DeterministicConvModel,
@@ -66,7 +63,8 @@ class MultiRobotPredictionTrainer(object):
         # init WandB
         if not config.wandb:
             os.environ["WANDB_MODE"] = "dryrun"
-        assert "WANDB_API_KEY" in os.environ, "set WANDB_API_KEY env var."
+        else:
+            assert "WANDB_API_KEY" in os.environ, "set WANDB_API_KEY env var."
         wandb.init(
             resume=config.jobname,
             project=config.wandb_project,
@@ -182,16 +180,20 @@ class MultiRobotPredictionTrainer(object):
             if v in self.renderers:
                 continue
             if cf.training_regime == "singlerobot":
+                from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
                 env = SawyerMaskEnv()
                 cam_ext = camera_to_world_dict[f"sawyer_{v}"]
             elif cf.training_regime == "finetune":
+                from src.env.robotics.masks.baxter_mask_env import BaxterMaskEnv
                 env = BaxterMaskEnv()
                 env.arm = "left"
                 cam_ext = camera_to_world_dict[f"baxter_left"]
             elif cf.training_regime == "finetune_widowx":
+                from src.env.robotics.masks.widowx_mask_env import WidowXMaskEnv
                 env = WidowXMaskEnv()
                 cam_ext = camera_to_world_dict[f"widowx1"]
             elif cf.training_regime == "finetune_sawyer_view":
+                from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
                 env = SawyerMaskEnv()
                 cam_ext = camera_to_world_dict[f"sawyer_{v}"]
             else:
@@ -285,7 +287,7 @@ class MultiRobotPredictionTrainer(object):
             batch_data = {
                 "images": x[s:e],
                 "states": data["states"][s:e],
-                "actions": data["actions"][s : e - 1],
+                "actions": data["actions"][s: e - 1],
                 "masks": data["masks"][s:e],
                 "qpos": data["qpos"][s:e],
                 "robot": data["robot"],
@@ -348,7 +350,7 @@ class MultiRobotPredictionTrainer(object):
                 x_j_black = self._zero_robot_region(m_j, x_j, False)
                 x_i_black = self._zero_robot_region(m_i, x_i, False)
 
-            if cf.last_frame_skip: # always use skip of current img
+            if cf.last_frame_skip:  # always use skip of current img
                 skip = None
 
             m_in = m_j
@@ -482,7 +484,7 @@ class MultiRobotPredictionTrainer(object):
             batch_data = {
                 "images": x[s:e],
                 "states": data["states"][s:e],
-                "actions": data["actions"][s : e - 1],
+                "actions": data["actions"][s: e - 1],
                 "masks": data["masks"][s:e],
                 "robot": data["robot"],
                 "qpos": data["qpos"][s:e],
@@ -899,6 +901,10 @@ class MultiRobotPredictionTrainer(object):
             from src.dataset.finetune_widowx_dataloaders import (
                 create_finetune_loaders as create_loaders,
             )
+        elif self._config.training_regime == "train_locobot_singleview":
+            from src.dataset.locobot_singleview_dataloader import (
+                create_loaders as create_loaders,
+            )
         else:
             raise NotImplementedError(self._config.training_regime)
         self.train_loader, self.test_loader, comp_loader = create_loaders(self._config)
@@ -942,7 +948,7 @@ class MultiRobotPredictionTrainer(object):
         # truncate batch by time and batch dim
         x = x[start:end, :b]
         states = states[start:end, :b]
-        ac = ac[start : end - 1, :b]
+        ac = ac[start: end - 1, :b]
         mask = mask[start:end, :b]
         qpos = qpos[start:end, :b]
         folder = data["folder"][:b]
@@ -1073,8 +1079,7 @@ class MultiRobotPredictionTrainer(object):
         """
         num_samples = 1
         if (self._config.model == "svg"
-            and "finetune" in self._config.training_regime
-        ):
+                and "finetune" in self._config.training_regime):
             num_samples = 3
         x = data["images"]
         T = len(x)
@@ -1088,7 +1093,7 @@ class MultiRobotPredictionTrainer(object):
             batch_data = {
                 "images": x[s:e],
                 "states": data["states"][s:e],
-                "actions": data["actions"][s : e - 1],
+                "actions": data["actions"][s: e - 1],
                 "masks": data["masks"][s:e],
                 "robot": data["robot"],
                 "qpos": data["qpos"][s:e],
@@ -1273,12 +1278,13 @@ class MultiRobotPredictionTrainer(object):
             temp_k_losses[k] = v / num_steps
         losses.update(temp_k_losses)
         # make this B x T x C x H x W
-        all_x_pred_black = torch.stack(all_x_pred_black).transpose(0,1)
-        all_x_i_black = torch.stack(all_x_i_black).transpose(0,1)
+        all_x_pred_black = torch.stack(all_x_pred_black).transpose(0, 1)
+        all_x_i_black = torch.stack(all_x_i_black).transpose(0, 1)
 
-        losses["gen_imgs"] = (255 * all_x_pred_black).permute(0,1,3,4,2).cpu().numpy().astype(np.uint8)
-        losses["true_imgs"] = (255 * all_x_i_black).permute(0,1,3,4,2).cpu().numpy().astype(np.uint8)
+        losses["gen_imgs"] = (255 * all_x_pred_black).permute(0, 1, 3, 4, 2).cpu().numpy().astype(np.uint8)
+        losses["true_imgs"] = (255 * all_x_i_black).permute(0, 1, 3, 4, 2).cpu().numpy().astype(np.uint8)
         return losses
+
 
 def make_log_folder(config):
     # make folder for exp logs

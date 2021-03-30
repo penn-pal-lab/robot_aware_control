@@ -94,3 +94,11 @@ export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGLEW.so
 1. Need to root login to the specific node you want to do MuJoCo GPU rendering on, and then
 create a fake /usr/lib/nvidia-000 folder for MuJoCo to detect.
 2. Make sure your LD_PRELOAD contians libGL and libGLEW links
+
+## Training Video Prediction
+
+### LoCoBot Vanilla Model
+
+```bash
+python -m src.prediction.multirobot_trainer --jobname locobot --wandb False --data_root /mnt/ssd1/pallab/locobot_data --batch_size 10 --n_future 5 --n_past 1 --n_eval 10 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --checkpoint_interval 100 --eval_interval 5 --reconstruction_loss l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --training_regime train_locobot_singleview --preprocess_action raw --random_snippet True --model_use_mask False --model_use_robot_state False --model_use_heatmap False
+```

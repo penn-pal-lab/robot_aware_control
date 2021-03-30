@@ -1,6 +1,7 @@
 import argparse
 from argparse import ArgumentParser
 
+
 def str2bool(v):
     return v.lower() == "true"
 
@@ -216,6 +217,7 @@ def add_prediction_arguments(parser):
     parser.add_argument("--robot_model_ckpt", type=str, default=None)
     parser.add_argument("--cdna_kernel_size", type=int, default=5)
 
+
 def add_dataset_arguments(parser):
     parser.add_argument(
         "--data_threads", type=int, default=5, help="number of data loading threads"
@@ -232,11 +234,19 @@ def add_dataset_arguments(parser):
         choices=["object_inpaint_demo", "robot_demo", "object_only_demo"],
     )
     # robonet video prediction dataset arguments
-    parser.add_argument("--video_length", type=int, default=31, help="max length of the video, used for evaluation dataloader")
+    parser.add_argument("--video_length", type=int, default=31,
+                        help="max length of the video, used for evaluation dataloader")
     parser.add_argument("--impute_autograsp_action", type=str2bool, default=True)
     parser.add_argument("--preload_ram", type=str2bool, default=False)
-    parser.add_argument("--training_regime", type=str, choices=["multirobot", "singlerobot", "finetune", "train_sawyer_multiview", "finetune_sawyer_view", "finetune_widowx"], default="multirobot")
-    parser.add_argument("--preprocess_action", type=str, choices=["raw", "camera_raw", "state_infer", "camera_state_infer"], default="raw")
+    parser.add_argument("--training_regime",
+                        type=str,
+                        choices=["multirobot", "singlerobot", "finetune",
+                                 "train_sawyer_multiview", "finetune_sawyer_view",
+                                 "finetune_widowx", "train_locobot_singleview"],
+                        default="multirobot")
+    parser.add_argument("--preprocess_action", type=str,
+                        choices=["raw", "camera_raw", "state_infer", "camera_state_infer"],
+                        default="raw")
     parser.add_argument("--img_augmentation", type=str2bool, default=False)
     parser.add_argument("--color_jitter_range", type=float, default=0.1)
     parser.add_argument("--random_crop_size", type=int, default=59)
@@ -247,6 +257,8 @@ def add_dataset_arguments(parser):
     parser.add_argument("--random_snippet", type=str2bool, default=False)
 
 # CEM Hyperparameters
+
+
 def add_cem_arguments(parser):
     parser.add_argument("--horizon", type=int, default=3)
     parser.add_argument("--opt_iter", type=int, default=10)
@@ -273,6 +285,8 @@ def add_cem_arguments(parser):
     parser.add_argument("--sparse_cost", type=str2bool, default=False)
 
 # Cost Fn Hyperparameters
+
+
 def add_cost_arguments(parser):
     # cost thresholds for determining goal success
     parser.add_argument("--world_cost_success", type=float, default=4000)
@@ -284,6 +298,7 @@ def add_cost_arguments(parser):
     parser.add_argument("--img_cost_threshold", type=float, default=None)
     # only used by img don't care cost, divide by number of world pixels
     parser.add_argument("--img_cost_world_norm", type=str2bool, default=True)
+
 
 def argparser():
     """ Directly parses the arguments. """
