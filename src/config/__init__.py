@@ -203,7 +203,7 @@ def add_prediction_arguments(parser):
     parser.add_argument("--model_use_future_mask", type=str2bool, default=False)
     parser.add_argument("--model_use_robot_state", type=str2bool, default=True)
     parser.add_argument("--model_use_future_robot_state", type=str2bool, default=False)
-    parser.add_argument("--model_use_heatmap", type=str2bool, default=True)
+    parser.add_argument("--model_use_heatmap", type=str2bool, default=False)
     parser.add_argument("--model_use_future_heatmap", type=str2bool, default=False)
     parser.add_argument("--black_robot_input", type=str2bool, default=False)
     parser.add_argument("--reconstruction_loss", default="mse", choices=["mse", "l1", "dontcare_mse", "dontcare_l1"])

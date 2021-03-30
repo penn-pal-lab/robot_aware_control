@@ -4,7 +4,11 @@ from collections import defaultdict
 from functools import partial
 
 import torchvision.transforms as tf
-from src.dataset.multirobot_dataset import get_batch, process_batch
+from src.dataset.multirobot_dataset import (
+    create_heatmaps,
+    get_batch,
+    process_batch,
+)
 from src.prediction.models.dynamics import (
     CopyModel,
     DeterministicConvModel,
@@ -163,7 +167,7 @@ class MultiRobotPredictionTrainer(object):
         return image
 
     @torch.no_grad()
-    def _generate_learned_masks_states(self, data):
+    def _generate_learned_robot_states(self, data):
         """
         Use the learned robot model to generate masks and states for
         training / eval.
@@ -171,6 +175,8 @@ class MultiRobotPredictionTrainer(object):
         cf = self._config
         states = data["states"]
         ac = data["actions"]
+        if self._config.preprocess_action != "raw":
+            ac = data["raw_actions"]
         mask = data["masks"]
         qpos = data["qpos"]
         viewpoints = set(data["folder"])
@@ -225,12 +231,34 @@ class MultiRobotPredictionTrainer(object):
                     .type(torch.bool)
                 )
                 predicted_masks[i][b] = m
-
             q_j = q_pred
             r_j = r_pred
 
         states = predicted_states
         mask = predicted_masks
+        if self._config.model_use_heatmap:
+            # T x B x 1 x H x W
+            heatmaps = data["heatmaps"].clone()
+            for idx in range(heatmaps.shape[1]):
+                # get states from t=1:T to generate heatmas
+                s = states[1:, idx].cpu()
+                low = data["low"][idx].cpu().numpy().squeeze()
+                high = data["high"][idx].cpu().numpy().squeeze()
+                robot = data["robot"][idx]
+                vp = data["folder"][idx]
+                hm = create_heatmaps(s, low, high, robot, vp)
+                # use gt heatmap at t=0
+                heatmaps[1:, idx] = torch.from_numpy(hm)
+            # images = data["images"]
+            # hm = heatmaps.repeat(1,1,3,1,1)
+            # hm_images = (images * hm).transpose(0,1).unsqueeze(2)
+            # gt_hm = data["heatmaps"].repeat(1,1,3,1,1)
+            # gt_hm_images = (images * gt_hm).transpose(0,1).unsqueeze(2)
+            # gif = torch.cat([gt_hm_images, hm_images], 2)
+            # save_gif("hm.gif", gif)
+            # ipdb.set_trace()
+
+            return states, mask, heatmaps
         return states, mask
 
     def _train_video(self, data):
@@ -246,36 +274,6 @@ class MultiRobotPredictionTrainer(object):
         window = cf.n_past + cf.n_future
         self.steps_per_train_video = floor(T / window)
         all_losses = defaultdict(float)
-
-        # generate learned masks for finetuning
-        # if cf.learned_robot_model and "finetune" in cf.training_regime:
-        #     if not hasattr(self, "robot_state_mask_cache"):
-        #         self._state_mask_cache = {}
-
-        #     # collect the indices of files that are not cached,
-        #     # group them into a batch, and then generate them
-        #     not_cached_idxs = []
-        #     for idx, folder in enumerate(data["folder"]):
-        #         if folder in self._state_mask_cache:
-        #             states, masks = self._state_mask_cache[folder]
-        #             data["states"][:, idx] = states
-        #             data["masks"][:, idx] = masks
-        #         else:
-        #             not_cached_idxs.append(idx)
-        #     # collect the data dict of not cached files for generation
-        #     not_cached_data = {}
-        #     not_cached_data["states"] = torch.stack([data["states"][:, i] for i in not_cached_idxs], 1)
-        #     not_cached_data["actions"] = torch.stack([data["actions"][:, i] for i in not_cached_idxs], 1)
-        #     not_cached_data["masks"] = torch.stack([data["masks"][:, i] for i in not_cached_idxs], 1)
-        #     not_cached_data["qpos"] = torch.stack([data["qpos"][:, i] for i in not_cached_idxs], 1)
-        #     not_cached_data["folder"] =[data["folder"][i] for i in not_cached_idxs]
-
-        #     states, masks = self._generate_learned_masks_states(not_cached_data)
-        #     for idx in not_cached_idxs:
-        #         s = data["states"][:, idx] = states[:, idx]
-        #         m = data["masks"][:, idx] = masks[:, idx]
-        #         file_name = not_cached_data["folder"][idx]
-        #         self._state_mask_cache["folder"] = (s,m)
 
         for i in range(floor(T / window)):
             if cf.random_snippet:
@@ -297,7 +295,18 @@ class MultiRobotPredictionTrainer(object):
                 batch_data["heatmaps"] = data["heatmaps"][s:e]
 
             if cf.learned_robot_model and "finetune" in cf.training_regime:
-                states, masks = self._generate_learned_masks_states(batch_data)
+                if cf.preprocess_action != "raw":
+                    batch_data["raw_actions"] = data["raw_actions"][s: e - 1]
+                if cf.model_use_heatmap:
+                    batch_data["low"] = data["low"]
+                    batch_data["high"] = data["high"]
+
+                out = self._generate_learned_robot_states(batch_data)
+                if cf.model_use_heatmap:
+                    states, masks, heatmaps = out
+                    batch_data["heatmaps"] = heatmaps
+                else:
+                    states, masks = out
                 batch_data["states"] = states
                 batch_data["masks"] = masks
 
@@ -373,7 +382,16 @@ class MultiRobotPredictionTrainer(object):
                 if cf.model_use_future_heatmap:
                     hm_next_in = hm_i.repeat(1, 2, 1, 1)
                 out = self.model(
-                    x_j_black, m_in, r_in, hm_in, a_j, x_i_black, m_next_in, r_i, hm_next_in, skip
+                    x_j_black,
+                    m_in,
+                    r_in,
+                    hm_in,
+                    a_j,
+                    x_i_black,
+                    m_next_in,
+                    r_i,
+                    hm_next_in,
+                    skip,
                 )
                 x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
@@ -465,16 +483,13 @@ class MultiRobotPredictionTrainer(object):
         data: video data from dataloader
         autoregressive: use model's outputs as input for next timestep
         """
+        cf = self._config
         num_samples = 1
-        if (
-            autoregressive
-            and self._config.model == "svg"
-            and "finetune" in self._config.training_regime
-        ):
+        if autoregressive and cf.model == "svg" and "finetune" in cf.training_regime:
             num_samples = 3
         x = data["images"]
         T = len(x)
-        window = self._config.n_eval
+        window = cf.n_eval
         sampled_losses = [
             defaultdict(float) for _ in range(num_samples)
         ]  # list of video sample losses
@@ -490,8 +505,16 @@ class MultiRobotPredictionTrainer(object):
                 "qpos": data["qpos"][s:e],
                 "folder": data["folder"],
             }
-            if self._config.model_use_heatmap:
+            if cf.model_use_heatmap:
                 batch_data["heatmaps"] = data["heatmaps"][s:e]
+
+            # expose inputs necessary for learned robot model
+            if cf.learned_robot_model:
+                if cf.preprocess_action != "raw":
+                    batch_data["raw_actions"] = data["raw_actions"][s: e - 1]
+                if cf.model_use_heatmap:
+                    batch_data["low"] = data["low"]
+                    batch_data["high"] = data["high"]
 
             for sample in range(num_samples):
                 losses = self._eval_step(batch_data, autoregressive)
@@ -521,7 +544,6 @@ class MultiRobotPredictionTrainer(object):
         ac = data["actions"]
         true_mask = mask = data["masks"]
         if cf.model_use_heatmap:
-            # TODO: calculate predicted heatmaps
             heatmaps = data["heatmaps"]
         robot_name = data["robot"]
         bs = min(cf.test_batch_size, x.shape[1])
@@ -535,7 +557,11 @@ class MultiRobotPredictionTrainer(object):
         x_pred = skip = None
         prefix = "autoreg" if autoregressive else "1step"
         if autoregressive and cf.learned_robot_model:
-            states, mask = self._generate_learned_masks_states(data)
+            out = self._generate_learned_robot_states(data)
+            if cf.model_use_heatmap:
+                states, mask, heatmaps = out
+            else:
+                states, mask = out
 
         if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
             self._zero_robot_region(mask[0], x[0])
@@ -593,7 +619,7 @@ class MultiRobotPredictionTrainer(object):
                         r_i,
                         hm_next_in,
                         skip,
-                        force_use_prior=True
+                        force_use_prior=True,
                     )
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
@@ -928,6 +954,7 @@ class MultiRobotPredictionTrainer(object):
         ac = data["actions"]
         mask = data["masks"]
         qpos = data["qpos"]
+        robot = data["robot"]
         if cf.model_use_heatmap:
             heatmaps = data["heatmaps"]
         nsample = 1
@@ -952,19 +979,32 @@ class MultiRobotPredictionTrainer(object):
         mask = mask[start:end, :b]
         qpos = qpos[start:end, :b]
         folder = data["folder"][:b]
+        robot = robot[:b]
         if cf.model_use_heatmap:
             heatmaps = heatmaps[start:end, :b]
 
         if cf.learned_robot_model:
-            data = dict(
+            input_data = dict(
                 images=x,
                 states=states,
                 actions=ac,
                 masks=mask,
                 qpos=qpos,
                 folder=folder,
+                robot=robot,
             )
-            states, mask = self._generate_learned_masks_states(data)
+            if cf.preprocess_action != "raw":
+                input_data["raw_actions"] = data["raw_actions"][start: end - 1, :b]
+            if cf.model_use_heatmap:
+                input_data["heatmaps"] = data["heatmaps"][start: end, :b]
+                input_data["low"] = data["low"][:b]
+                input_data["high"] = data["high"][:b]
+
+            out = self._generate_learned_robot_states(input_data)
+            if cf.model_use_heatmap:
+                states, mask, heatmaps = out
+            else:
+                states, mask = out
 
         gen_seq = [[] for i in range(nsample)]
         gen_mask = [[] for i in range(nsample)]
@@ -1012,7 +1052,18 @@ class MultiRobotPredictionTrainer(object):
                     elif cf.model == "svg":
                         # don't use posterior.
                         x_i, m_next_in, r_i, hm_next_in = None, None, None, None
-                        out = self.model(x_j, m_in, r_in, hm_in, a_j, x_i, m_next_in, r_i, hm_next_in, skip)
+                        out = self.model(
+                            x_j,
+                            m_in,
+                            r_in,
+                            hm_in,
+                            a_j,
+                            x_i,
+                            m_next_in,
+                            r_i,
+                            hm_next_in,
+                            skip,
+                        )
                         x_pred, curr_skip, _, _, _, _ = out
 
                     x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
@@ -1077,13 +1128,13 @@ class MultiRobotPredictionTrainer(object):
         data: video data from dataloader
         Outputs the ground truth and predicted videos
         """
+        cf = self._config
         num_samples = 1
-        if (self._config.model == "svg"
-                and "finetune" in self._config.training_regime):
+        if cf.model == "svg" and "finetune" in cf.training_regime:
             num_samples = 3
         x = data["images"]
         T = len(x)
-        window = self._config.n_eval
+        window = cf.n_eval
         sampled_losses = [
             defaultdict(float) for _ in range(num_samples)
         ]  # list of video sample losses
@@ -1099,6 +1150,15 @@ class MultiRobotPredictionTrainer(object):
                 "qpos": data["qpos"][s:e],
                 "folder": data["folder"],
             }
+            if cf.model_use_heatmap:
+                batch_data["heatmaps"] = data["heatmaps"][s:e]
+             # expose inputs necessary for learned robot model
+            if cf.learned_robot_model:
+                if cf.preprocess_action != "raw":
+                    batch_data["raw_actions"] = data["raw_actions"][s: e - 1]
+                if cf.model_use_heatmap:
+                    batch_data["low"] = data["low"]
+                    batch_data["high"] = data["high"]
             for sample in range(num_samples):
                 losses = self._predict_video(batch_data)
                 for k, v in losses.items():
@@ -1109,7 +1169,7 @@ class MultiRobotPredictionTrainer(object):
                     else:
                         sampled_losses[sample][k] += v
         # now pick the best sample by world error, and average over frames
-        if self._config.model == "svg":
+        if cf.model == "svg":
             sampled_losses.sort(key=lambda x: x["autoreg_world_loss"])
         best_loss = sampled_losses[0]
 
@@ -1132,6 +1192,8 @@ class MultiRobotPredictionTrainer(object):
         states = data["states"]
         ac = data["actions"]
         true_mask = mask = data["masks"]
+        if cf.model_use_heatmap:
+            heatmaps = data["heatmaps"]
         robot_name = data["robot"]
         bs = min(cf.test_batch_size, x.shape[1])
         # initialize the recurrent states
@@ -1149,7 +1211,11 @@ class MultiRobotPredictionTrainer(object):
         x_pred = skip = None
         prefix = "autoreg" if autoregressive else "1step"
         if autoregressive and cf.learned_robot_model:
-            states, mask = self._generate_learned_masks_states(data)
+            out = self._generate_learned_robot_states(data)
+            if cf.model_use_heatmap:
+                states, mask, heatmaps = out
+            else:
+                states, mask = out
 
         if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
             self._zero_robot_region(mask[0], x[0])
@@ -1161,6 +1227,9 @@ class MultiRobotPredictionTrainer(object):
             # let j be i - 1, or previous timestep
             m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
             x_i, m_i, r_i = x[i], mask[i], states[i]
+            hm_j, hm_i = None, None
+            if cf.model_use_heatmap:
+                hm_j, hm_i = heatmaps[i - 1], heatmaps[i]
 
             if cf.model == "copy":
                 x_pred = self.model(x_j, m_j, x_i, m_i)
@@ -1180,6 +1249,9 @@ class MultiRobotPredictionTrainer(object):
                 r_in = r_j
                 if cf.model_use_future_robot_state:
                     r_in = (r_j, r_i)
+                hm_in = hm_j
+                if cf.model_use_future_heatmap:
+                    hm_in = torch.cat([hm_j, hm_i], 1)
 
                 if cf.model == "det":
                     x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
@@ -1187,16 +1259,21 @@ class MultiRobotPredictionTrainer(object):
                     m_next_in = m_i
                     if cf.model_use_future_mask:
                         m_next_in = m_i.repeat(1, 2, 1, 1)
+                    hm_next_in = hm_i
+                    if cf.model_use_future_heatmap:
+                        hm_next_in = hm_i.repeat(1, 2, 1, 1)
                     out = self.model(
                         x_j_black,
                         m_in,
                         r_in,
+                        hm_in,
                         a_j,
                         x_i_black,
                         m_next_in,
                         r_i,
+                        hm_next_in,
                         skip,
-                        force_use_prior=True
+                        force_use_prior=True,
                     )
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
@@ -1281,8 +1358,16 @@ class MultiRobotPredictionTrainer(object):
         all_x_pred_black = torch.stack(all_x_pred_black).transpose(0, 1)
         all_x_i_black = torch.stack(all_x_i_black).transpose(0, 1)
 
-        losses["gen_imgs"] = (255 * all_x_pred_black).permute(0, 1, 3, 4, 2).cpu().numpy().astype(np.uint8)
-        losses["true_imgs"] = (255 * all_x_i_black).permute(0, 1, 3, 4, 2).cpu().numpy().astype(np.uint8)
+        losses["gen_imgs"] = (
+            (255 * all_x_pred_black)
+            .permute(0, 1, 3, 4, 2)
+            .cpu()
+            .numpy()
+            .astype(np.uint8)
+        )
+        losses["true_imgs"] = (
+            (255 * all_x_i_black).permute(0, 1, 3, 4, 2).cpu().numpy().astype(np.uint8)
+        )
         return losses
 
 

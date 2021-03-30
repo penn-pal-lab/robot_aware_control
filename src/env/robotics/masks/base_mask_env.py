@@ -79,3 +79,6 @@ class MaskEnv(RobotEnv):
             masks.append(mask)
         masks = np.asarray(masks, dtype=np.bool)
         return masks
+
+    def get_gripper_pos(self, qpos):
+        raise NotImplementedError
