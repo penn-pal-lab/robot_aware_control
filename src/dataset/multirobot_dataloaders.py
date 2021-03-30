@@ -4,7 +4,6 @@ import random
 import ipdb
 import numpy as np
 import torch
-import torchvision.transforms as tf
 from sklearn.model_selection import train_test_split
 from src.dataset.multirobot_dataset import RobotDataset
 from torch.utils.data import DataLoader
@@ -13,7 +12,7 @@ from torchvision.datasets.folder import has_file_allowed_extension
 
 BAXTER_TRAIN_DIRS = ["left_c0"]
 BAXTER_TEST_DIRS = []
-WIDOWX_TRAIN_DIRS = ["widowx1"]
+WIDOWX_TRAIN_DIRS = ["widowx1_c0"]
 WIDOWX_TEST_DIRS = []
 SAWYER_TRAIN_DIRS = ["sudri0_c0", "sudri0_c1", "sudri0_c2", "sudri2_c0", "sudri2_c1", "sudri2_c2", "vestri_table2_c0", "vestri_table2_c1", "vestri_table2_c2"]
 SAWYER_TEST_DIRS = []
@@ -50,78 +49,89 @@ def create_loaders(config):
     file_labels = [x[1] for x in file_and_labels]
 
     split_rng = np.random.RandomState(config.seed)
+    # >>>>>>>>>>> Normal sampling
     X_train, X_test, y_train, y_test = train_test_split(
         files,
         file_labels,
         test_size=1 - config.train_val_split,
-        # stratify=file_labels,
         random_state=split_rng,
     )
     augment_img = config.img_augmentation
     train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img)
     test_data = RobotDataset(X_test, y_test, config)
-    # stratified sampler
-    robots, counts = np.unique(file_labels, return_counts=True)
-    class_weight = {}
-    for robot, count in zip(robots, counts):
-        class_weight[robot] = count
-    # scale weights so we sample uniformly by class
-    train_weights = torch.DoubleTensor(
-        [1 / (len(robots) * class_weight[robot]) for robot in y_train]
-    )
-    train_sampler = WeightedRandomSampler(
-        train_weights,
-        len(y_train),
-        generator=torch.Generator().manual_seed(config.seed),
-    )
     train_loader = DataLoader(
         train_data,
         num_workers=config.data_threads,
         batch_size=config.batch_size,
-        shuffle=False,
-        drop_last=True,
+        shuffle=True,
+        drop_last=False,
         pin_memory=True,
-        sampler=train_sampler,
-    )
-
-    test_weights = torch.DoubleTensor(
-        [1 / (len(robots) * class_weight[robot]) for robot in y_test]
-    )
-    test_sampler = WeightedRandomSampler(
-        test_weights,
-        len(y_test),
         generator=torch.Generator().manual_seed(config.seed),
     )
     test_loader = DataLoader(
         test_data,
         num_workers=config.data_threads,
         batch_size=config.test_batch_size,
-        shuffle=False,
-        drop_last=True,
+        shuffle=True,
+        drop_last=False,
         pin_memory=True,
-        sampler=test_sampler,
+        generator=torch.Generator().manual_seed(config.seed),
     )
+    return train_loader, test_loader
 
-    # get 5 of each robot in the comparison set
-    count = {r: 5 for r in robots}
-    comp_files = []
-    comp_file_labels = []
-    for x, y in zip(X_test, y_test):
-        if y in count and count[y] > 0:
-            count[y] -= 1
-            comp_files.append(x)
-            comp_file_labels.append(y)
-        if sum(count.values()) == 0:
-            break
-    # create a small deterministic dataloader for comparison across runs
-    # because train / test loaders have multiple workers, RNG is tricky.
-    num_gifs = len(comp_files)
-    comp_data = RobotDataset(comp_files, comp_file_labels, config, load_snippet=True)
-    comp_loader = DataLoader(
-        comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
-    )
+    # >>>>>>>>>>>>>> Stratified Sampling
+    # X_train, X_test, y_train, y_test = train_test_split(
+    #     files,
+    #     file_labels,
+    #     test_size=1 - config.train_val_split,
+    #     stratify=file_labels,
+    #     random_state=split_rng,
+    # )
+    # augment_img = config.img_augmentation
+    # train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img)
+    # test_data = RobotDataset(X_test, y_test, config)
+    # # stratified sampler
+    # robots, counts = np.unique(file_labels, return_counts=True)
+    # class_weight = {}
+    # for robot, count in zip(robots, counts):
+    #     class_weight[robot] = count
+    # # scale weights so we sample uniformly by class
+    # train_weights = torch.DoubleTensor(
+    #     [1 / (len(robots) * class_weight[robot]) for robot in y_train]
+    # )
+    # train_sampler = WeightedRandomSampler(
+    #     train_weights,
+    #     len(y_train),
+    #     generator=torch.Generator().manual_seed(config.seed),
+    # )
+    # train_loader = DataLoader(
+    #     train_data,
+    #     num_workers=config.data_threads,
+    #     batch_size=config.batch_size,
+    #     shuffle=False,
+    #     drop_last=True,
+    #     pin_memory=True,
+    #     sampler=train_sampler,
+    # )
 
-    return train_loader, test_loader, comp_loader
+    # test_weights = torch.DoubleTensor(
+    #     [1 / (len(robots) * class_weight[robot]) for robot in y_test]
+    # )
+    # test_sampler = WeightedRandomSampler(
+    #     test_weights,
+    #     len(y_test),
+    #     generator=torch.Generator().manual_seed(config.seed),
+    # )
+    # test_loader = DataLoader(
+    #     test_data,
+    #     num_workers=config.data_threads,
+    #     batch_size=config.test_batch_size,
+    #     shuffle=False,
+    #     drop_last=True,
+    #     pin_memory=True,
+    #     sampler=test_sampler,
+    # )
+    # return train_loader, test_loader
 
 
 def get_baxter_data(config):
@@ -205,36 +215,36 @@ if __name__ == "__main__":
 
     set_start_method("spawn")
     config, _ = argparser()
-    config.data_root = "/home/ed/"
+    config.data_root = "/scratch/edward/Robonet"
     config.batch_size = 64  # needs to be multiple of the # of robots
     config.video_length = 31
     config.image_width = 64
     # config.impute_autograsp_action = True
-    config.num_workers = 2
+    config.num_workers = 0
     config.action_dim = 5
 
     train, test = create_loaders(config)
     # verify our batches have good class distribution
-    it = iter(train)
+    # it = iter(train)
 
-    for i, (x, y) in enumerate(it):
-        # robots, counts = np.unique(y, return_counts=True)
-        # class_weight = {}
-        # for robot, count in zip(robots, counts):
-        #     class_weight[robot] = count / len(y)
+    # for i, (x, y) in enumerate(it):
+    #     # robots, counts = np.unique(y, return_counts=True)
+    #     # class_weight = {}
+    #     # for robot, count in zip(robots, counts):
+    #     #     class_weight[robot] = count / len(y)
 
-        # print(class_weight)
-        # print()
-        imgs, states, actions, masks = x
-        for robot_imgs, robot_masks in zip(imgs, masks):
-            # B x C x H x W
-            # B x H x W x C
-            img_gif = robot_imgs.permute(0, 2, 3, 1).clamp_(0, 1).cpu().numpy()
-            img_gif = np.uint8(img_gif * 255)
-            robot_masks = robot_masks.cpu().numpy().squeeze().astype(bool)
-            img_gif[robot_masks] = (0, 255, 255)
-            imageio.mimwrite(f"test{i}_{y[0]}.gif", img_gif)
-            break
+    #     # print(class_weight)
+    #     # print()
+    #     imgs, states, actions, masks = x
+    #     for robot_imgs, robot_masks in zip(imgs, masks):
+    #         # B x C x H x W
+    #         # B x H x W x C
+    #         img_gif = robot_imgs.permute(0, 2, 3, 1).clamp_(0, 1).cpu().numpy()
+    #         img_gif = np.uint8(img_gif * 255)
+    #         robot_masks = robot_masks.cpu().numpy().squeeze().astype(bool)
+    #         img_gif[robot_masks] = (0, 255, 255)
+    #         imageio.mimwrite(f"test{i}_{y[0]}.gif", img_gif)
+    #         break
 
-        if i >= 10:
-            break
+    #     if i >= 10:
+    #         break

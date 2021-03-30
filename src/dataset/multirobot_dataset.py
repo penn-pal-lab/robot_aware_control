@@ -95,7 +95,11 @@ class RobotDataset(data.Dataset):
                 raw_actions = actions.copy()
             masks = hf["mask"][start:end].astype(np.float32)
             qpos = hf["qpos"][start:end].astype(np.float32)
-            # qpos = np.zeros((31, 7))
+            if qpos.shape[-1] != self._config.robot_joint_dim:
+                assert self._config.robot_joint_dim > qpos.shape[-1]
+                pad = self._config.robot_joint_dim - qpos.shape[-1]
+                qpos = np.pad(qpos, [(0,0), (0, pad)])
+
 
             assert (
                 len(images) == len(states) == len(actions) + 1 == len(masks)

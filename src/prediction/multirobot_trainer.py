@@ -717,24 +717,11 @@ class MultiRobotPredictionTrainer(object):
 
         # start training
         for epoch in range(cf.niter):
-            # self.background_model.train()
             self.model.train()
             # number of batches in 1 epoch
             for i in range(cf.epoch_size):
-                # start = time()
                 data = next(self.training_batch_generator)
-                # end = time()
-                # data_time = end - start
-                # print("data loading time", data_time)
-
-                # start = time()
-                # with torch.autograd.set_detect_anomaly(True):
                 info = self._train_video(data)
-                # end = time()
-                # update_time = end - start
-                # print("network update time", update_time)
-                # for k, v in info.items():
-                #     epoch_losses[f"train/epoch_{k}"] += v
                 if self._scheduled_sampling:
                     info["sample_schedule"] = self._schedule_prob()[0]
                 self._step += self.steps_per_train_video
@@ -746,14 +733,6 @@ class MultiRobotPredictionTrainer(object):
                 wandb.log({f"train/{k}": v for k, v in info.items()}, step=self._step)
                 self.progress.update(self.steps_per_train_video)
 
-            # log epoch statistics
-            # wandb.log(epoch_losses, step=self._step)
-            # epoch_log_str = ""
-            # for k, v in epoch_losses.items():
-            #     epoch_log_str += f"{k}: {v}, "
-            # self._logger.info(epoch_log_str)
-            # checkpoint
-            # self._epoch_save_fid_images(random_snippet=True)
             if epoch % cf.checkpoint_interval == 0 and epoch > 0:
                 self._logger.info(f"Saving checkpoint {epoch}")
                 self._save_checkpoint()
@@ -761,7 +740,6 @@ class MultiRobotPredictionTrainer(object):
             # always eval at first epoch to get early eval result
             if epoch % cf.eval_interval == 0:
                 # plot and evaluate on test set
-                # self.background_model.eval()
                 start = time()
                 self.model.eval()
                 info = self._compute_epoch_metrics(self.test_loader, "test")
@@ -771,10 +749,6 @@ class MultiRobotPredictionTrainer(object):
                 wandb.log(info, step=self._step)
                 test_data = next(self.testing_batch_generator)
                 self.plot(test_data, epoch, "test")
-                # self.plot_rec(test_data, epoch, "test")
-                comp_data = next(self.comp_batch_generator)
-                self.plot(comp_data, epoch, "comparison")
-
                 if cf.training_regime in ["singlerobot", "train_sawyer_multiview"]:
                     info = self._compute_epoch_metrics(self.transfer_loader, "transfer")
                     wandb.log(info, step=self._step)
@@ -933,11 +907,10 @@ class MultiRobotPredictionTrainer(object):
             )
         else:
             raise NotImplementedError(self._config.training_regime)
-        self.train_loader, self.test_loader, comp_loader = create_loaders(self._config)
+        self.train_loader, self.test_loader = create_loaders(self._config)
         # for infinite batching
         self.training_batch_generator = get_batch(self.train_loader, self._device)
         self.testing_batch_generator = get_batch(self.test_loader, self._device)
-        self.comp_batch_generator = get_batch(comp_loader, self._device)
 
     @torch.no_grad()
     def plot(self, data, epoch, name, random_start=True):
