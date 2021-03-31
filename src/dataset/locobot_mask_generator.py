@@ -21,7 +21,8 @@ if __name__ == "__main__":
     Load data:
     """
 
-    data_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12/"
+    # data_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12/"
+    data_path = "/home/huangkun/locobot_data/data_2021-03-12/"
 
     detector = Detector(families='tag36h11',
                         nthreads=1,
@@ -32,6 +33,7 @@ if __name__ == "__main__":
                         debug=0)
 
     n_files = 0
+    skipped_files = []
     for filename in os.listdir(data_path):
         if filename.endswith(".hdf5"):
             overwrite = False
@@ -44,6 +46,7 @@ if __name__ == "__main__":
 
             qposes, imgs, eef_states, actions = load_data(os.path.join(data_path, filename))
             if qposes is None or imgs is None or eef_states is None or actions is None:
+                skipped_files.append(filename)
                 continue
 
             K = 0
@@ -145,3 +148,4 @@ if __name__ == "__main__":
             n_files += 1
             if n_files > total_files:
                 break
+    print(skipped_files)

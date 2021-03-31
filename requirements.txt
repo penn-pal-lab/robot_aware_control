@@ -21,7 +21,7 @@ matplotlib==3.3.1
 mccabe==0.6.1
 monotonic==1.5
 mujoco-py==2.0.2.13
-numpy==1.19.1
+numpy==1.20.0
 parso==0.7.1
 pexpect==4.8.0
 pickleshare==0.7.5

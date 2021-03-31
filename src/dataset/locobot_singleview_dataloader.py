@@ -29,8 +29,8 @@ def create_loaders(config):
     random.shuffle(files)
 
     # TODO: change dataset splitting
-    n_test = 1
-    n_train = 10
+    n_test = 200
+    n_train = 1000
 
     X_test = files[:n_test]
     y_test = file_labels[:n_test]
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     from src.config import argparser
 
     config, _ = argparser()
-    config.data_root = "/mnt/ssd1/pallab/locobot_data"
+    # config.data_root = "/mnt/ssd1/pallab/locobot_data"
     config.batch_size = 16  # needs to be multiple of the # of robots
     config.video_length = 31
     config.image_width = 64
