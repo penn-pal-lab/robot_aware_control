@@ -9,16 +9,15 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as tf
 from torchvision.datasets.folder import has_file_allowed_extension
 
+# from src.dataset.locobot.locobot_dataset import LocobotDataset
 from src.dataset.robonet.robonet_dataset import RoboNetDataset
-from src.dataset.locobot_dataset import LocobotDataset
-
 
 def create_loaders(config):
     file_type = "hdf5"
     files = []
     file_labels = []
 
-    data_path = os.path.join(config.data_root, "data_2021-03-12")
+    data_path = os.path.join(config.data_root, "locobot", "c0")
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             files.append(d.path)
@@ -40,8 +39,8 @@ def create_loaders(config):
     print("loaded locobot data", len(X_train) + len(X_test))
 
     augment_img = config.img_augmentation
-    train_data = LocobotDataset(X_train, y_train, config, augment_img=augment_img)
-    test_data = LocobotDataset(X_test, y_test, config)
+    train_data = RoboNetDataset(X_train, y_train, config, augment_img=augment_img)
+    test_data = RoboNetDataset(X_test, y_test, config)
 
     train_loader = DataLoader(
         train_data,

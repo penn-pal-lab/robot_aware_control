@@ -2,8 +2,9 @@ import numpy as np
 import ipdb
 import h5py
 import os
+import torch
 
-from src.dataset.robonet.robonet_dataset import RoboNetDataset
+from src.dataset.robonet.robonet_dataset import RoboNetDataset, create_heatmaps
 
 
 class LocobotDataset(RoboNetDataset):
@@ -31,7 +32,7 @@ class LocobotDataset(RoboNetDataset):
                 end = start + self._video_length
 
             images = hf["observations"][start:end]
-            states = hf["states"][start:end].astype(np.float32)
+            states = torch.from_numpy(hf["states"][start:end].astype(np.float32))
             actions = hf["actions"][start:end - 1].astype(np.float32)
             masks = hf["masks"][start:end].astype(np.float32)
             qpos = hf["qpos"][start:end].astype(np.float32)
@@ -43,15 +44,55 @@ class LocobotDataset(RoboNetDataset):
             # preprocessing
             images, masks = self._preprocess_images_masks(images, masks)
             folder = os.path.basename(os.path.dirname(hdf5_path))
+            if self._config.model_use_heatmap:
+                # since states are stored in raw coordinates, don't need to
+               # denormalize.
+                high = np.ones(5)
+                low = np.zeros(5)
+                robot = "locobot"
+                heatmaps = create_heatmaps(states, low, high, robot, folder)
         out = {
             "images": images,
             "states": states,
             "actions": actions,
             "qpos": qpos,
             "masks": masks,
-            "robot": "LoCoBot",
+            "robot": "locobot",
             "folder": folder,
             "file_path": hdf5_path,
             "idx": idx,
         }
+        if self._config.model_use_heatmap:
+            out["heatmaps"] = heatmaps
         return out
+
+if __name__ == "__main__":
+    from src.utils.plot import save_gif
+    from src.config import argparser
+    import torch
+
+    config, _ = argparser()
+    config.data_root = "/media/ed/hdd/Datasets"
+    config.batch_size = 16  # needs to be multiple of the # of robots
+    config.video_length = 31
+    config.image_width = 64
+    # config.impute_autograsp_action = True
+    config.data_threads = 0
+    config.action_dim = 5
+    config.model_use_heatmap = True
+
+    from src.dataset.locobot.locobot_singleview_dataloader import create_loaders
+    loader, _ = create_loaders(config)
+
+    for data in loader:
+        images = data["images"]
+        # states = data["states"]
+        heatmaps = data["heatmaps"].repeat(1,1,3,1,1)
+        heat_images = (images * heatmaps).transpose(0,1).unsqueeze(2)
+        original_images = images.transpose(0,1).unsqueeze(2)
+        gif = torch.cat([original_images, heat_images], 2)
+        save_gif("batch.gif", gif)
+        break
+        # apply heatmap to images
+        # eef_images = ((255 * heatmaps[0] * images[0]).permute(0,2,3,1).numpy().astype(np.uint8))
+        # imageio.mimwrite("eef.gif", eef_images)

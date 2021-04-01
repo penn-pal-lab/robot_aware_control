@@ -1,6 +1,6 @@
-from src.dataset.multirobot_dataset import process_batch
-from src.prediction.multirobot_trainer import (
-    MultiRobotPredictionTrainer,
+from src.dataset.robonet.robonet_dataset import process_batch
+from src.prediction.trainer import (
+    PredictionTrainer,
     make_log_folder,
 )
 import ipdb
@@ -12,10 +12,10 @@ from tqdm import tqdm
 
 
 def compute_fid(cf):
-    trainer = MultiRobotPredictionTrainer(cf)
+    trainer = PredictionTrainer(cf)
     trainer._load_checkpoint(cf.dynamics_model_ckpt)
     trainer.model.eval()
-    from src.dataset.sawyer_multiview_dataloaders import (
+    from src.dataset.sawyer.sawyer_dataloaders import (
         create_finetune_loaders as create_loaders,
     )
 
