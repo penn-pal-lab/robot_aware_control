@@ -748,7 +748,7 @@ class PredictionTrainer(object):
                 wandb.log(info, step=self._step)
                 test_data = next(self.testing_batch_generator)
                 self.plot(test_data, epoch, "test")
-                if cf.experiment in ["train_sawyer_multiview"]:
+                if cf.experiment in ["train_sawyer_multiview", "train_robonet"]:
                     info = self._compute_epoch_metrics(self.transfer_loader, "transfer")
                     wandb.log(info, step=self._step)
                     transfer_data = next(self.transfer_batch_generator)
@@ -865,6 +865,15 @@ class PredictionTrainer(object):
         """
         if self._config.experiment == "train_robonet":
             from src.dataset.robonet.robonet_dataloaders import create_loaders
+            from src.dataset.locobot.locobot_singleview_dataloader import (
+                create_transfer_loader,
+            )
+
+            # measure zero shot performance on unseen locobot
+            self.transfer_loader = create_transfer_loader(self._config)
+            self.transfer_batch_generator = get_batch(
+                self.transfer_loader, self._device
+            )
 
         elif self._config.experiment == "train_sawyer_multiview":
             from src.dataset.sawyer.sawyer_dataloaders import (
@@ -872,7 +881,7 @@ class PredictionTrainer(object):
                 create_transfer_loader,
             )
 
-            # measure zero shot performance on transfer data
+            # measure zero shot performance on unseen sawyer viewpoint
             self.transfer_loader = create_transfer_loader(self._config)
             self.transfer_batch_generator = get_batch(
                 self.transfer_loader, self._device
@@ -886,8 +895,10 @@ class PredictionTrainer(object):
                 create_finetune_loaders as create_loaders,
             )
         elif self._config.experiment == "train_locobot_singleview":
+            from src.dataset.locobot.locobot_singleview_dataloader import create_loaders
+        elif self._config.experiment == "finetune_locobot":
             from src.dataset.locobot.locobot_singleview_dataloader import (
-                create_loaders as create_loaders,
+                create_finetune_loaders as create_loaders,
             )
         else:
             raise NotImplementedError(self._config.experiment)

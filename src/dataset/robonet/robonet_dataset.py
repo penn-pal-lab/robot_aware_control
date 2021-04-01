@@ -76,6 +76,7 @@ class RoboNetDataset(data.Dataset):
 
         robonet_root = self._data_root
         name = self._traj_names[idx]
+        robot_viewpoint = self._traj_robots[idx]
         hdf5_path = os.path.join(robonet_root, name)
         with h5py.File(hdf5_path, "r") as hf:
             assert "frames" in hf or "observations" in hf
@@ -103,7 +104,7 @@ class RoboNetDataset(data.Dataset):
                 pad = self._config.robot_dim - states.shape[-1]
                 states = np.pad(states, [(0,0), (0, pad)])
 
-            if "locobot" in name:
+            if "locobot" in robot_viewpoint:
                 low =  np.array([0.015, -0.3, 0.1, 0, 0])
                 high =  np.array([0.55, 0.3, 0.4, 1, 1])
             else:
@@ -127,13 +128,13 @@ class RoboNetDataset(data.Dataset):
             # preprocessing
             images, masks = self._preprocess_images_masks(images, masks)
             actions = self._preprocess_actions(states, actions, low, high, idx)
-            if "locobot" in name:
+            if "locobot" in robot_viewpoint:
                 # normalize the locobot xyz to the 0-1 bounds
                 # rotation, gripper are always zero so it doesn't matter
                 states = normalize(states, low, high)
                 robot = "locobot"
             states = self._preprocess_states(states, low, high)
-            robot = "locobot" if "locobot" in name else hf.attrs["robot"]
+            robot = "locobot" if "locobot" in robot_viewpoint else hf.attrs["robot"]
             folder = os.path.basename(os.path.dirname(name))
             if self._config.model_use_heatmap:
                 heatmaps = create_heatmaps(states, low, high, robot, folder)
@@ -450,19 +451,19 @@ if __name__ == "__main__":
     config.model_use_heatmap = True
 
     # from src.dataset.sawyer_multiview_dataloaders import create_loaders
-    from src.dataset.finetune_multirobot_dataloaders import create_transfer_loader
+    # from src.dataset.finetune_multirobot_dataloaders import create_transfer_loader
     # from src.dataset.finetune_widowx_dataloaders import create_transfer_loader
-    loader = create_transfer_loader(config)
+    # loader = create_transfer_loader(config)
 
-    for data in loader:
-        images = data["images"]
-        # states = data["states"]
-        heatmaps = data["heatmaps"].repeat(1,1,3,1,1)
-        heat_images = (images * heatmaps).transpose(0,1).unsqueeze(2)
-        original_images = images.transpose(0,1).unsqueeze(2)
-        gif = torch.cat([original_images, heat_images], 2)
-        save_gif("batch.gif", gif)
-        break
-        # apply heatmap to images
-        # eef_images = ((255 * heatmaps[0] * images[0]).permute(0,2,3,1).numpy().astype(np.uint8))
-        # imageio.mimwrite("eef.gif", eef_images)
+    # for data in loader:
+    #     images = data["images"]
+    #     # states = data["states"]
+    #     heatmaps = data["heatmaps"].repeat(1,1,3,1,1)
+    #     heat_images = (images * heatmaps).transpose(0,1).unsqueeze(2)
+    #     original_images = images.transpose(0,1).unsqueeze(2)
+    #     gif = torch.cat([original_images, heat_images], 2)
+    #     save_gif("batch.gif", gif)
+    #     break
+    #     # apply heatmap to images
+    #     # eef_images = ((255 * heatmaps[0] * images[0]).permute(0,2,3,1).numpy().astype(np.uint8))
+    #     # imageio.mimwrite("eef.gif", eef_images)

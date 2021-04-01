@@ -5,12 +5,9 @@ import ipdb
 import pickle
 import numpy as np
 import torch
-import torchvision.transforms as tf
 from sklearn.model_selection import train_test_split
 from src.dataset.robonet.robonet_dataset import RoboNetDataset
 from torch.utils.data import DataLoader
-from torch.utils.data.dataset import random_split
-from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision.datasets.folder import has_file_allowed_extension
 
 # which viewpoints to train on
