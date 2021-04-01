@@ -14,7 +14,7 @@ def create_finetune_loaders(config):
     files = []
     file_labels = []
 
-    data_path = os.path.join(config.data_root, "locobot", "c0")
+    data_path = os.path.join(config.data_root, "locobot_views", "c0")
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             files.append(d.path)
@@ -32,7 +32,7 @@ def create_finetune_loaders(config):
 
     X_train = files[n_test: n_test + n_train]
     y_train = file_labels[n_test: n_test + n_train]
-    print("loaded finetuning data", len(X_train) + len(X_test))
+    print("loaded locobot finetuning data", len(X_train) + len(X_test))
 
     augment_img = config.img_augmentation
     train_data = RoboNetDataset(X_train, y_train, config, augment_img=augment_img)
@@ -59,12 +59,12 @@ def create_finetune_loaders(config):
 
     return train_loader, test_loader
 
-def create_transfer_loaders(config):
+def create_transfer_loader(config):
     file_type = "hdf5"
     files = []
     file_labels = []
 
-    data_path = os.path.join(config.data_root, "locobot", "c0")
+    data_path = os.path.join(config.data_root, "locobot_views", "c0")
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             files.append(d.path)
@@ -77,6 +77,7 @@ def create_transfer_loaders(config):
     n_train = 400
     X_train = files[:n_train]
     y_train = file_labels[: n_train]
+    print("loaded locobot transfer data", len(X_train))
 
     augment_img = config.img_augmentation
     train_data = RoboNetDataset(X_train, y_train, config, augment_img=augment_img)
@@ -97,7 +98,7 @@ def create_loaders(config):
     files = []
     file_labels = []
 
-    data_path = os.path.join(config.data_root, "locobot", "c0")
+    data_path = os.path.join(config.data_root, "locobot_views", "c0")
     for d in os.scandir(data_path):
         if d.is_file() and has_file_allowed_extension(d.path, file_type):
             files.append(d.path)
