@@ -4,7 +4,7 @@ import numpy as np
 # most notably, the translation and rotation parts of this matrix correspond
 # to the camera's position and rotation in the world space.
 camera_to_world_dict = {
-    "baxter_left": np.array(
+    "baxter_left_c0": np.array(
         [
             [0.05010049, 0.5098481, -0.85880432, 1.70268951],
             [0.99850135, -0.00660876, 0.05432662, 0.26953027],
@@ -12,7 +12,7 @@ camera_to_world_dict = {
             [0.0, 0.0, 0.0, 1.0],
         ]
     ),
-    "baxter_right": np.array(
+    "baxter_right_c0": np.array(
         [
             [0.59474902, -0.48560866, 0.64066983, 0.00593267],
             [-0.80250365, -0.40577623, 0.4374169, -0.84046503],
@@ -92,7 +92,7 @@ camera_to_world_dict = {
             [0.0, 0.0, 0.0, 1.0],
         ]
     ),
-    "widowx1": np.array(
+    "widowx_widowx1_c0": np.array(
         [
             [-0.17251765, 0.5984481, -0.78236663, 0.37869496],
             [-0.98499368, -0.10885336, 0.13393427, -0.04712975],
@@ -100,12 +100,23 @@ camera_to_world_dict = {
             [0.0, 0.0, 0.0, 1.0],
         ]
     ),
+    "locobot_c0": np.array(
+        [
+            [0.10142061, 0.72632463, -0.67386291, 0.78975893],
+            [0.98958408, -0.08242317, 0.06193354, -0.03911564],
+            [-0.00928995, -0.68100839, -0.72849251,0.64767807],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    ),
 }
 
-# also known as the camera extrinsics
 world_to_camera_dict = {k: np.linalg.inv(v) for k, v in camera_to_world_dict.items()}
 
 cam_intrinsics_dict = {
     # captured 320 x 240 images in robonet
-    "logitech_c420": np.array([[320.75, 0, 160], [0, 320.75, 120], [0, 0, 1]])
+    "logitech_c420": np.array([[320.75, 0, 160], [0, 320.75, 120], [0, 0, 1]]),
+    # captured 640 x 480 images for locobot
+    "intel_realsense_d435": np.array(
+        [[612.45, 0, 330.55], [612.56, 0, 248.61], [0, 0, 1]]
+    ),
 }

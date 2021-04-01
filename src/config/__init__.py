@@ -238,12 +238,12 @@ def add_dataset_arguments(parser):
                         help="max length of the video, used for evaluation dataloader")
     parser.add_argument("--impute_autograsp_action", type=str2bool, default=True)
     parser.add_argument("--preload_ram", type=str2bool, default=False)
-    parser.add_argument("--training_regime",
+    parser.add_argument("--experiment",
                         type=str,
-                        choices=["multirobot", "singlerobot", "finetune",
+                        choices=["train_robonet",
                                  "train_sawyer_multiview", "finetune_sawyer_view",
                                  "finetune_widowx", "train_locobot_singleview"],
-                        default="multirobot")
+                        default="train_robonet")
     parser.add_argument("--preprocess_action", type=str,
                         choices=["raw", "camera_raw", "state_infer", "camera_state_infer"],
                         default="raw")

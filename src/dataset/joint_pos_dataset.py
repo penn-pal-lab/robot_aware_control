@@ -15,7 +15,6 @@ import torchvision.transforms.functional as F
 import torch.utils.data as data
 from tqdm import trange
 from time import time
-from src.utils.camera_calibration import camera_to_world_dict
 
 
 class JointPosDataset(data.Dataset):
@@ -200,39 +199,8 @@ class JointPosDataset(data.Dataset):
             states = states.copy()
             self._impute_true_actions(states, actions, low, high)
             return torch.from_numpy(actions)
-        # if actions are in camera frame...
-        filename = self._traj_names[idx]
-        robot_type = self._traj_robots[idx]
-        if self._config.training_regime == "multirobot":
-            # convert everything to camera coordinates.
-            filename = self._traj_names[idx]
-            robot_type = self._traj_robots[idx]
-            if robot_type == "sawyer":
-                # TODO: account for camera config and index
-                cam2world = camera_to_world_dict["sawyer_sudri0_c0"]
-            elif robot_type == "widowx":
-                cam2world = camera_to_world_dict["widowx1"]
-            elif robot_type == "baxter":
-                arm = "left" if "left" in filename else "right"
-                cam2world = camera_to_world_dict[f"baxter_{arm}"]
-
-        elif self._config.training_regime == "singlerobot":
-            # train on sawyer, convert actions to camera space
-            cam2world = camera_to_world_dict["sawyer_sudri0_c0"]
-        elif self._config.training_regime == "train_sawyer_multiview":
-            cam2world = camera_to_world_dict["sawyer_" + robot_type]
-        elif self._config.training_regime == "finetune":
-            # finetune on baxter, convert to camera frame
-            # Assumes the baxter arm is right arm!
-            arm = "left" if "left" in filename else "right"
-            cam2world = camera_to_world_dict[f"baxter_{arm}"]
-
-        states = states.copy()
-        if strategy == "camera_raw":
-            self._convert_actions(states, actions, cam2world, low, high)
-        elif strategy == "camera_state_infer":
-            self._impute_camera_actions(states, actions, cam2world, low, high)
-        return torch.from_numpy(actions)
+        else:
+            raise ValueError
 
     def __len__(self):
         return len(self._traj_names)

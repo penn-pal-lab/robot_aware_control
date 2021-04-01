@@ -1,46 +1,89 @@
-from collections import defaultdict
 import logging
 import os
+from collections import defaultdict
 from functools import partial
 
+import torchvision.transforms as tf
+from src.dataset.robonet.robonet_dataset import (
+    create_heatmaps,
+    get_batch,
+    process_batch,
+)
+from src.prediction.models.dynamics import (
+    CopyModel,
+    DeterministicConvModel,
+    GripperStatePredictor,
+    JointPosPredictor,
+    SVGConvModel,
+)
+from src.utils.camera_calibration import camera_to_world_dict
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+from warnings import simplefilter  # disable tensorflow warnings
+
+simplefilter(action="ignore", category=FutureWarning)
+
+from math import floor
+from time import time
+
 import colorlog
+import imageio
 import ipdb
 import numpy as np
 import torch
 import wandb
-from src.dataset.dataloaders import create_loaders, get_batch
-from src.prediction.losses import dontcare_mse_criterion, kl_criterion, mse_criterion, l1_criterion, robot_mse_criterion, world_mse_criterion
-from src.prediction.models.base import MLPEncoder, init_weights
-from src.prediction.models.lstm import LSTM, GaussianLSTM
-from src.utils.plot import save_gif, save_tensors_image
-from torch import cat, optim
+from src.prediction.losses import (
+    dontcare_l1_criterion,
+    dontcare_mse_criterion,
+    kl_criterion,
+    l1_criterion,
+    mse_criterion,
+    robot_mse_criterion,
+    world_mse_criterion,
+)
+from src.utils.metrics import psnr, ssim
+from src.utils.plot import save_gif
+from torch import optim
 from tqdm import tqdm
 
 
 class PredictionTrainer(object):
-    """Training, Checkpointing, Visualizing the prediction"""
+    """
+    Video Prediction with multiple robot dataset
+    Training, Checkpointing, Visualizing the prediction
+    """
 
     def __init__(self, config):
         self._config = config
         use_cuda = torch.cuda.is_available()
         device = torch.device("cuda" if use_cuda else "cpu")
-        self._device = device
+        print(f"using {device} for training")
+        self._logger = colorlog.getLogger("file/console")
+
+        self._device = config.device = device
         self._init_models(config)
         self._scheduled_sampling = config.scheduled_sampling
 
         # init WandB
         if not config.wandb:
             os.environ["WANDB_MODE"] = "dryrun"
-        os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
-        exclude = ["device"]
+        else:
+            assert "WANDB_API_KEY" in os.environ, "set WANDB_API_KEY env var."
         wandb.init(
             resume=config.jobname,
             project=config.wandb_project,
-            config={k: v for k, v in config.__dict__.items() if k not in exclude},
+            config=config,
             dir=config.log_dir,
             entity=config.wandb_entity,
+            group=config.wandb_group,
+            job_type=config.wandb_job_type,
+            config_exclude_keys=["device"],
         )
-        self._logger = colorlog.getLogger("file/console")
+        self._img_augmentation = config.img_augmentation
+        self._plot_rng = np.random.RandomState(self._config.seed)
+        w, h = config.image_width, config.image_height
+        self._img_transform = tf.Compose([tf.ToTensor(), tf.Resize((h, w))])
+        self._video_sample_rng = np.random.RandomState(self._config.seed)
 
     def _init_models(self, cf):
         """Initialize models and optimizers
@@ -50,59 +93,15 @@ class PredictionTrainer(object):
         - Add optimizer step() call
         - Update save and load ckpt code
         """
-        self.all_models = []
-        input_dim = cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim
-        if cf.stoch:
-            input_dim += cf.z_dim
-            self.posterior = post = GaussianLSTM(
-                cf.robot_enc_dim + cf.g_dim,
-                cf.z_dim,
-                cf.rnn_size,
-                cf.posterior_rnn_layers,
-                cf.batch_size,
-            ).to(self._device)
-
-            self.prior = prior = GaussianLSTM(
-                cf.action_enc_dim + cf.robot_enc_dim + cf.g_dim,
-                cf.z_dim,
-                cf.rnn_size,
-                cf.prior_rnn_layers,
-                cf.batch_size,
-            ).to(self._device)
-            self.all_models.extend([post, prior])
-
-        self.frame_predictor = frame_pred = LSTM(
-            input_dim,
-            cf.g_dim,
-            cf.rnn_size,
-            cf.predictor_rnn_layers,
-            cf.batch_size,
-        ).to(self._device)
-
-        if cf.image_width == 64:
-            from src.prediction.models.vgg_64 import Decoder, Encoder
-        elif cf.image_width == 128:
-            from src.prediction.models.vgg import Decoder, Encoder
-
-        # RGB + mask channel
-        self.encoder = enc = Encoder(cf.g_dim, cf.channels + 1, cf.multiview).to(
-            self._device
-        )
-        self.decoder = dec = Decoder(cf.g_dim, cf.channels, cf.multiview).to(
-            self._device
-        )
-        self.action_enc = ac = MLPEncoder(cf.action_dim, cf.action_enc_dim, 32).to(
-            self._device
-        )
-        self.robot_enc = rob = MLPEncoder(cf.robot_dim, cf.robot_enc_dim, 32).to(
-            self._device
-        )
-
-        self.all_models.extend([frame_pred, enc, dec, ac, rob])
-
-        # initialize weights
-        for model in self.all_models:
-            model.apply(init_weights)
+        if cf.model == "svg":
+            self.model = SVGConvModel(cf).to(self._device)
+        elif cf.model == "det":
+            self.model = DeterministicConvModel(cf).to(self._device)
+        elif cf.model == "copy":
+            self.model = CopyModel()
+            return
+        else:
+            raise ValueError(f"{cf.model}")
 
         if cf.optimizer == "adam":
             optimizer = partial(optim.Adam, lr=cf.lr, betas=(cf.beta1, 0.999))
@@ -113,20 +112,24 @@ class PredictionTrainer(object):
         else:
             raise ValueError("Unknown optimizer: %s" % cf.optimizer)
 
-        self.frame_predictor_optimizer = optimizer(self.frame_predictor.parameters())
-        if cf.stoch:
-            self.posterior_optimizer = optimizer(self.posterior.parameters())
-            self.prior_optimizer = optimizer(self.prior.parameters())
-        self.encoder_optimizer = optimizer(self.encoder.parameters())
-        self.decoder_optimizer = optimizer(self.decoder.parameters())
-        self.action_encoder_optimizer = optimizer(self.action_enc.parameters())
-        self.robot_encoder_optimizer = optimizer(self.robot_enc.parameters())
+        # self.background_model = Attention(cf).to(self._device)
+        # self.background_model.apply(init_weights)
+        # params = list(self.model.parameters()) + list(self.background_model.parameters())
+        params = list(self.model.parameters())
+        self.optimizer = optimizer(params)
+
+        if cf.learned_robot_model:
+            # learned robot models for evaluation
+            self.joint_model = JointPosPredictor(cf).to(self._device)
+            self.gripper_model = GripperStatePredictor(cf).to(self._device)
+            self._load_robot_model_checkpoint(cf.robot_model_ckpt)
 
     def _schedule_prob(self):
         """Returns probability of using ground truth"""
-        # assume 400k max training steps
-        k = 10000
-        use_truth = k / (k + np.exp(self._step / 18000))
+        # assume 50k max training steps
+        # https://www.desmos.com/calculator/bo4aoyqje1
+        k = self._config.scheduled_sampling_k
+        use_truth = k / (k + np.exp(self._step / k))
         use_model = 1 - use_truth
         return [use_truth, use_model]
 
@@ -146,50 +149,257 @@ class PredictionTrainer(object):
         elif self._config.reconstruction_loss == "dontcare_mse":
             robot_weight = self._config.robot_pixel_weight
             return dontcare_mse_criterion(prediction, target, mask, robot_weight)
+        elif self._config.reconstruction_loss == "dontcare_l1":
+            robot_weight = self._config.robot_pixel_weight
+            return dontcare_l1_criterion(prediction, target, mask, robot_weight)
         else:
             raise NotImplementedError(f"{self._config.reconstruction_loss}")
+
+    def _zero_robot_region(self, mask, image, inplace=False):
+        """
+        Set the robot region to zero
+        """
+        robot_mask = mask.type(torch.bool)
+        robot_mask = robot_mask.repeat(1, 3, 1, 1)
+        if not inplace:
+            image = image.clone()
+        image[robot_mask] *= 0
+        return image
+
+    @torch.no_grad()
+    def _generate_learned_robot_states(self, data):
+        """
+        Use the learned robot model to generate masks and states for
+        training / eval.
+        """
+        cf = self._config
+        states = data["states"]
+        ac = data["actions"]
+        if self._config.preprocess_action != "raw":
+            ac = data["raw_actions"]
+        mask = data["masks"]
+        qpos = data["qpos"]
+        viewpoints = set(data["folder"])
+        if not hasattr(self, "renderers"):
+            self.renderers = {}
+        for v in viewpoints:
+            if v in self.renderers:
+                continue
+            if cf.experiment == "finetune":
+                from src.env.robotics.masks.baxter_mask_env import BaxterMaskEnv
+
+                env = BaxterMaskEnv()
+                env.arm = "left"
+                cam_ext = camera_to_world_dict[f"baxter_{v}"]
+            elif cf.experiment == "finetune_widowx":
+                from src.env.robotics.masks.widowx_mask_env import WidowXMaskEnv
+
+                env = WidowXMaskEnv()
+                cam_ext = camera_to_world_dict[f"widowx_{v}"]
+            elif cf.experiment == "finetune_sawyer_view":
+                from src.env.robotics.masks.sawyer_mask_env import SawyerMaskEnv
+
+                env = SawyerMaskEnv()
+                cam_ext = camera_to_world_dict[f"sawyer_{v}"]
+            else:
+                raise ValueError
+
+            env.set_opencv_camera_pose("main_cam", cam_ext)
+            self.renderers[v] = env
+
+        # use robot models to generate mask / eef pose instead of gt
+        predicted_states = torch.zeros_like(states)
+        predicted_states[0] = states[0]
+        predicted_masks = torch.zeros_like(mask)
+        predicted_masks[0] = mask[0]
+        q_j, r_j = qpos[0], states[0]
+        for i in range(1, len(ac) + 1):
+            a_j = ac[i - 1]
+            r_pred = self.gripper_model(r_j, a_j) + r_j
+            q_pred = self.joint_model(q_j, a_j) + q_j
+            predicted_states[i] = r_pred
+            # generate mask for each qpos prediction
+            for b in range(q_pred.shape[0]):
+                vp = data["folder"][b]
+                q_pred_b = q_pred[b].cpu().numpy()
+                env = self.renderers[vp]
+                m = env.generate_masks([q_pred_b])[0]
+                m = (
+                    self._img_transform(m)
+                    .to(self._device, non_blocking=True)
+                    .type(torch.bool)
+                )
+                predicted_masks[i][b] = m
+            q_j = q_pred
+            r_j = r_pred
+
+        states = predicted_states
+        mask = predicted_masks
+        if self._config.model_use_heatmap:
+            # T x B x 1 x H x W
+            heatmaps = data["heatmaps"].clone()
+            for idx in range(heatmaps.shape[1]):
+                # get states from t=1:T to generate heatmas
+                s = states[1:, idx].cpu()
+                low = data["low"][idx].cpu().numpy().squeeze()
+                high = data["high"][idx].cpu().numpy().squeeze()
+                robot = data["robot"][idx]
+                vp = data["folder"][idx]
+                hm = create_heatmaps(s, low, high, robot, vp)
+                # use gt heatmap at t=0
+                heatmaps[1:, idx] = torch.from_numpy(hm)
+            # images = data["images"]
+            # hm = heatmaps.repeat(1,1,3,1,1)
+            # hm_images = (images * hm).transpose(0,1).unsqueeze(2)
+            # gt_hm = data["heatmaps"].repeat(1,1,3,1,1)
+            # gt_hm_images = (images * gt_hm).transpose(0,1).unsqueeze(2)
+            # gif = torch.cat([gt_hm_images, hm_images], 2)
+            # save_gif("hm.gif", gif)
+            # ipdb.set_trace()
+
+            return states, mask, heatmaps
+        return states, mask
+
+    def _train_video(self, data):
+        """Train the model over the video data
+
+        Slices video up into K length sequences for training.
+        Args:
+            data (dict): Video data
+        """
+        cf = self._config
+        x = data["images"]
+        T = len(x)
+        window = cf.n_past + cf.n_future
+        self.steps_per_train_video = floor(T / window)
+        all_losses = defaultdict(float)
+
+        for i in range(floor(T / window)):
+            if cf.random_snippet:
+                s = self._video_sample_rng.randint(0, (T - window) + 1)
+                e = s + window
+            else:
+                s = i * window
+                e = (i + 1) * window
+            batch_data = {
+                "images": x[s:e],
+                "states": data["states"][s:e],
+                "actions": data["actions"][s : e - 1],
+                "masks": data["masks"][s:e],
+                "qpos": data["qpos"][s:e],
+                "robot": data["robot"],
+                "folder": data["folder"],
+            }
+            if cf.model_use_heatmap:
+                batch_data["heatmaps"] = data["heatmaps"][s:e]
+
+            if cf.learned_robot_model and "finetune" in cf.experiment:
+                if cf.preprocess_action != "raw":
+                    batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
+                if cf.model_use_heatmap:
+                    batch_data["low"] = data["low"]
+                    batch_data["high"] = data["high"]
+
+                out = self._generate_learned_robot_states(batch_data)
+                if cf.model_use_heatmap:
+                    states, masks, heatmaps = out
+                    batch_data["heatmaps"] = heatmaps
+                else:
+                    states, masks = out
+                batch_data["states"] = states
+                batch_data["masks"] = masks
+
+            losses = self._train_step(batch_data)
+            for k, v in losses.items():
+                all_losses[k] += v / floor(T / window)
+        return all_losses
 
     def _train_step(self, data):
         """Forward and Backward pass of models
         Returns info dict containing loss metrics
         """
         cf = self._config
-        for model in self.all_models:
-            model.zero_grad()
-
-        # initialize the recurrent states
-        self.frame_predictor.hidden = self.frame_predictor.init_hidden()
-        if cf.stoch:
-            self.posterior.hidden = self.posterior.init_hidden()
-            self.prior.hidden = self.prior.init_hidden()
-
         losses = defaultdict(float)  # log loss metrics
         recon_loss = kld = 0
-        x, robot, ac, mask = data
+        x = data["images"]
+        states = data["states"]
+        ac = data["actions"]
+        mask = data["masks"]
+        if cf.model_use_heatmap:
+            heatmaps = data["heatmaps"]
+        robot_name = data["robot"]
+        robot_name = np.array(robot_name)
+        all_robots = set(robot_name)
         x_pred = None
+        skip = None
+
+        self.model.zero_grad()
+        bs = min(cf.batch_size, x.shape[1])
+        self.model.init_hidden(bs)  # initialize the recurrent states
+
+        # background mask
+        if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+            self._zero_robot_region(mask[0], x[0], inplace=True)
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
-                input_token = x[i - 1] if self._use_true_token() else x_pred.detach()
+                x_j = x[i - 1] if self._use_true_token() else x_pred.clone().detach()
             else:
-                input_token = x[i - 1]
-            h = self.encoder(cat([input_token, mask[i - 1]], dim=1))
-            r = self.robot_enc(robot[i - 1])
-            a = self.action_enc(ac[i - 1])
-            h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
-            r_target = self.robot_enc(robot[i])
-            # if n_past is 1, then we need to manually set skip var
-            if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
-                h, skip = h
-            else:
-                h = h[0]
+                x_j = x[i - 1]
+            # let j be i - 1, or previous timestep
+            m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
+            x_i, m_i, r_i = x[i], mask[i], states[i]
+            hm_j, hm_i = None, None
+            if cf.model_use_heatmap:
+                hm_j, hm_i = heatmaps[i - 1], heatmaps[i]
 
-            if cf.stoch:
-                z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
-                _, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
-                h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
-            else:
-                h_pred = self.frame_predictor(cat([a, r, h], 1))
-            x_pred = self.decoder([h_pred, skip])  # N x C x H x W
+            # zero out robot pixels in input for norobot cost
+            x_j_black, x_i_black = x_j, x_i
+            if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+                x_j_black = self._zero_robot_region(m_j, x_j)
+                x_i_black = self._zero_robot_region(m_i, x_i)
+
+            if cf.last_frame_skip:  # always use skip of current img
+                skip = None
+
+            m_in = m_j
+            if cf.model_use_future_mask:
+                m_in = torch.cat([m_j, m_i], 1)
+            r_in = r_j
+            if cf.model_use_future_robot_state:
+                r_in = (r_j, r_i)
+            hm_in = hm_j
+            if cf.model_use_future_heatmap:
+                hm_in = torch.cat([hm_j, hm_i], 1)
+
+            if cf.model == "det":
+                x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
+            elif cf.model == "svg":
+                m_next_in = m_i
+                if cf.model_use_future_mask:
+                    m_next_in = m_i.repeat(1, 2, 1, 1)
+                hm_next_in = hm_i
+                if cf.model_use_future_heatmap:
+                    hm_next_in = hm_i.repeat(1, 2, 1, 1)
+                out = self.model(
+                    x_j_black,
+                    m_in,
+                    r_in,
+                    hm_in,
+                    a_j,
+                    x_i_black,
+                    m_next_in,
+                    r_i,
+                    hm_next_in,
+                    skip,
+                )
+                x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
+
+            x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+            x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+
+            if i <= cf.n_past:
+                # overwrite skip with most recent conditioning frame skip
+                skip = curr_skip
             # calculate loss per view and log it
             if cf.multiview:
                 num_views = x_pred.shape[2] // cf.image_width
@@ -204,82 +414,219 @@ class PredictionTrainer(object):
                     losses[f"view_{n}"] += view_loss_scalar
                     losses["recon_loss"] += view_loss_scalar
             else:
-                view_loss = self._recon_loss(x_pred, x[i], mask[i])
-                recon_loss += view_loss
+                view_loss = self._recon_loss(x_pred, x_i, m_i)
+                recon_loss += view_loss  # accumulate for backprop
                 losses["recon_loss"] += view_loss.cpu().item()
 
-            if cf.stoch:
-                kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
+                # for logging metrics
+                with torch.no_grad():
+                    robot_mse = robot_mse_criterion(x_pred, x_i, m_i)
+                    world_mse = world_mse_criterion(x_pred, x_i, m_i)
+                    losses["robot_loss"] += robot_mse.cpu().item()
+                    losses["world_loss"] += world_mse.cpu().item()
+                    # robot specific metrics
+                    for r in all_robots:
+                        if len(all_robots) == 1:
+                            break
+                        r_idx = r == robot_name
+                        r_pred = x_pred[r_idx]
+                        r_img = x_i[r_idx]
+                        r_mask = m_i[r_idx]
+                        r_robot_mse = robot_mse_criterion(r_pred, r_img, r_mask)
+                        r_world_mse = world_mse_criterion(r_pred, r_img, r_mask)
+                        losses[f"{r}_robot_loss"] += r_robot_mse.cpu().item()
+                        losses[f"{r}_world_loss"] += r_world_mse.cpu().item()
+
+            if cf.model == "svg":
+                bs = min(cf.batch_size, x.shape[1])
+                kl = kl_criterion(mu, logvar, mu_p, logvar_p, bs)
                 kld += kl
                 losses["kld"] += kl.cpu().item()
         loss = recon_loss + kld * cf.beta
         loss.backward()
-        self.frame_predictor_optimizer.step()
-        if cf.stoch:
-            self.posterior_optimizer.step()
-            self.prior_optimizer.step()
-        self.encoder_optimizer.step()
-        self.decoder_optimizer.step()
-        self.action_encoder_optimizer.step()
-        self.robot_encoder_optimizer.step()
+        self.optimizer.step()
 
         for k, v in losses.items():
-            losses[k] = v / (cf.n_past + cf.n_future)
+            losses[k] = v / cf.n_future
         return losses
 
-    def _eval_epoch(self):
+    def _compute_epoch_metrics(self, data_loader, name):
+        """Compute the metrics over an entire epoch of data
+
+        Args:
+            data_loader (Dataloader): data loader for the dataset
+            name (str): name of the dataset
+        """
         losses = defaultdict(list)
-        for sequence in self.test_loader:
-            # transpose from (B, L, C, W, H) to (L, B, C, W, H)
-            frames, robots, actions, masks = sequence
-            frames = frames.transpose_(1, 0).to(self._device)
-            robots = robots.transpose_(1, 0).to(self._device)
-            actions = actions.transpose_(1, 0).to(self._device)
-            masks = masks.transpose_(1, 0).unsqueeze_(2).to(self._device)
-            data = (frames, robots, actions, masks)
-            info = self._eval_step(data)
+        progress = tqdm(total=len(data_loader), desc=f"computing {name} epoch")
+        for data in data_loader:
+            data = process_batch(data, self._device)
+            # info = self._eval_video(data)
+            # for k, v in info.items():
+            #     losses[k].append(v)
+            info = self._eval_video(data, autoregressive=True)
             for k, v in info.items():
                 losses[k].append(v)
+            progress.update()
 
-        avg_loss = {f"test/{k}": np.mean(v) for k, v in losses.items()}
-        epoch_loss = {f"test/epoch_{k}": np.sum(v) for k, v in losses.items()}
+        avg_loss = {f"{name}/{k}": np.mean(v) for k, v in losses.items()}
+        # epoch_loss = {f"test/epoch_{k}": np.sum(v) for k, v in losses.items()}
         log_str = ""
-        for k, v in epoch_loss.items():
-            log_str += f"{k}: {v}, "
+        for k, v in avg_loss.items():
+            log_str += f"{k}: {v:.5f}, "
         self._logger.info(log_str)
-        epoch_loss.update(avg_loss)
-        wandb.log(epoch_loss, step=self._step)
+        return avg_loss
+
+    def _eval_video(self, data, autoregressive=False):
+        """Evaluates over an entire video
+        data: video data from dataloader
+        autoregressive: use model's outputs as input for next timestep
+        """
+        cf = self._config
+        num_samples = 1
+        if autoregressive and cf.model == "svg" and "finetune" in cf.experiment:
+            num_samples = 3
+        x = data["images"]
+        T = len(x)
+        window = cf.n_eval
+        sampled_losses = [
+            defaultdict(float) for _ in range(num_samples)
+        ]  # list of video sample losses
+        for i in range(floor(T / window)):
+            s = i * window
+            e = (i + 1) * window
+            batch_data = {
+                "images": x[s:e],
+                "states": data["states"][s:e],
+                "actions": data["actions"][s : e - 1],
+                "masks": data["masks"][s:e],
+                "robot": data["robot"],
+                "qpos": data["qpos"][s:e],
+                "folder": data["folder"],
+            }
+            if cf.model_use_heatmap:
+                batch_data["heatmaps"] = data["heatmaps"][s:e]
+
+            # expose inputs necessary for learned robot model
+            if cf.learned_robot_model:
+                if cf.preprocess_action != "raw":
+                    batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
+                if cf.model_use_heatmap:
+                    batch_data["low"] = data["low"]
+                    batch_data["high"] = data["high"]
+
+            for sample in range(num_samples):
+                losses = self._eval_step(batch_data, autoregressive)
+                for k, v in losses.items():
+                    sampled_losses[sample][k] += v
+
+        # now pick the best sample by world error, and average over frames
+        if autoregressive and self._config.model == "svg":
+            sampled_losses.sort(key=lambda x: x["autoreg_world_loss"])
+        best_loss = sampled_losses[0]
+
+        for k, v in best_loss.items():
+            best_loss[k] /= floor(T / window)
+        return best_loss
 
     @torch.no_grad()
-    def _eval_step(self, data):
+    def _eval_step(self, data, autoregressive=False):
+        """
+        Evals over a snippet of video of length n_past + n_future
+        autoregressive: use model's outputs as input for next timestep
+        """
+        # one step evaluation loss
         cf = self._config
+
+        x = data["images"]
+        states = data["states"]
+        ac = data["actions"]
+        true_mask = mask = data["masks"]
+        if cf.model_use_heatmap:
+            heatmaps = data["heatmaps"]
+        robot_name = data["robot"]
+        bs = min(cf.test_batch_size, x.shape[1])
         # initialize the recurrent states
-        self.frame_predictor.hidden = self.frame_predictor.init_hidden()
-        if cf.stoch:
-            self.posterior.hidden = self.posterior.init_hidden()
-            self.prior.hidden = self.prior.init_hidden()
+        self.model.init_hidden(bs)
 
         losses = defaultdict(float)
-        x, robot, ac, mask = data
-        for i in range(1, cf.n_past + cf.n_future):
-            h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
-            r = self.robot_enc(robot[i - 1])
-            a = self.action_enc(ac[i - 1])
-            h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
-            r_target = self.robot_enc(robot[i])
-            # if n_past is 1, then we need to manually set skip var
-            if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
-                h, skip = h
+        k_losses = defaultdict(float)
+        robot_name = np.array(robot_name)
+        all_robots = set(robot_name)
+        x_pred = skip = None
+        prefix = "autoreg" if autoregressive else "1step"
+        if autoregressive and cf.learned_robot_model:
+            out = self._generate_learned_robot_states(data)
+            if cf.model_use_heatmap:
+                states, mask, heatmaps = out
             else:
-                h = h[0]
+                states, mask = out
 
-            if cf.stoch:
-                z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
-                _, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
-                h_pred = self.frame_predictor(cat([a, r, h, z_t], 1))
+        if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+            self._zero_robot_region(mask[0], x[0], inplace=True)
+        for i in range(1, cf.n_eval):
+            if autoregressive and i > 1:
+                x_j = x_pred.clone()
             else:
-                h_pred = self.frame_predictor(cat([a, r, h], 1))
-            x_pred = self.decoder([h_pred, skip])
+                x_j = x[i - 1]
+            # let j be i - 1, or previous timestep
+            m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
+            x_i, m_i, r_i = x[i], mask[i], states[i]
+            hm_j, hm_i = None, None
+            if cf.model_use_heatmap:
+                hm_j, hm_i = heatmaps[i - 1], heatmaps[i]
+
+            if cf.model == "copy":
+                x_pred = self.model(x_j, m_j, x_i, m_i)
+            else:
+                # zero out robot pixels in input for norobot cost
+                x_j_black, x_i_black = x_j, x_i
+                if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+                    x_j_black = self._zero_robot_region(m_j, x_j)
+                    x_i_black = self._zero_robot_region(m_i, x_i)
+
+                if cf.last_frame_skip:
+                    skip = None
+
+                m_in = m_j
+                if cf.model_use_future_mask:
+                    m_in = torch.cat([m_j, m_i], 1)
+                r_in = r_j
+                if cf.model_use_future_robot_state:
+                    r_in = (r_j, r_i)
+                hm_in = hm_j
+                if cf.model_use_future_heatmap:
+                    hm_in = torch.cat([hm_j, hm_i], 1)
+
+                if cf.model == "det":
+                    x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
+                elif cf.model == "svg":
+                    m_next_in = m_i
+                    if cf.model_use_future_mask:
+                        m_next_in = m_i.repeat(1, 2, 1, 1)
+                    hm_next_in = hm_i
+                    if cf.model_use_future_heatmap:
+                        hm_next_in = hm_i.repeat(1, 2, 1, 1)
+                    out = self.model(
+                        x_j_black,
+                        m_in,
+                        r_in,
+                        hm_in,
+                        a_j,
+                        x_i_black,
+                        m_next_in,
+                        r_i,
+                        hm_next_in,
+                        skip,
+                        force_use_prior=True,
+                    )
+                    x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
+
+                x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+                if i <= cf.n_past:
+                    # overwrite skip with most recent conditioning frame skip
+                    skip = curr_skip
             if cf.multiview:
                 num_views = x_pred.shape[2] // cf.image_width
                 for n in range(num_views):
@@ -293,88 +640,171 @@ class PredictionTrainer(object):
                     robot_mse_scalar = robot_mse.cpu().item()
                     world_mse = world_mse_criterion(view_pred, view, view_mask)
                     world_mse_scalar = world_mse.cpu().item()
-                    losses[f"view_{n}_robot"] += robot_mse_scalar
-                    losses[f"view_{n}_world"] += world_mse_scalar
-                    losses[f"view_{n}_recon"] += view_loss_scalar
-                    losses["total_recon_loss"] += view_loss_scalar
-                    losses["total_robot_loss"] += robot_mse_scalar
-                    losses["total_world_loss"] += world_mse_scalar
+                    losses[f"{prefix}_view_{n}_robot"] += robot_mse_scalar
+                    losses[f"{prefix}_view_{n}_world"] += world_mse_scalar
+                    losses[f"{prefix}_view_{n}_recon"] += view_loss_scalar
+                    losses[f"{prefix}_total_recon_loss"] += view_loss_scalar
+                    losses[f"{prefix}_total_robot_loss"] += robot_mse_scalar
+                    losses[f"{prefix}_total_world_loss"] += world_mse_scalar
             else:
-                view_loss = self._recon_loss(x_pred, x[i], mask[i])
-                robot_mse = robot_mse_criterion(x_pred, x[i], mask[i])
-                world_mse = world_mse_criterion(x_pred, x[i], mask[i])
-                losses["total_recon_loss"] += view_loss.cpu().item()
-                losses["total_robot_loss"] += robot_mse.cpu().item()
-                losses["total_world_loss"] += world_mse.cpu().item()
+                view_loss = self._recon_loss(x_pred, x[i], true_mask[i])
+                losses[f"{prefix}_recon_loss"] += view_loss.cpu().item()
+                robot_mse = robot_mse_criterion(x_pred, x[i], true_mask[i])
+                world_mse = world_mse_criterion(x_pred, x[i], true_mask[i])
+                losses[f"{prefix}_robot_loss"] += robot_mse.cpu().item()
+                world_mse_value = world_mse.cpu().item()
+                losses[f"{prefix}_world_loss"] += world_mse_value
 
-            if cf.stoch:
-                kl = kl_criterion(mu, logvar, mu_p, logvar_p, cf.batch_size)
-                losses["kld"] += kl.cpu().item()
+                # black out robot with true mask before computing psnr, ssim
+                x_pred_black = self._zero_robot_region(true_mask[i], x_pred)
+                x_i_black = self._zero_robot_region(true_mask[i], x_i)
+
+                p = psnr(x_i_black.clamp(0, 1), x_pred_black.clamp(0, 1)).mean().item()
+                s = ssim(x_i_black, x_pred_black).mean().item()
+                losses[f"{prefix}_psnr"] += p
+                losses[f"{prefix}_ssim"] += s
+
+                # k-step rollouts.
+                if autoregressive:
+                    for k in range(i, cf.n_eval - 1):
+                        k_losses[f"{k}_step_psnr"] += p
+                        k_losses[f"{k}_step_ssim"] += s
+                        k_losses[f"{k}_step_world_loss"] += world_mse_value
+
+                # robot specific metrics
+                for r in all_robots:
+                    if len(all_robots) == 1:
+                        break
+                    r_idx = r == robot_name
+                    r_pred = x_pred[r_idx]
+                    r_img = x[i][r_idx]
+                    r_mask = true_mask[i][r_idx]
+                    r_robot_mse = robot_mse_criterion(r_pred, r_img, r_mask)
+                    r_world_mse = world_mse_criterion(r_pred, r_img, r_mask)
+                    losses[f"{prefix}_{r}_robot_loss"] += r_robot_mse.cpu().item()
+                    losses[f"{prefix}_{r}_world_loss"] += r_world_mse.cpu().item()
+
+            if cf.model == "svg":
+                kl = kl_criterion(mu, logvar, mu_p, logvar_p, bs)
+                losses[f"{prefix}_kld"] += kl.cpu().item()
 
         for k, v in losses.items():
-            losses[k] = v / (cf.n_past + cf.n_future)
+            losses[k] = v / (cf.n_eval - 1)  # don't count the first step
+
+        temp_k_losses = {}
+        for k, v in k_losses.items():
+            num_steps = float(k[0])
+            temp_k_losses[k] = v / num_steps
+        losses.update(temp_k_losses)
         return losses
 
     def train(self):
         """Training, Evaluation, Checkpointing loop"""
         cf = self._config
+        if cf.model == "copy":
+            self.train_copy_baseline()
+            return
+
         # load models and dataset
-        self._step = self._load_checkpoint()
+        self._step = self._load_checkpoint(cf.dynamics_model_ckpt)
         self._setup_data()
+        T = 31
+        window = cf.n_past + cf.n_future
+        total = cf.niter * cf.epoch_size * floor(T / window)
+        desc = "batches seen"
+        self.progress = tqdm(initial=self._step, total=total, desc=desc)
 
         # start training
-        progress = tqdm(initial=self._step, total=cf.niter * cf.epoch_size)
         for epoch in range(cf.niter):
-            for model in self.all_models:
-                model.train()
-            epoch_losses = defaultdict(float)
-            for _ in range(cf.epoch_size):
+            self.model.train()
+            # number of batches in 1 epoch
+            for i in range(cf.epoch_size):
                 data = next(self.training_batch_generator)
-                info = self._train_step(data)
-                for k, v in info.items():
-                    epoch_losses[f"train/epoch_{k}"] += v
-                info["sample_schedule"] = self._schedule_prob()[0]
-                self._step += 1
+                info = self._train_video(data)
+                if self._scheduled_sampling:
+                    info["sample_schedule"] = self._schedule_prob()[0]
+                self._step += self.steps_per_train_video
+
+                if i == cf.epoch_size - 1:
+                    self.plot(data, epoch, "train")
+                    # self.plot_rec(data, epoch, "train")
 
                 wandb.log({f"train/{k}": v for k, v in info.items()}, step=self._step)
-                progress.update()
+                self.progress.update(self.steps_per_train_video)
 
-            # log epoch statistics
-            wandb.log(epoch_losses, step=self._step)
-            epoch_log_str = ""
-            for k, v in epoch_losses.items():
-                epoch_log_str += f"{k}: {v}, "
-            self._logger.info(epoch_log_str)
-            # checkpoint
             if epoch % cf.checkpoint_interval == 0 and epoch > 0:
                 self._logger.info(f"Saving checkpoint {epoch}")
                 self._save_checkpoint()
 
-            # plot and evaluate on test set
-            self.frame_predictor.eval()
-            if cf.stoch:
-                self.posterior.eval()
-                self.prior.eval()
-            # self.encoder.eval()
-            # self.decoder.eval()
-            self._eval_epoch()
-            test_data = next(self.testing_batch_generator)
-            self.plot(test_data, epoch)
-            self.plot_rec(test_data, epoch)
+            # always eval at first epoch to get early eval result
+            if epoch % cf.eval_interval == 0:
+                # plot and evaluate on test set
+                start = time()
+                self.model.eval()
+                info = self._compute_epoch_metrics(self.test_loader, "test")
+                end = time()
+                data_time = end - start
+                print(f"eval time {data_time:.2f}")
+                wandb.log(info, step=self._step)
+                test_data = next(self.testing_batch_generator)
+                self.plot(test_data, epoch, "test")
+                if cf.experiment in ["train_sawyer_multiview", "train_robonet"]:
+                    info = self._compute_epoch_metrics(self.transfer_loader, "transfer")
+                    wandb.log(info, step=self._step)
+                    transfer_data = next(self.transfer_batch_generator)
+                    self.plot(transfer_data, epoch, "transfer")
+
+    def train_copy_baseline(self):
+        """Compute metrics for copy baseline"""
+        cf = self._config
+        # load models and dataset
+        self._step = self._load_checkpoint(cf.dynamics_model_ckpt)
+        self._setup_data()
+        epoch = 0
+        # train set
+        self.model.train()
+        train_info = self._compute_epoch_metrics(self.train_loader, "train")
+        train_data = next(self.training_batch_generator)
+        self.plot(train_data, epoch, "train")
+        # self.plot_rec(train_data, epoch, "train")
+        # test set
+        self.model.eval()
+        test_info = self._compute_epoch_metrics(self.test_loader, "test")
+        test_data = next(self.testing_batch_generator)
+        self.plot(test_data, epoch, "test")
+        # self.plot_rec(test_data, epoch, "test")
+
+        # plot 2 points to make horizontal line
+        wandb.log(train_info, step=0)
+        wandb.log(test_info, step=0)
+        # transfer
+        if cf.experiment in ["train_sawyer_multiview"]:
+            transfer_info = self._compute_epoch_metrics(
+                self.transfer_loader, "transfer"
+            )
+            transfer_data = next(self.transfer_batch_generator)
+            self.plot(transfer_data, epoch, "transfer")
+            wandb.log(transfer_info, step=0)
+            wandb.log(transfer_info, step=500000)
+        wandb.log(train_info, step=500000)
+        wandb.log(test_info, step=500000)
 
     def _save_checkpoint(self):
         path = os.path.join(self._config.log_dir, f"ckpt_{self._step}.pt")
         data = {
-            "encoder": self.encoder,
-            "robot_enc": self.robot_enc,
-            "action_enc": self.action_enc,
-            "decoder": self.decoder,
-            "frame_predictor": self.frame_predictor,
+            # "background_model": self.background_model.state_dict(),
+            "model": self.model.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
             "step": self._step,
         }
-        if self._config.stoch:
-            data.update({"posterior": self.posterior, "prior": self.prior})
         torch.save(data, path)
+
+    def _load_robot_model_checkpoint(self, ckpt_path):
+        # load given ckpt path
+        print(f"Loading Robot Model ckpt {ckpt_path}")
+        ckpt = torch.load(ckpt_path, map_location=self._device)
+        self.joint_model.load_state_dict(ckpt["joint_model"])
+        self.gripper_model.load_state_dict(ckpt["gripper_model"])
 
     def _load_checkpoint(self, ckpt_path=None):
         """
@@ -383,16 +813,6 @@ class PredictionTrainer(object):
 
         Returns the training step
         """
-
-        def load_models(ckpt):
-            self.frame_predictor = ckpt["frame_predictor"]
-            if self._config.stoch:
-                self.posterior = ckpt["posterior"]
-                self.prior = ckpt["prior"]
-            self.decoder = ckpt["decoder"]
-            self.encoder = ckpt["encoder"]
-            self.robot_enc = ckpt["robot_enc"]
-            self.action_enc = ckpt["action_enc"]
 
         def get_recent_ckpt_path(base_dir):
             from glob import glob
@@ -413,174 +833,510 @@ class PredictionTrainer(object):
             return path, max_step
 
         if ckpt_path is None:
+            # check for most recent ckpt in folder
             ckpt_path, ckpt_num = get_recent_ckpt_path(self._config.log_dir)
             if ckpt_path is None:
                 print("Randomly initializing Model")
                 return 0
             else:
                 print(f"Loading most recent ckpt: {ckpt_path}")
-                ckpt = torch.load(ckpt_path)
-                load_models(ckpt)
+                ckpt = torch.load(ckpt_path, map_location=self._device)
+                # self.background_model.load_state_dict(ckpt["background_model"])
+                self.model.load_state_dict(ckpt["model"])
+                self.optimizer.load_state_dict(ckpt["optimizer"])
                 step = ckpt["step"]
                 return step
         else:
-            ckpt = torch.load(ckpt_path)
-            load_models(ckpt)
-            step = ckpt["step"]
+            # load given ckpt path
+            print(f"Loading ckpt {ckpt_path}")
+            ckpt = torch.load(ckpt_path, map_location=self._device)
+            # self.background_model.load_state_dict(ckpt["background_model"])
+            self.model.load_state_dict(ckpt["model"])
+            if "finetune" in self._config.experiment:
+                step = 0
+            else:
+                step = ckpt["step"]
+                self.optimizer.load_state_dict(ckpt["optimizer"])
             return step
 
     def _setup_data(self):
         """
         Setup the dataset and dataloaders
         """
-        train_loader, self.test_loader = create_loaders(config)
-        self.training_batch_generator = get_batch(train_loader, self._device)
+        if self._config.experiment == "train_robonet":
+            from src.dataset.robonet.robonet_dataloaders import create_loaders
+            from src.dataset.locobot.locobot_singleview_dataloader import (
+                create_transfer_loader,
+            )
+
+            # measure zero shot performance on unseen locobot
+            self.transfer_loader = create_transfer_loader(self._config)
+            self.transfer_batch_generator = get_batch(
+                self.transfer_loader, self._device
+            )
+
+        elif self._config.experiment == "train_sawyer_multiview":
+            from src.dataset.sawyer.sawyer_dataloaders import (
+                create_loaders,
+                create_transfer_loader,
+            )
+
+            # measure zero shot performance on unseen sawyer viewpoint
+            self.transfer_loader = create_transfer_loader(self._config)
+            self.transfer_batch_generator = get_batch(
+                self.transfer_loader, self._device
+            )
+        elif self._config.experiment == "finetune_sawyer_view":
+            from src.dataset.sawyer.sawyer_dataloaders import (
+                create_finetune_loaders as create_loaders,
+            )
+        elif self._config.experiment == "finetune_widowx":
+            from src.dataset.widowx.widowx_dataloaders import (
+                create_finetune_loaders as create_loaders,
+            )
+        elif self._config.experiment == "train_locobot_singleview":
+            from src.dataset.locobot.locobot_singleview_dataloader import create_loaders
+        elif self._config.experiment == "finetune_locobot":
+            from src.dataset.locobot.locobot_singleview_dataloader import (
+                create_finetune_loaders as create_loaders,
+            )
+        else:
+            raise NotImplementedError(self._config.experiment)
+        self.train_loader, self.test_loader = create_loaders(self._config)
+        # for infinite batching
+        self.training_batch_generator = get_batch(self.train_loader, self._device)
         self.testing_batch_generator = get_batch(self.test_loader, self._device)
 
     @torch.no_grad()
-    def plot(self, data, epoch):
-        """
-        Plot the generation with learned prior
+    def plot(self, data, epoch, name, random_start=True):
+        """Plot the generation with learned prior. Autoregressive output.
+        Args:
+            data (DataLoader): dictionary from dataloader
+            epoch (int): epoch number
+            name (str): name of the dataset
+            random_start (bool, optional): Choose a random timestep as the starting frame
         """
         cf = self._config
-        x, robot, ac, mask = data
-
+        x = data["images"]
+        states = data["states"]
+        ac = data["actions"]
+        mask = data["masks"]
+        qpos = data["qpos"]
+        robot = data["robot"]
+        if cf.model_use_heatmap:
+            heatmaps = data["heatmaps"]
         nsample = 1
+        if cf.model == "svg":
+            nsample = 3
+
+        b = min(x.shape[1], 10)
+        # first frame of all videos
+        start = 0
+        video_len = cf.n_eval
+        if name in ["comparison", "train"]:
+            video_len = cf.n_past + cf.n_future
+        end = start + video_len
+        if random_start:
+            offset = x.shape[0] - video_len
+            start = self._plot_rng.randint(0, offset + 1)
+            end = start + video_len
+        # truncate batch by time and batch dim
+        x = x[start:end, :b]
+        states = states[start:end, :b]
+        ac = ac[start : end - 1, :b]
+        mask = mask[start:end, :b]
+        qpos = qpos[start:end, :b]
+        folder = data["folder"][:b]
+        robot = robot[:b]
+        if cf.model_use_heatmap:
+            heatmaps = heatmaps[start:end, :b]
+
+        if cf.learned_robot_model:
+            input_data = dict(
+                images=x,
+                states=states,
+                actions=ac,
+                masks=mask,
+                qpos=qpos,
+                folder=folder,
+                robot=robot,
+            )
+            if cf.preprocess_action != "raw":
+                input_data["raw_actions"] = data["raw_actions"][start : end - 1, :b]
+            if cf.model_use_heatmap:
+                input_data["heatmaps"] = data["heatmaps"][start:end, :b]
+                input_data["low"] = data["low"][:b]
+                input_data["high"] = data["high"][:b]
+
+            out = self._generate_learned_robot_states(input_data)
+            if cf.model_use_heatmap:
+                states, mask, heatmaps = out
+            else:
+                states, mask = out
+
         gen_seq = [[] for i in range(nsample)]
+        gen_mask = [[] for i in range(nsample)]
         gt_seq = [x[i] for i in range(len(x))]
+        gt_mask = [mask[i] for i in range(len(mask))]
+
         for s in range(nsample):
-            self.frame_predictor.hidden = self.frame_predictor.init_hidden()
-            if self._config.stoch:
-                self.posterior.hidden = self.posterior.init_hidden()
-                self.prior.hidden = self.prior.init_hidden()
-            # first frame of all videos
+            skip = None
+            self.model.init_hidden(b)
+            if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+                self._zero_robot_region(mask[0], x[0], inplace=True)
             gen_seq[s].append(x[0])
-            x_in = x[0]
-            for i in range(1, cf.n_eval):
-                h = self.encoder(cat([x_in, mask[i - 1]], dim=1))
-                r = self.robot_enc(robot[i - 1])
-                a = self.action_enc(ac[i - 1])
-                if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
-                    h, skip = h
+            gen_mask[s].append(mask[0])
+            x_j = x[0]
+            for i in range(1, video_len):
+                # let j be i - 1, or previous timestep
+                m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
+                x_i, m_i, r_i = x[i], mask[i], states[i]
+                hm_j, hm_i = None, None
+                if cf.model_use_heatmap:
+                    hm_j, hm_i = heatmaps[i - 1], heatmaps[i]
+                if cf.model == "copy":
+                    x_pred = self.model(x_j, m_j, x_i, m_i)
                 else:
-                    h, _ = h
-                h = h.detach()
+                    # zero out robot pixels in input for norobot cost
+                    if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+                        self._zero_robot_region(mask[i - 1], x_j, inplace=True)
+                        self._zero_robot_region(mask[i], x[i], inplace=True)
+                    m_in = m_j
+                    if cf.model_use_future_mask:
+                        m_in = torch.cat([m_j, m_i], 1)
+                    r_in = r_j
+                    if cf.model_use_future_robot_state:
+                        r_in = (r_j, r_i)
+                    hm_in = hm_j
+                    if cf.model_use_future_heatmap:
+                        hm_in = torch.cat([hm_j, hm_i], 1)
+
+                    if cf.last_frame_skip:
+                        # overwrite conditioning frame skip if necessary
+                        skip = None
+
+                    if cf.model == "det":
+                        x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, skip)
+                    elif cf.model == "svg":
+                        # don't use posterior.
+                        x_i, m_next_in, r_i, hm_next_in = None, None, None, None
+                        out = self.model(
+                            x_j,
+                            m_in,
+                            r_in,
+                            hm_in,
+                            a_j,
+                            x_i,
+                            m_next_in,
+                            r_i,
+                            hm_next_in,
+                            skip,
+                        )
+                        x_pred, curr_skip, _, _, _, _ = out
+
+                    x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                    x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+
+                    if i <= cf.n_past:
+                        # store the most recent conditioning frame's skip
+                        skip = curr_skip
+
+                    if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+                        self._zero_robot_region(mask[i], x_pred, inplace=True)
                 if i < cf.n_past:
-                    r_target = self.robot_enc(robot[i])
-                    h_target = self.encoder(cat([x[i], mask[i - 1]], dim=1))
-                    h_target = h_target[0]
-                    if cf.stoch:
-                        z_t, _, _ = self.posterior(cat([r_target, h_target], 1))
-                        # condition the recurrent state of prior
-                        self.prior(cat([a, r, h], 1))
-                        self.frame_predictor(cat([a, r, h, z_t], 1))
-                    else:
-                        self.frame_predictor(cat([a, r, h], 1))
-                    x_in = x[i]
-                    gen_seq[s].append(x_in)
+                    x_j = x_i
                 else:
-                    if cf.stoch:
-                        z_t, _, _ = self.prior(cat([a, r, h], 1))
-                        h = self.frame_predictor(cat([a, r, h, z_t], 1))
-                    else:
-                        h = self.frame_predictor(cat([a, r, h], 1))
-                    x_in = self.decoder([h, skip])
-                    gen_seq[s].append(x_in)
+                    x_j = x_pred
+                gen_seq[s].append(x_j)
+                gen_mask[s].append(x_pred_mask)
 
         to_plot = []
-        gifs = [[] for t in range(cf.n_eval)]
-        nrow = min(cf.batch_size, 10)
+        mask_to_plot = []
+        gifs = [[] for t in range(video_len)]
+        mask_gifs = [[] for t in range(video_len)]
+        nrow = b
         for i in range(nrow):
             # ground truth sequence
             row = []
-            for t in range(cf.n_eval):
+            mask_row = []
+            for t in range(video_len):
                 row.append(gt_seq[t][i])
+                mask_row.append(gt_mask[t][i])
             to_plot.append(row)
-
-            # best sequence
-            min_mse = 1e7
-            for s in range(nsample):
-                mse = 0
-                for t in range(cf.n_eval):
-                    mse += torch.sum(
-                        (gt_seq[t][i].data.cpu() - gen_seq[s][t][i].data.cpu()) ** 2
-                    )
-                if mse < min_mse:
-                    min_mse = mse
-                    min_idx = s
-
-            s_list = [
-                min_idx,
-                np.random.randint(nsample),
-                np.random.randint(nsample),
-                np.random.randint(nsample),
-                np.random.randint(nsample),
-            ]
-            for ss in range(len(s_list)):
-                s = s_list[ss]
+            mask_to_plot.append(mask_row)
+            if cf.model == "svg":
+                s_list = range(nsample)
+            else:
+                s_list = [0]
+            for t in range(video_len):
                 row = []
-                for t in range(cf.n_eval):
-                    row.append(gen_seq[s][t][i])
-                to_plot.append(row)
-            for t in range(cf.n_eval):
-                row = []
+                mask_row = []
                 row.append(gt_seq[t][i])
+                mask_row.append(gt_mask[t][i])
                 for ss in range(len(s_list)):
                     s = s_list[ss]
                     row.append(gen_seq[s][t][i])
+                    mask_row.append(gen_mask[s][t][i])
                 gifs[t].append(row)
-
-        fname = os.path.join(cf.plot_dir, f"sample_{epoch}.png")
-        save_tensors_image(fname, to_plot)
-
-        fname = os.path.join(cf.plot_dir, f"sample_{epoch}.gif")
+                mask_gifs[t].append(mask_row)
+        # gifs is T x B x S x |I|
+        fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.gif")
         save_gif(fname, gifs)
+        wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
 
-    @torch.no_grad()
-    def plot_rec(self, data, epoch):
-        """
-        Plot the 1 step reconstruction with posterior instead of learned prior
+        fname = os.path.join(cf.plot_dir, f"{name}_{epoch}_masks.gif")
+        save_gif(fname, mask_gifs)
+        wandb.log(
+            {f"{name}/masks_gifs": wandb.Video(fname, format="gif")}, step=self._step
+        )
+
+    def predict_video(self, data):
+        """Generate predictions for the video
+        Used to compute FID scores
+        data: video data from dataloader
+        Outputs the ground truth and predicted videos
         """
         cf = self._config
-        x, robot, ac, mask = data
-        self.frame_predictor.hidden = self.frame_predictor.init_hidden()
-        if cf.stoch:
-            self.posterior.hidden = self.posterior.init_hidden()
-        gen_seq = []
-        gen_seq.append(x[0])
-        for i in range(1, cf.n_past + cf.n_future):
-            h = self.encoder(cat([x[i - 1], mask[i - 1]], dim=1))
-            r = self.robot_enc(robot[i - 1])
-            a = self.action_enc(ac[i - 1])
-            h_target = self.encoder(cat([x[i], mask[i]], dim=1))[0]
-            r_target = self.robot_enc(robot[i])
-            if (i == 1 and cf.n_past == 1) or cf.last_frame_skip or i < cf.n_past:
-                h, skip = h
-            else:
-                h, _ = h
-            if cf.stoch:
-                z_t, _, _ = self.posterior(cat([r_target, h_target], 1))
-                embed = cat([a, r, h, z_t], 1)
-            else:
-                embed = cat([a, r, h], 1)
+        num_samples = 1
+        if cf.model == "svg" and "finetune" in cf.experiment:
+            num_samples = 3
+        x = data["images"]
+        T = len(x)
+        window = cf.n_eval
+        sampled_losses = [
+            defaultdict(float) for _ in range(num_samples)
+        ]  # list of video sample losses
+        for i in range(floor(T / window)):
+            s = i * window
+            e = (i + 1) * window
+            batch_data = {
+                "images": x[s:e],
+                "states": data["states"][s:e],
+                "actions": data["actions"][s : e - 1],
+                "masks": data["masks"][s:e],
+                "robot": data["robot"],
+                "qpos": data["qpos"][s:e],
+                "folder": data["folder"],
+            }
+            if cf.model_use_heatmap:
+                batch_data["heatmaps"] = data["heatmaps"][s:e]
+            # expose inputs necessary for learned robot model
+            if cf.learned_robot_model:
+                if cf.preprocess_action != "raw":
+                    batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
+                if cf.model_use_heatmap:
+                    batch_data["low"] = data["low"]
+                    batch_data["high"] = data["high"]
+            for sample in range(num_samples):
+                losses = self._predict_video(batch_data)
+                for k, v in losses.items():
+                    if k in ["true_imgs", "gen_imgs"]:
+                        if k not in sampled_losses[sample]:
+                            sampled_losses[sample][k] = []
+                        sampled_losses[sample][k].append(v)
+                    else:
+                        sampled_losses[sample][k] += v
+        # now pick the best sample by world error, and average over frames
+        if cf.model == "svg":
+            sampled_losses.sort(key=lambda x: x["autoreg_world_loss"])
+        best_loss = sampled_losses[0]
 
-            if i < cf.n_past:
-                self.frame_predictor(embed)
-                gen_seq.append(x[i])
-            else:
-                h_pred = self.frame_predictor(embed)
-                x_pred = self.decoder([h_pred, skip]).detach()
-                gen_seq.append(x_pred)
+        for k, v in best_loss.items():
+            if k in ["true_imgs", "gen_imgs"]:
+                continue
+            best_loss[k] /= floor(T / window)
+        return best_loss
 
-        to_plot = []
-        nrow = min(cf.batch_size, 10)
-        for i in range(nrow):
-            row = []
-            for t in range(cf.n_past + cf.n_future):
-                row.append(gen_seq[t][i])
-            to_plot.append(row)
-        fname = os.path.join(cf.plot_dir, f"rec_{epoch}.png")
-        save_tensors_image(fname, to_plot)
+    @torch.no_grad()
+    def _predict_video(self, data, autoregressive=True):
+        """
+        Evals over a snippet of video of length n_past + n_future
+        autoregressive: use model's outputs as input for next timestep
+        """
+        # one step evaluation loss
+        cf = self._config
+
+        x = data["images"]
+        states = data["states"]
+        ac = data["actions"]
+        true_mask = mask = data["masks"]
+        if cf.model_use_heatmap:
+            heatmaps = data["heatmaps"]
+        robot_name = data["robot"]
+        bs = min(cf.test_batch_size, x.shape[1])
+        # initialize the recurrent states
+        self.model.init_hidden(bs)
+
+        losses = defaultdict(float)
+        k_losses = defaultdict(float)
+        robot_name = np.array(robot_name)
+        all_robots = set(robot_name)
+
+        # store for computing FID metric
+        all_x_pred_black = []
+        all_x_i_black = []
+
+        x_pred = skip = None
+        prefix = "autoreg" if autoregressive else "1step"
+        if autoregressive and cf.learned_robot_model:
+            out = self._generate_learned_robot_states(data)
+            if cf.model_use_heatmap:
+                states, mask, heatmaps = out
+            else:
+                states, mask = out
+
+        if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+            self._zero_robot_region(mask[0], x[0], inplace=True)
+        for i in range(1, cf.n_eval):
+            if autoregressive and i > 1:
+                x_j = x_pred.clone()
+            else:
+                x_j = x[i - 1]
+            # let j be i - 1, or previous timestep
+            m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
+            x_i, m_i, r_i = x[i], mask[i], states[i]
+            hm_j, hm_i = None, None
+            if cf.model_use_heatmap:
+                hm_j, hm_i = heatmaps[i - 1], heatmaps[i]
+
+            if cf.model == "copy":
+                x_pred = self.model(x_j, m_j, x_i, m_i)
+            else:
+                # zero out robot pixels in input for norobot cost
+                x_j_black, x_i_black = x_j, x_i
+                if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+                    x_j_black = self._zero_robot_region(m_j, x_j)
+                    x_i_black = self._zero_robot_region(m_i, x_i)
+
+                if cf.last_frame_skip:
+                    skip = None
+
+                m_in = m_j
+                if cf.model_use_future_mask:
+                    m_in = torch.cat([m_j, m_i], 1)
+                r_in = r_j
+                if cf.model_use_future_robot_state:
+                    r_in = (r_j, r_i)
+                hm_in = hm_j
+                if cf.model_use_future_heatmap:
+                    hm_in = torch.cat([hm_j, hm_i], 1)
+
+                if cf.model == "det":
+                    x_pred, curr_skip = self.model(x_j_black, m_in, r_j, a_j, skip)
+                elif cf.model == "svg":
+                    m_next_in = m_i
+                    if cf.model_use_future_mask:
+                        m_next_in = m_i.repeat(1, 2, 1, 1)
+                    hm_next_in = hm_i
+                    if cf.model_use_future_heatmap:
+                        hm_next_in = hm_i.repeat(1, 2, 1, 1)
+                    out = self.model(
+                        x_j_black,
+                        m_in,
+                        r_in,
+                        hm_in,
+                        a_j,
+                        x_i_black,
+                        m_next_in,
+                        r_i,
+                        hm_next_in,
+                        skip,
+                        force_use_prior=True,
+                    )
+                    x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
+
+                x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
+                x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
+                if i <= cf.n_past:
+                    # overwrite skip with most recent conditioning frame skip
+                    skip = curr_skip
+            if cf.multiview:
+                num_views = x_pred.shape[2] // cf.image_width
+                for n in range(num_views):
+                    start, end = n * cf.image_width, (n + 1) * cf.image_width
+                    view_pred = x_pred[:, :, start:end, :]
+                    view = x[i][:, :, start:end, :]
+                    view_mask = mask[i][:, :, start:end, :]
+                    view_loss = self._recon_loss(view_pred, view, view_mask)
+                    view_loss_scalar = view_loss.cpu().item()
+                    robot_mse = robot_mse_criterion(view_pred, view, view_mask)
+                    robot_mse_scalar = robot_mse.cpu().item()
+                    world_mse = world_mse_criterion(view_pred, view, view_mask)
+                    world_mse_scalar = world_mse.cpu().item()
+                    losses[f"{prefix}_view_{n}_robot"] += robot_mse_scalar
+                    losses[f"{prefix}_view_{n}_world"] += world_mse_scalar
+                    losses[f"{prefix}_view_{n}_recon"] += view_loss_scalar
+                    losses[f"{prefix}_total_recon_loss"] += view_loss_scalar
+                    losses[f"{prefix}_total_robot_loss"] += robot_mse_scalar
+                    losses[f"{prefix}_total_world_loss"] += world_mse_scalar
+            else:
+                view_loss = self._recon_loss(x_pred, x[i], true_mask[i])
+                losses[f"{prefix}_recon_loss"] += view_loss.cpu().item()
+                robot_mse = robot_mse_criterion(x_pred, x[i], true_mask[i])
+                world_mse = world_mse_criterion(x_pred, x[i], true_mask[i])
+                losses[f"{prefix}_robot_loss"] += robot_mse.cpu().item()
+                world_mse_value = world_mse.cpu().item()
+                losses[f"{prefix}_world_loss"] += world_mse_value
+
+                # black out robot with true mask before computing psnr, ssim
+                x_pred_black = self._zero_robot_region(true_mask[i], x_pred)
+                x_i_black = self._zero_robot_region(true_mask[i], x_i)
+
+                all_x_pred_black.append(x_pred_black)
+                all_x_i_black.append(x_i_black)
+
+                p = psnr(x_i_black.clamp(0, 1), x_pred_black.clamp(0, 1)).mean().item()
+                s = ssim(x_i_black, x_pred_black).mean().item()
+                losses[f"{prefix}_psnr"] += p
+                losses[f"{prefix}_ssim"] += s
+
+                # k-step rollouts.
+                if autoregressive:
+                    for k in range(i, cf.n_eval - 1):
+                        k_losses[f"{k}_step_psnr"] += p
+                        k_losses[f"{k}_step_ssim"] += s
+                        k_losses[f"{k}_step_world_loss"] += world_mse_value
+
+                # robot specific metrics
+                for r in all_robots:
+                    if len(all_robots) == 1:
+                        break
+                    r_idx = r == robot_name
+                    r_pred = x_pred[r_idx]
+                    r_img = x[i][r_idx]
+                    r_mask = true_mask[i][r_idx]
+                    r_robot_mse = robot_mse_criterion(r_pred, r_img, r_mask)
+                    r_world_mse = world_mse_criterion(r_pred, r_img, r_mask)
+                    losses[f"{prefix}_{r}_robot_loss"] += r_robot_mse.cpu().item()
+                    losses[f"{prefix}_{r}_world_loss"] += r_world_mse.cpu().item()
+
+            if cf.model == "svg":
+                kl = kl_criterion(mu, logvar, mu_p, logvar_p, bs)
+                losses[f"{prefix}_kld"] += kl.cpu().item()
+
+        for k, v in losses.items():
+            losses[k] = v / (cf.n_eval - 1)  # don't count the first step
+
+        temp_k_losses = {}
+        for k, v in k_losses.items():
+            num_steps = float(k[0])
+            temp_k_losses[k] = v / num_steps
+        losses.update(temp_k_losses)
+        # make this B x T x C x H x W
+        all_x_pred_black = torch.stack(all_x_pred_black).transpose(0, 1)
+        all_x_i_black = torch.stack(all_x_i_black).transpose(0, 1)
+
+        losses["gen_imgs"] = (
+            (255 * all_x_pred_black)
+            .permute(0, 1, 3, 4, 2)
+            .cpu()
+            .numpy()
+            .astype(np.uint8)
+        )
+        losses["true_imgs"] = (
+            (255 * all_x_i_black).permute(0, 1, 3, 4, 2).cpu().numpy().astype(np.uint8)
+        )
+        return losses
 
 
 def make_log_folder(config):
@@ -637,6 +1393,7 @@ def make_log_folder(config):
 
 
 if __name__ == "__main__":
+    # import torch.multiprocessing as mp
     from src.config import argparser
 
     config, _ = argparser()

@@ -18,13 +18,13 @@ from src.utils.gaussian import gaus2d
 from src.utils.camera_calibration import world_to_camera_dict, cam_intrinsics_dict
 import ipdb
 
-class RobotDataset(data.Dataset):
+class RoboNetDataset(data.Dataset):
     def __init__(
         self, hdf5_list, robot_list, config, augment_img=False, load_snippet=False
     ):
         """
         hdf5_list: list of hdf5 files to load
-        robot_list: list of robot type for each hdf5 file
+        robot_list: list of robot_viewpoint names
         split: load a random snippet, or the entire video depending on split.
         """
         self._traj_names = hdf5_list
@@ -67,16 +67,28 @@ class RobotDataset(data.Dataset):
 
     def __getitem__(self, idx):
         """
-        Opens the hdf5 file and extracts the videos, actions, states, and masks
+        Opens the hdf5 file and extracts the videos, actions, states, and masks.
+
+        For robonet data,
         """
         if idx in self._memory:
             return self._memory[idx]
 
         robonet_root = self._data_root
         name = self._traj_names[idx]
+        robot_viewpoint = self._traj_robots[idx]
         hdf5_path = os.path.join(robonet_root, name)
         with h5py.File(hdf5_path, "r") as hf:
-            ep_len = hf["frames"].shape[0]
+            assert "frames" in hf or "observations" in hf
+            IMAGE_KEY = "frames"
+            if "observations" in hf:
+                IMAGE_KEY = "observations"
+
+            MASK_KEY = "mask"
+            if "masks" in hf:
+                MASK_KEY = "masks"
+
+            ep_len = hf[IMAGE_KEY].shape[0]
             assert ep_len >= self._video_length, f"{ep_len}, {hdf5_path}"
             start = 0
             end = ep_len
@@ -85,17 +97,29 @@ class RobotDataset(data.Dataset):
                 start = self._rng.randint(0, offset + 1)
                 end = start + self._video_length
 
-            images = hf["frames"][start:end]
+            images = hf[IMAGE_KEY][start:end]
             states = hf["states"][start:end].astype(np.float32)
-            # actions = hf["actions"][start:end - 1].astype(np.float32)
-            low = hf["low_bound"][:]
-            high = hf["high_bound"][:]
+            if states.shape[-1] != self._config.robot_dim:
+                assert self._config.robot_dim >  states.shape[-1]
+                pad = self._config.robot_dim - states.shape[-1]
+                states = np.pad(states, [(0,0), (0, pad)])
+
+            if "locobot" in robot_viewpoint:
+                low =  np.array([0.015, -0.3, 0.1, 0, 0])
+                high =  np.array([0.55, 0.3, 0.4, 1, 1])
+            else:
+                low = hf["low_bound"][:]
+                high = hf["high_bound"][:]
             actions = self._load_actions(hf, low, high, start, end - 1)
             if self._config.preprocess_action != "raw":
                 raw_actions = actions.copy()
-            masks = hf["mask"][start:end].astype(np.float32)
+            masks = hf[MASK_KEY][start:end].astype(np.float32)
             qpos = hf["qpos"][start:end].astype(np.float32)
-            # qpos = np.zeros((31, 7))
+            if qpos.shape[-1] != self._config.robot_joint_dim:
+                assert self._config.robot_joint_dim > qpos.shape[-1]
+                pad = self._config.robot_joint_dim - qpos.shape[-1]
+                qpos = np.pad(qpos, [(0,0), (0, pad)])
+
 
             assert (
                 len(images) == len(states) == len(actions) + 1 == len(masks)
@@ -104,8 +128,13 @@ class RobotDataset(data.Dataset):
             # preprocessing
             images, masks = self._preprocess_images_masks(images, masks)
             actions = self._preprocess_actions(states, actions, low, high, idx)
+            if "locobot" in robot_viewpoint:
+                # normalize the locobot xyz to the 0-1 bounds
+                # rotation, gripper are always zero so it doesn't matter
+                states = normalize(states, low, high)
+                robot = "locobot"
             states = self._preprocess_states(states, low, high)
-            robot = hf.attrs["robot"]
+            robot = "locobot" if "locobot" in robot_viewpoint else hf.attrs["robot"]
             folder = os.path.basename(os.path.dirname(name))
             if self._config.model_use_heatmap:
                 heatmaps = create_heatmaps(states, low, high, robot, folder)
@@ -122,15 +151,13 @@ class RobotDataset(data.Dataset):
         }
         if self._config.model_use_heatmap:
             out["heatmaps"] = heatmaps
-            if "finetune" in self._config.training_regime:
+            if "finetune" in self._config.experiment:
                 # needed to compute the future heatmaps
                 out["low"] = low
                 out["high"] = high
         if self._config.preprocess_action != "raw":
             out["raw_actions"] = raw_actions
         return out
-
-
 
     def _load_actions(self, file_pointer, low, high, start, end):
         actions = file_pointer["actions"][:].astype(np.float32)
@@ -206,6 +233,7 @@ class RobotDataset(data.Dataset):
         yaw is in radians across all robots, so it is consistent.
         """
         states = torch.from_numpy(states)
+
         force_min, force_max = low[4], high[4]
         states[:, 4] = (states[:, 4] - force_min) / (force_max - force_min)
         return states
@@ -272,31 +300,20 @@ class RobotDataset(data.Dataset):
         # if actions are in camera frame...
         filename = self._traj_names[idx]
         robot_type = self._traj_robots[idx]
-        if self._config.training_regime == "multirobot":
+        if self._config.experiment == "train_robonet":
             # convert everything to camera coordinates.
             filename = self._traj_names[idx]
             robot_type = self._traj_robots[idx]
-            if robot_type == "sawyer":
-                # TODO: account for camera config and index
-                world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
-            elif robot_type == "widowx":
-                world2cam = world_to_camera_dict["widowx1"]
-            elif robot_type == "baxter":
-                arm = "left" if "left" in filename else "right"
-                world2cam = world_to_camera_dict[f"baxter_{arm}"]
-
-        elif self._config.training_regime == "singlerobot":
-            # train on sawyer, convert actions to camera space
-            world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
-        elif self._config.training_regime == "train_sawyer_multiview":
-            world2cam = world_to_camera_dict["sawyer_" + robot_type]
-        elif self._config.training_regime == "finetune":
+            world2cam = world_to_camera_dict[robot_type]
+        elif self._config.experiment == "train_sawyer_multiview":
+            world2cam = world_to_camera_dict[robot_type]
+        elif self._config.experiment == "finetune":
             # finetune on baxter, convert to camera frame
             # Assumes the baxter arm is right arm!
             arm = "left" if "left" in filename else "right"
             world2cam = world_to_camera_dict[f"baxter_{arm}"]
-        elif self._config.training_regime == "finetune_sawyer_view":
-            world2cam = world_to_camera_dict["sawyer_" + robot_type]
+        elif self._config.experiment == "finetune_sawyer_view":
+            world2cam = world_to_camera_dict[robot_type]
         else:
             raise ValueError
         states = states.copy()
@@ -377,29 +394,35 @@ def create_heatmaps(states, low, high, robot, viewpoint):
     if robot =="sawyer":
         eef_pos[:, 2] -= 0.15
         wTc = world_to_camera_dict[f"sawyer_{viewpoint}"]
+        cam_intrinsics = cam_intrinsics_dict["logitech_c420"]
+        odim = (320, 240)
     elif robot == "baxter":
         #TODO: account for baxter arm, and viewpoint
-        wTc = world_to_camera_dict[f"baxter_left"]
+        wTc = world_to_camera_dict[f"baxter_{viewpoint}"]
+        cam_intrinsics = cam_intrinsics_dict["logitech_c420"]
+        odim = (320, 240)
     elif robot == "widowx":
         # since widowx is mounted upside down, we add positive z
         eef_pos[:, 2] += 0.05
-        wTc = world_to_camera_dict[f"widowx1"]
+        wTc = world_to_camera_dict[f"widowx_{viewpoint}"]
+        cam_intrinsics = cam_intrinsics_dict["logitech_c420"]
+        odim = (320, 240)
+    elif robot == "locobot":
+        wTc = world_to_camera_dict[f"locobot_c0"]
+        cam_intrinsics = cam_intrinsics_dict["intel_realsense_d435"]
+        odim = (640, 480)
     else:
         raise ValueError
 
     eef_pos = np.concatenate([eef_pos, np.ones((eef_pos.shape[0], 1))], 1).T
-    # assumes image was captured from robonet, logitech 420 camera intrinsics
-    cam_intrinsics = cam_intrinsics_dict["logitech_c420"]
-    tdim = (64, 48) # horizontal, vertical dim
-    # assumes image is (240, 320)
-    odim = (320, 240)
+    w, h = tdim = (64, 48) # horizontal, vertical dim
     all_pix_2d = get_2d_eef_pos(eef_pos, cam_intrinsics, wTc, tdim, odim)
     # only get 2d coordinates within image dims
-    valid_timesteps = ((0 <= all_pix_2d[0]) & (all_pix_2d[0] < 64))& ((0 <= all_pix_2d[1]) & (all_pix_2d[1]< 48))
+    valid_timesteps = ((0 <= all_pix_2d[0]) & (all_pix_2d[0] < w))& ((0 <= all_pix_2d[1]) & (all_pix_2d[1]< h))
 
     # define normalized 2D gaussian
-    x = np.arange(0, 64)
-    y = np.arange(0, 48)
+    x = np.arange(0, w)
+    y = np.arange(0, h)
     x, y = np.meshgrid(x, y) # get 2D variables instead of 1D
     heatmaps = []
     for i in range(all_pix_2d.shape[1]):
@@ -407,7 +430,7 @@ def create_heatmaps(states, low, high, robot, viewpoint):
             z = gaus2d(x, y, mx=all_pix_2d[0, i], my=all_pix_2d[1, i], sx=5, sy=5,height=100)
             z = np.clip(z, 0, 1)
         else:
-            z = np.zeros((48, 64))
+            z = np.zeros((h, w))
         heatmaps.append(z)
     heatmaps = np.asarray(heatmaps)
     heatmaps = np.expand_dims(heatmaps, 1).astype(np.float32)
@@ -416,7 +439,6 @@ def create_heatmaps(states, low, high, robot, viewpoint):
 if __name__ == "__main__":
     from src.utils.plot import save_gif
     from src.config import argparser
-    from src.utils.camera_calibration import camera_to_world_dict
 
     config, _ = argparser()
     config.data_root = "/scratch/edward/Robonet"
@@ -429,19 +451,19 @@ if __name__ == "__main__":
     config.model_use_heatmap = True
 
     # from src.dataset.sawyer_multiview_dataloaders import create_loaders
-    from src.dataset.finetune_multirobot_dataloaders import create_transfer_loader
+    # from src.dataset.finetune_multirobot_dataloaders import create_transfer_loader
     # from src.dataset.finetune_widowx_dataloaders import create_transfer_loader
-    loader = create_transfer_loader(config)
+    # loader = create_transfer_loader(config)
 
-    for data in loader:
-        images = data["images"]
-        # states = data["states"]
-        heatmaps = data["heatmaps"].repeat(1,1,3,1,1)
-        heat_images = (images * heatmaps).transpose(0,1).unsqueeze(2)
-        original_images = images.transpose(0,1).unsqueeze(2)
-        gif = torch.cat([original_images, heat_images], 2)
-        save_gif("batch.gif", gif)
-        break
-        # apply heatmap to images
-        # eef_images = ((255 * heatmaps[0] * images[0]).permute(0,2,3,1).numpy().astype(np.uint8))
-        # imageio.mimwrite("eef.gif", eef_images)
+    # for data in loader:
+    #     images = data["images"]
+    #     # states = data["states"]
+    #     heatmaps = data["heatmaps"].repeat(1,1,3,1,1)
+    #     heat_images = (images * heatmaps).transpose(0,1).unsqueeze(2)
+    #     original_images = images.transpose(0,1).unsqueeze(2)
+    #     gif = torch.cat([original_images, heat_images], 2)
+    #     save_gif("batch.gif", gif)
+    #     break
+    #     # apply heatmap to images
+    #     # eef_images = ((255 * heatmaps[0] * images[0]).permute(0,2,3,1).numpy().astype(np.uint8))
+    #     # imageio.mimwrite("eef.gif", eef_images)

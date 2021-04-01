@@ -1,15 +1,9 @@
 import os
 import random
 
-import ipdb
-import numpy as np
 import torch
-import torchvision.transforms as tf
-from sklearn.model_selection import train_test_split
-from src.dataset.multirobot_dataset import RobotDataset
+from src.dataset.robonet.robonet_dataset import RoboNetDataset
 from torch.utils.data import DataLoader
-from torch.utils.data.dataset import random_split
-from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision.datasets.folder import has_file_allowed_extension
 import pickle
 
@@ -44,8 +38,8 @@ def create_finetune_loaders(config):
     print("loaded finetuning data", len(X_train) + len(X_test))
 
     augment_img = config.img_augmentation
-    train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img)
-    test_data = RobotDataset(X_test, y_test, config)
+    train_data = RoboNetDataset(X_train, y_train, config, augment_img=augment_img)
+    test_data = RoboNetDataset(X_test, y_test, config)
 
     train_loader = DataLoader(
         train_data,
@@ -66,17 +60,7 @@ def create_finetune_loaders(config):
         generator=torch.Generator().manual_seed(config.seed),
     )
 
-    # create a small deterministic dataloader for comparison across runs
-    # because train / test loaders have multiple workers, RNG is tricky.
-    num_gifs = min(config.batch_size, 10)
-    comp_files = [f for f in X_test[:num_gifs]]
-    comp_file_labels = ["widowx"] * len(comp_files)
-    # set to train so we get random snippet from videos
-    comp_data = RobotDataset(comp_files, comp_file_labels, config, load_snippet=True)
-    comp_loader = DataLoader(
-        comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
-    )
-    return train_loader, test_loader, comp_loader
+    return train_loader, test_loader
 
 
 def create_transfer_loader(config):
@@ -104,7 +88,7 @@ def create_transfer_loader(config):
     print("loaded transfer data", len(X_test))
 
     augment_img = config.img_augmentation
-    transfer_data = RobotDataset(X_test, y_test, config, augment_img=augment_img)
+    transfer_data = RoboNetDataset(X_test, y_test, config, augment_img=augment_img)
 
     transfer_loader = DataLoader(
         transfer_data,
