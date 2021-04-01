@@ -494,10 +494,10 @@ class RobotPredictionTrainer(object):
             elif cf.training_regime == "finetune":
                 env = BaxterMaskEnv()
                 env.arm = "left"
-                cam_ext = camera_to_world_dict[f"baxter_left"]
+                cam_ext = camera_to_world_dict[f"baxter_{v}"]
             elif cf.training_regime == "finetune_widowx":
                 env = WidowXMaskEnv()
-                cam_ext = camera_to_world_dict["widowx1"]
+                cam_ext = camera_to_world_dict[f"widowx_{v}"]
 
             env.set_opencv_camera_pose("main_cam", cam_ext)
             self.renderers[v] = env

@@ -32,7 +32,7 @@ def create_finetune_loaders(config):
             high_error = any([x["high_error"] for x in motion_info[d.path]])
             if high_error:
                 files.append(d.path)
-                file_labels.append(SAWYER_TEST_DIRS[0])
+                file_labels.append("sawyer_" + SAWYER_TEST_DIRS[0])
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
@@ -72,15 +72,15 @@ def create_finetune_loaders(config):
 
     # create a small deterministic dataloader for comparison across runs
     # because train / test loaders have multiple workers, RNG is tricky.
-    num_gifs = min(config.batch_size, 10)
-    comp_files = X_test[:num_gifs]
-    comp_file_labels = y_test[:num_gifs]
-    # set to train so we get random snippet from videos
-    comp_data = RobotDataset(comp_files, comp_file_labels, config, load_snippet=True)
-    comp_loader = DataLoader(
-        comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
-    )
-    return train_loader, test_loader, comp_loader
+    # num_gifs = min(config.batch_size, 10)
+    # comp_files = X_test[:num_gifs]
+    # comp_file_labels = y_test[:num_gifs]
+    # # set to train so we get random snippet from videos
+    # comp_data = RobotDataset(comp_files, comp_file_labels, config, load_snippet=True)
+    # comp_loader = DataLoader(
+    #     comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
+    # )
+    return train_loader, test_loader
 
 
 def create_transfer_loader(config):
@@ -99,7 +99,7 @@ def create_transfer_loader(config):
             high_error = any([x["high_error"] for x in motion_info[d.path]])
             if high_error:
                 files.append(d.path)
-                file_labels.append(SAWYER_TEST_DIRS[0])
+                file_labels.append("sawyer_" + SAWYER_TEST_DIRS[0])
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
@@ -146,7 +146,7 @@ def create_loaders(config):
             for d in os.scandir(folder.path):
                 if d.is_file() and has_file_allowed_extension(d.path, file_type):
                     files.append(d.path)
-                    file_labels.append(folder.name)
+                    file_labels.append("sawyer_" + folder.name)
 
     file_and_labels = zip(files, file_labels)
     file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
@@ -189,14 +189,14 @@ def create_loaders(config):
 
     # create a small deterministic dataloader for comparison across runs
     # because train / test loaders have multiple workers, RNG is tricky.
-    num_gifs = min(config.batch_size, 10)
-    comp_files = X_test[:num_gifs]
-    comp_file_labels = y_test[:num_gifs]
-    comp_data = RobotDataset(comp_files, comp_file_labels, config)
-    comp_loader = DataLoader(
-        comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
-    )
-    return train_loader, test_loader, comp_loader
+    # num_gifs = min(config.batch_size, 10)
+    # comp_files = X_test[:num_gifs]
+    # comp_file_labels = y_test[:num_gifs]
+    # comp_data = RobotDataset(comp_files, comp_file_labels, config)
+    # comp_loader = DataLoader(
+    #     comp_data, num_workers=0, batch_size=num_gifs, shuffle=False
+    # )
+    return train_loader, test_loader
 
 
 # def create_loaders(config):

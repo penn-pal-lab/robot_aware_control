@@ -4,7 +4,7 @@ import numpy as np
 # most notably, the translation and rotation parts of this matrix correspond
 # to the camera's position and rotation in the world space.
 camera_to_world_dict = {
-    "baxter_left": np.array(
+    "baxter_left_c0": np.array(
         [
             [0.05010049, 0.5098481, -0.85880432, 1.70268951],
             [0.99850135, -0.00660876, 0.05432662, 0.26953027],
@@ -12,7 +12,7 @@ camera_to_world_dict = {
             [0.0, 0.0, 0.0, 1.0],
         ]
     ),
-    "baxter_right": np.array(
+    "baxter_right_c0": np.array(
         [
             [0.59474902, -0.48560866, 0.64066983, 0.00593267],
             [-0.80250365, -0.40577623, 0.4374169, -0.84046503],
@@ -92,7 +92,7 @@ camera_to_world_dict = {
             [0.0, 0.0, 0.0, 1.0],
         ]
     ),
-    "widowx1": np.array(
+    "widowx_widowx1_c0": np.array(
         [
             [-0.17251765, 0.5984481, -0.78236663, 0.37869496],
             [-0.98499368, -0.10885336, 0.13393427, -0.04712975],
