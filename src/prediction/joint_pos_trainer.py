@@ -70,12 +70,12 @@ class RobotPredictionTrainer(object):
             [tf.ToTensor(), tf.CenterCrop(config.image_width)]
         )
 
-        if config.training_regime == "singlerobot":
-            self._robot_sim = SawyerMaskEnv()
-        elif config.training_regime == "finetune":
+        if config.experiment == "finetune":
             self._robot_sim = BaxterMaskEnv()
-        elif config.training_regime == "finetune_widowx":
+        elif config.experiment == "finetune_widowx":
             self._robot_sim = WidowXMaskEnv()
+        else:
+            raise ValueError(config.experiment)
 
     def _init_models(self, cf):
         """Initialize models and optimizers
@@ -424,7 +424,7 @@ class RobotPredictionTrainer(object):
             ckpt = torch.load(ckpt_path, map_location=self._device)
             self.joint_model.load_state_dict(ckpt["joint_model"])
             self.gripper_model.load_state_dict(ckpt["gripper_model"])
-            if self._config.training_regime in ["finetune", "finetune_sawyer_view", "finetune_widowx"]:
+            if self._config.experiment in ["finetune", "finetune_sawyer_view", "finetune_widowx"]:
                 step = 0
             else:
                 step = ckpt["step"]
@@ -435,14 +435,12 @@ class RobotPredictionTrainer(object):
         """
         Setup the dataset and dataloaders
         """
-        if self._config.training_regime == "singlerobot":
-            from src.dataset.sawyer_joint_pos_dataloaders import create_joint_pos_loaders as create_loaders
-        elif self._config.training_regime == "finetune":
-            from src.dataset.baxter_joint_pos_dataloaders import create_finetune_loaders as create_loaders
-        elif  self._config.training_regime == "finetune_widowx":
-            from src.dataset.widowx_joint_pos_dataloaders import create_loaders
+        if self._config.experiment == "finetune_baxter":
+            from src.dataset.baxter.baxter_joint_pos_dataloaders import create_finetune_loaders as create_loaders
+        elif  self._config.experiment == "finetune_widowx":
+            from src.dataset.widowx.widowx_joint_pos_dataloaders import create_loaders
         else:
-            raise NotImplementedError(self._config.training_regime)
+            raise NotImplementedError(self._config.experiment)
         self.train_loader, self.test_loader = create_loaders(self._config)
         # for infinite batching
         self.training_batch_generator = get_batch(self.train_loader, self._device)
@@ -453,16 +451,15 @@ class RobotPredictionTrainer(object):
         Compute forward kinematics to get the gripper position. Used for error metrics.
         """
 
-        if self._config.training_regime == "finetune": # baxter
+        if self._config.experiment == "finetune": # baxter
             joint_references = [self._robot_sim.sim.model.get_joint_qpos_addr(f"left_{x}") for x in self._robot_sim._joints]
             self._robot_sim.sim.data.qpos[joint_references] = qpos
             self._robot_sim.sim.forward()
             return self._robot_sim.sim.data.get_body_xpos("left_gripper").copy()
-        elif config.training_regime == "singlerobot": # sawyer
-            self._robot_sim.sim.data.qpos[self._robot_sim._joint_references] = qpos
-            self._robot_sim.sim.forward()
-            return self._robot_sim.sim.data.get_body_xpos("right_hand").copy()
-        elif config.training_regime == "finetune_widowx": # sawyer
+        # elif config.experiment == "": # sawyer
+        #     self._robot_sim.sim.data.qpos[self._robot_sim._joint_references] = qpos
+        #     self._robot_sim.sim.forward()
+        #     return self._robot_sim.sim.data.get_body_xpos("right_hand").copy()
             self._robot_sim.sim.data.qpos[self._robot_sim._joint_references] = qpos
             self._robot_sim.sim.forward()
             return self._robot_sim.sim.data.get_body_xpos("wrist_2_link").copy()
@@ -488,14 +485,14 @@ class RobotPredictionTrainer(object):
         for v in viewpoints:
             if v in self.renderers:
                 continue
-            if cf.training_regime == "singlerobot":
-                env = SawyerMaskEnv()
-                cam_ext = camera_to_world_dict[f"sawyer_{v}"]
-            elif cf.training_regime == "finetune":
+            # if cf.experiment == "":
+            #     env = SawyerMaskEnv()
+            #     cam_ext = camera_to_world_dict[f"sawyer_{v}"]
+            if cf.experiment == "finetune_baxter":
                 env = BaxterMaskEnv()
                 env.arm = "left"
                 cam_ext = camera_to_world_dict[f"baxter_{v}"]
-            elif cf.training_regime == "finetune_widowx":
+            elif cf.experiment == "finetune_widowx":
                 env = WidowXMaskEnv()
                 cam_ext = camera_to_world_dict[f"widowx_{v}"]
 

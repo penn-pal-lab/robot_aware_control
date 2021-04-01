@@ -18,7 +18,7 @@ from src.utils.gaussian import gaus2d
 from src.utils.camera_calibration import world_to_camera_dict, cam_intrinsics_dict
 import ipdb
 
-class RobotDataset(data.Dataset):
+class RoboNetDataset(data.Dataset):
     def __init__(
         self, hdf5_list, robot_list, config, augment_img=False, load_snippet=False
     ):
@@ -126,7 +126,7 @@ class RobotDataset(data.Dataset):
         }
         if self._config.model_use_heatmap:
             out["heatmaps"] = heatmaps
-            if "finetune" in self._config.training_regime:
+            if "finetune" in self._config.experiment:
                 # needed to compute the future heatmaps
                 out["low"] = low
                 out["high"] = high
@@ -276,22 +276,19 @@ class RobotDataset(data.Dataset):
         # if actions are in camera frame...
         filename = self._traj_names[idx]
         robot_type = self._traj_robots[idx]
-        if self._config.training_regime == "multirobot":
+        if self._config.experiment == "train_robonet":
             # convert everything to camera coordinates.
             filename = self._traj_names[idx]
             robot_type = self._traj_robots[idx]
             world2cam = world_to_camera_dict[robot_type]
-        elif self._config.training_regime == "singlerobot":
-            # train on sawyer, convert actions to camera space
-            world2cam = world_to_camera_dict["sawyer_sudri0_c0"]
-        elif self._config.training_regime == "train_sawyer_multiview":
+        elif self._config.experiment == "train_sawyer_multiview":
             world2cam = world_to_camera_dict[robot_type]
-        elif self._config.training_regime == "finetune":
+        elif self._config.experiment == "finetune":
             # finetune on baxter, convert to camera frame
             # Assumes the baxter arm is right arm!
             arm = "left" if "left" in filename else "right"
             world2cam = world_to_camera_dict[f"baxter_{arm}"]
-        elif self._config.training_regime == "finetune_sawyer_view":
+        elif self._config.experiment == "finetune_sawyer_view":
             world2cam = world_to_camera_dict[robot_type]
         else:
             raise ValueError

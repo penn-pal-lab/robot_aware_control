@@ -3,10 +3,10 @@ import ipdb
 import h5py
 import os
 
-from src.dataset.multirobot_dataset import RobotDataset
+from src.dataset.robonet.robonet_dataset import RoboNetDataset
 
 
-class LocobotDataset(RobotDataset):
+class LocobotDataset(RoboNetDataset):
     def __init__(
         self, hdf5_list, robot_list, config, augment_img=False, load_snippet=False
     ):

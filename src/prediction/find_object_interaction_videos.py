@@ -34,7 +34,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 
-class RobotDataset(data.Dataset):
+class RoboNetDataset(data.Dataset):
     def __init__(
         self, hdf5_list, robot_list, config, augment_img=False, load_snippet=False
     ) -> None:
@@ -264,7 +264,7 @@ class RobotDataset(data.Dataset):
         # if actions are in camera frame...
         filename = self._traj_names[idx]
         robot_type = self._traj_robots[idx]
-        if self._config.training_regime == "multirobot":
+        if self._config.experiment == "train_robonet":
             # convert everything to camera coordinates.
             filename = self._traj_names[idx]
             robot_type = self._traj_robots[idx]
@@ -277,11 +277,7 @@ class RobotDataset(data.Dataset):
                 arm = "left" if "left" in filename else "right"
                 cam2world = camera_to_world_dict[f"baxter_{arm}"]
 
-        elif self._config.training_regime == "singlerobot":
-            # train on sawyer, convert actions to camera space
-            # TODO: account for camera config and index
-            cam2world = camera_to_world_dict["sawyer_sudri0_c0"]
-        elif self._config.training_regime == "finetune":
+        elif self._config.experiment == "finetune":
             # finetune on baxter, convert to camera frame
             # Assumes the baxter arm is right arm!
             arm = "left" if "left" in filename else "right"
@@ -347,7 +343,7 @@ def visualize_files():
     # iterate through videos
     # compute error for each video
     # if error > threshold, save the video
-    dataset = RobotDataset(files, file_labels, config)
+    dataset = RoboNetDataset(files, file_labels, config)
     train_loader = DataLoader(
         dataset,
         num_workers=config.data_threads,
@@ -449,7 +445,7 @@ if __name__ == "__main__":
     # iterate through videos
     # compute error for each video
     # if error > threshold, save the video
-    dataset = RobotDataset(files, file_labels, config)
+    dataset = RoboNetDataset(files, file_labels, config)
     train_loader = DataLoader(
         dataset,
         num_workers=config.data_threads,

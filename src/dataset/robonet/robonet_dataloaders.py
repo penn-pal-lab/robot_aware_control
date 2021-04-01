@@ -5,7 +5,7 @@ import ipdb
 import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
-from src.dataset.multirobot_dataset import RobotDataset
+from src.dataset.robonet.robonet_dataset import RoboNetDataset
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision.datasets.folder import has_file_allowed_extension
@@ -57,8 +57,8 @@ def create_loaders(config):
         random_state=split_rng,
     )
     augment_img = config.img_augmentation
-    train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img)
-    test_data = RobotDataset(X_test, y_test, config)
+    train_data = RoboNetDataset(X_train, y_train, config, augment_img=augment_img)
+    test_data = RoboNetDataset(X_test, y_test, config)
     train_loader = DataLoader(
         train_data,
         num_workers=config.data_threads,
@@ -88,8 +88,8 @@ def create_loaders(config):
     #     random_state=split_rng,
     # )
     # augment_img = config.img_augmentation
-    # train_data = RobotDataset(X_train, y_train, config, augment_img=augment_img)
-    # test_data = RobotDataset(X_test, y_test, config)
+    # train_data = RoboNetDataset(X_train, y_train, config, augment_img=augment_img)
+    # test_data = RoboNetDataset(X_test, y_test, config)
     # # stratified sampler
     # robots, counts = np.unique(file_labels, return_counts=True)
     # class_weight = {}
