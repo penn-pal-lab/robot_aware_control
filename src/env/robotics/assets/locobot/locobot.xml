@@ -20,6 +20,9 @@
         <camera fovy="43.3" name="main_cam" pos="0.81822263 -0.05511966  0.45810006" quat="-0.3351224   0.6429879   0.61176364 -0.31623533" ></camera>
         <site rgba="1 0 0 1" name="main_cam_site" pos="0.81822263 -0.05511966  0.45810006" quat="-0.3351224   0.6429879   0.61176364 -0.31623533" type="box" size="0.02 0.05 0.1"></site>
         <site rgba="1 0 0 1" name="origin_site" pos="0 0 0" quat="1 0 0 0" size="0.02"></site>
+        <!-- <body name="eef_body">
+            <site rgba="1 1 0 1" pos="0 0 0" size="0.01"  name="eef_pos"></site>
+        </body> -->
 
         <geom size="0.178 0.05469" pos="0 0 0.06969" type="cylinder" />
         <geom size="0.017 0.0088" pos="0.115 0 0.0172" quat="0.707107 -0.707107 0 0" type="cylinder" />
@@ -55,8 +58,9 @@
                         <joint name="joint_4" pos="0 0 0" axis="0 1 0" limited="true" range="-1.57 1.57" />
                         <geom name="wrist_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="wrist_link" />
                         <geom conaffinity="0" contype="0" pos="0.02 0 0" size="0.02 0.02 0.005" type="box" name="wrist_hole_geom" rgba="1 0 0 1"/>
-                        
+
                         <body name="gripper_link" pos="0.063 0.0001 0">
+                            <site rgba="1 0 0 1" pos="0 0 0" size="0.01"  name="gripper_link_site"></site>
                             <inertial pos="0.0303034 -1.00406e-05 0.0150805" quat="0.359874 0.610879 0.606151 0.360414" mass="0.0998368" diaginertia="6.24793e-05 6.16818e-05 4.76112e-05" />
                             <joint name="joint_5" pos="0 0 0" axis="-1 0 0" limited="true" range="-1.57 1.57" />
                             <geom name="gripper_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="gripper_link" />

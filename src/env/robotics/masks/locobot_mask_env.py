@@ -25,9 +25,10 @@ class LocobotMaskEnv(MaskEnv):
         self._img_height = 480
         self._camera_name = "main_cam"
         self._joints = [f"joint_{i}" for i in range(1, 6)]
-        self._joints.append("gripper_revolute_joint")
+        # self._joints.append("gripper_revolute_joint")
+        self._joint_references = [self.sim.model.get_joint_qpos_addr(x) for x in self._joints]
 
-    def compare_traj(self, traj_name, qpos_data, real_imgs):
+    def compare_traj(self, traj_name, qpos_data, eef_data, real_imgs):
         joint_references = [self.sim.model.get_joint_qpos_addr(x) for x in self._joints]
         # run qpos trajectory
         gif = []
@@ -36,6 +37,10 @@ class LocobotMaskEnv(MaskEnv):
             self.sim.forward()
             # self.render("human")
             # img = self.render("rgb_array")
+            # eef_pos = eef_data[i][:3]
+            # eef_site = self.sim.model.body_name2id("eef_body")
+            # self.sim.model.body_pos[eef_site] = eef_pos
+            # self.sim.forward()
             mask = self.get_robot_mask()
             real_img = real_imgs[i]
             mask_img = real_img.copy()
@@ -76,6 +81,10 @@ class LocobotMaskEnv(MaskEnv):
                 mask[ids == i] = True
         return mask
 
+    def get_gripper_pos(self, qpos):
+        self.sim.data.qpos[self._joint_references] = qpos
+        self.sim.forward()
+        return self.sim.data.get_body_xpos("gripper_link").copy()
 
 def load_data(filename):
     with h5py.File(filename, "r") as f:

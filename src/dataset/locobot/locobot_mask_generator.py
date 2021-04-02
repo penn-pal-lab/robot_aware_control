@@ -23,7 +23,7 @@ if __name__ == "__main__":
     """
 
     # data_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12/"
-    data_path = "/scratch/edward/Robonet/locobot_views/c0"
+    data_path = "/home/ed/Downloads/locobot_subset/"
 
     detector = Detector(families='tag36h11',
                         nthreads=1,
@@ -67,6 +67,20 @@ if __name__ == "__main__":
             env._joint_references = [
                 env.sim.model.get_joint_qpos_addr(x) for x in env._joints
             ]
+            # Use mujoco to get eef states
+            for i, qpos in enumerate(qposes):
+                pos = env.get_gripper_pos(qpos)
+                eef_states[i] = pos
+            # then do K step rollout and see how it is.
+            # K = 31
+            # predicted_Kstep_qpos = [qposes[0]]
+            # qpos_next = qposes[0]
+            # eef_next = eef_states[0]
+            # for t in range(K - 1):
+            #     qpos_next = predict_next_qpos(eef_next, qpos_next, actions[t, :2])
+            #     eef_next = env.get_gripper_pos(qpos_next)
+            #     predicted_Kstep_qpos.append(qpos_next)
+            # predicted_Kstep_qpos = np.stack(predicted_Kstep_qpos)
 
             """
             camera params:
@@ -137,14 +151,16 @@ if __name__ == "__main__":
                 mask = env.get_robot_mask()
                 masks.append(mask)
 
-            masks = np.stack(masks)
-            # imageio.mimwrite(f"{data_path}masks.gif", masks.astype(np.float32))
-            # env.compare_traj(data_path + "mask_overlap", predicted_Kstep_qpos, imgs[K:])
+            # masks = np.stack(masks)
+            # # imageio.mimwrite(f"{data_path}masks.gif", masks.astype(np.float32))
+            # env.compare_traj(filename, qposes, eef_states, imgs)
 
             with h5py.File(os.path.join(data_path, filename), "a") as f:
-                if overwrite:
-                    del f['masks']
-                f.create_dataset('masks', data=masks)
+                # if overwrite:
+                #     del f['masks']
+                # f.create_dataset('masks', data=masks)
+                # use mujoco state instead of recorded state
+                f["states"][...] = eef_states
 
             n_files += 1
             if n_files > total_files:

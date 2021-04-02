@@ -110,6 +110,11 @@ class RoboNetDataset(data.Dataset):
             else:
                 low = hf["low_bound"][:]
                 high = hf["high_bound"][:]
+            if "locobot" in robot_viewpoint:
+                # normalize the locobot xyz to the 0-1 bounds
+                # rotation, gripper are always zero so it doesn't matter
+                states = normalize(states, low, high)
+                robot = "locobot"
             actions = self._load_actions(hf, low, high, start, end - 1)
             if self._config.preprocess_action != "raw":
                 raw_actions = actions.copy()
@@ -128,11 +133,6 @@ class RoboNetDataset(data.Dataset):
             # preprocessing
             images, masks = self._preprocess_images_masks(images, masks)
             actions = self._preprocess_actions(states, actions, low, high, idx)
-            if "locobot" in robot_viewpoint:
-                # normalize the locobot xyz to the 0-1 bounds
-                # rotation, gripper are always zero so it doesn't matter
-                states = normalize(states, low, high)
-                robot = "locobot"
             states = self._preprocess_states(states, low, high)
             robot = "locobot" if "locobot" in robot_viewpoint else hf.attrs["robot"]
             folder = os.path.basename(os.path.dirname(name))
