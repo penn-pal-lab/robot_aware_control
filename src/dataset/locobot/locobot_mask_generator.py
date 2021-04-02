@@ -7,10 +7,11 @@ import matplotlib.pyplot as plt
 from scipy.spatial.transform.rotation import Rotation
 from pupil_apriltags import Detector
 from tqdm import tqdm
+from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinematics as AIK
 
 
 from src.env.robotics.masks.locobot_mask_env import (LocobotMaskEnv,
-                                                     get_camera_pose_from_apriltag,
+                                                     get_camera_pose_from_apriltag, load_states,
                                                      predict_next_qpos,
                                                      load_data)
 
@@ -21,9 +22,9 @@ if __name__ == "__main__":
     """
     Load data:
     """
-
+    ik_solver = AIK()
     # data_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12/"
-    data_path = "/home/ed/Downloads/locobot_subset/"
+    data_path = "/scratch/edward/Robonet/locobot_views/c0"
 
     detector = Detector(families='tag36h11',
                         nthreads=1,
@@ -45,32 +46,50 @@ if __name__ == "__main__":
 
             # print(os.path.join(data_path, filename))
 
-            qposes, imgs, eef_states, actions = load_data(os.path.join(data_path, filename))
-            if qposes is None or imgs is None or eef_states is None or actions is None:
-                skipped_files.append(filename)
-                continue
+            # qposes, imgs, eef_states, actions = load_data(os.path.join(data_path, filename))
+            eef_states = load_states(os.path.join(data_path, filename))
+            # if qposes is None or imgs is None or eef_states is None or actions is None:
+            #     skipped_files.append(filename)
+            #     continue
 
             K = 0
-            predicted_Kstep_qpos = []
-            for t in range(actions.shape[0] - K + 1):
-                action_Kstep = np.sum(actions[t:t + K, 0:2], axis=0)
-                qpos_next = predict_next_qpos(eef_states[t], qposes[t], action_Kstep)
-                predicted_Kstep_qpos.append(qpos_next)
-            predicted_Kstep_qpos = np.stack(predicted_Kstep_qpos)
+            # predicted_Kstep_qpos = []
+            # for t in range(actions.shape[0] - K + 1):
+            #     action_Kstep = np.sum(actions[t:t + K, 0:2], axis=0)
+            #     qpos_next = predict_next_qpos(eef_states[t], qposes[t], action_Kstep)
+            #     predicted_Kstep_qpos.append(qpos_next)
+            # predicted_Kstep_qpos = np.stack(predicted_Kstep_qpos)
+
+            # generate qpos using AIK
+            qposes = []
+            qpos_curr = [0] * 4
+            for pos in eef_states:
+                DEFAULT_PITCH = 1.3
+                DEFAULT_ROLL = 0.0
+                eef_next=  pos
+
+
+                qpos_next = np.zeros(5)
+                qpos_next[0:4] = ik_solver.ik(eef_next, alpha=-DEFAULT_PITCH, cur_arm_config=qpos_curr)
+                qpos_next[4] = DEFAULT_ROLL
+                qpos_curr = qpos_next
+                qposes.append(qpos_next)
+            qposes = np.asarray(qposes)
 
             """
             Init Mujoco env:
             """
-            env = LocobotMaskEnv()
+            # env = LocobotMaskEnv()
 
-            env._joints = [f"joint_{i}" for i in range(1, 6)]
-            env._joint_references = [
-                env.sim.model.get_joint_qpos_addr(x) for x in env._joints
-            ]
+            # env._joints = [f"joint_{i}" for i in range(1, 6)]
+            # env._joint_references = [
+            #     env.sim.model.get_joint_qpos_addr(x) for x in env._joints
+            # ]
             # Use mujoco to get eef states
-            for i, qpos in enumerate(qposes):
-                pos = env.get_gripper_pos(qpos)
-                eef_states[i] = pos
+            # for i, qpos in enumerate(qposes):
+            #     pos = env.get_gripper_pos(qpos)
+            #     eef_states[i] = pos
+
             # then do K step rollout and see how it is.
             # K = 31
             # predicted_Kstep_qpos = [qposes[0]]
@@ -86,70 +105,70 @@ if __name__ == "__main__":
             camera params:
             """
             # if no Apriltag detected, use next image
-            tag_detected = False
-            for t in range(qposes.shape[0]):
-                # tag to camera transformation
-                pose_t, pose_R = get_camera_pose_from_apriltag(imgs[t], detector=detector)
-                if pose_t is None or pose_R is None:
-                    continue
+            # tag_detected = False
+            # for t in range(qposes.shape[0]):
+            #     # tag to camera transformation
+            #     pose_t, pose_R = get_camera_pose_from_apriltag(imgs[t], detector=detector)
+            #     if pose_t is None or pose_R is None:
+            #         continue
 
-                tag_detected = True
+            #     tag_detected = True
 
-                target_qpos = qposes[t]
-                env.sim.data.qpos[env._joint_references] = target_qpos
-                env.sim.forward()
+            #     target_qpos = qposes[t]
+            #     env.sim.data.qpos[env._joint_references] = target_qpos
+            #     env.sim.forward()
 
-                # tag to base transformation
-                tagTbase = np.column_stack((env.sim.data.get_geom_xmat("ar_tag_geom"),
-                                            env.sim.data.get_geom_xpos("ar_tag_geom")))
-                tagTbase = np.row_stack((tagTbase, [0, 0, 0, 1]))
+            #     # tag to base transformation
+            #     tagTbase = np.column_stack((env.sim.data.get_geom_xmat("ar_tag_geom"),
+            #                                 env.sim.data.get_geom_xpos("ar_tag_geom")))
+            #     tagTbase = np.row_stack((tagTbase, [0, 0, 0, 1]))
 
-                tagTcam = np.column_stack((pose_R, pose_t))
-                tagTcam = np.row_stack((tagTcam, [0, 0, 0, 1]))
+            #     tagTcam = np.column_stack((pose_R, pose_t))
+            #     tagTcam = np.row_stack((tagTcam, [0, 0, 0, 1]))
 
-                # tag in camera to tag in robot transformation
-                # For explanation, refer to Kun's hand drawing
-                tagcTtagw = np.array([[0, 0, -1, 0],
-                                      [0, -1, 0, 0],
-                                      [-1, 0, 0, 0],
-                                      [0, 0, 0, 1]])
+            #     # tag in camera to tag in robot transformation
+            #     # For explanation, refer to Kun's hand drawing
+            #     tagcTtagw = np.array([[0, 0, -1, 0],
+            #                           [0, -1, 0, 0],
+            #                           [-1, 0, 0, 0],
+            #                           [0, 0, 0, 1]])
 
-                camTbase = tagTbase @ tagcTtagw @ np.linalg.inv(tagTcam)
+            #     camTbase = tagTbase @ tagcTtagw @ np.linalg.inv(tagTcam)
 
-                rot_matrix = camTbase[:3, :3]
-                cam_pos = camTbase[:3, 3]
-                rel_rot = Rotation.from_quat([0, 1, 0, 0])  # calculated
-                cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
+            #     rot_matrix = camTbase[:3, :3]
+            #     cam_pos = camTbase[:3, 3]
+            #     rel_rot = Rotation.from_quat([0, 1, 0, 0])  # calculated
+            #     cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
 
-                cam_id = 0
-                offset = [0, -0.007, 0.02]
-                env.sim.model.cam_pos[cam_id] = cam_pos + offset
-                cam_quat = cam_rot.as_quat()
-                env.sim.model.cam_quat[cam_id] = [
-                    cam_quat[3],
-                    cam_quat[0],
-                    cam_quat[1],
-                    cam_quat[2],
-                ]
-                print("camera pose:")
-                print(env.sim.model.cam_pos[cam_id])
-                print(env.sim.model.cam_quat[cam_id])
+            #     cam_id = 0
+            #     offset = [0, -0.007, 0.02]
+            #     env.sim.model.cam_pos[cam_id] = cam_pos + offset
+            #     cam_quat = cam_rot.as_quat()
+            #     env.sim.model.cam_quat[cam_id] = [
+            #         cam_quat[3],
+            #         cam_quat[0],
+            #         cam_quat[1],
+            #         cam_quat[2],
+            #     ]
+            #     print("camera pose:")
+            #     print(env.sim.model.cam_pos[cam_id])
+            #     print(env.sim.model.cam_quat[cam_id])
 
-                env.sim.forward()
-                break
+            #     env.sim.forward()
+            #     break
 
-            if not tag_detected:
-                continue
+            # if not tag_detected:
+            #     continue
 
             """
             compute masks
             """
-            masks = []
-            for i, qpos in enumerate(predicted_Kstep_qpos):
-                env.sim.data.qpos[env._joint_references] = qpos
-                env.sim.forward()
-                mask = env.get_robot_mask()
-                masks.append(mask)
+            # masks = []
+            # for i, qpos in enumerate(predicted_Kstep_qpos):
+            #     env.sim.data.qpos[env._joint_references] = qpos
+            #     env.sim.forward()
+            #     mask = env.get_robot_mask()
+            #     masks.append(mask)
 
             # masks = np.stack(masks)
             # # imageio.mimwrite(f"{data_path}masks.gif", masks.astype(np.float32))
@@ -159,8 +178,8 @@ if __name__ == "__main__":
                 # if overwrite:
                 #     del f['masks']
                 # f.create_dataset('masks', data=masks)
-                # use mujoco state instead of recorded state
-                f["states"][...] = eef_states
+                # replace recorded qpos with AIK derived qpos
+                f["qpos"][...] = qposes
 
             n_files += 1
             if n_files > total_files:

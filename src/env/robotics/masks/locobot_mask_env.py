@@ -113,6 +113,14 @@ def load_data(filename):
             print("ERROR! No actions")
     return qposes, imgs, eef_states, actions
 
+def load_states(filename):
+    with h5py.File(filename, "r") as f:
+        if 'states' in f:
+            eef_states = np.array(f['states'])
+        else:
+            print("ERROR! No states")
+    return  eef_states
+
 
 def get_camera_pose_from_apriltag(image, detector=None):
     if detector is None:
