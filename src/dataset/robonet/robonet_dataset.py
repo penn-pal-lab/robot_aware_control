@@ -105,8 +105,8 @@ class RoboNetDataset(data.Dataset):
                 states = np.pad(states, [(0,0), (0, pad)])
 
             if "locobot" in robot_viewpoint:
-                low =  np.array([0.015, -0.3, 0.1, 0, 0])
-                high =  np.array([0.55, 0.3, 0.4, 1, 1])
+                low =  np.array([0.015, -0.3, 0.1, 0, 0], dtype=np.float32)
+                high =  np.array([0.55, 0.3, 0.4, 1, 1], dtype=np.float32)
             else:
                 low = hf["low_bound"][:]
                 high = hf["high_bound"][:]
