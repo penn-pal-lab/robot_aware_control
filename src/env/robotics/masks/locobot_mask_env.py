@@ -178,6 +178,9 @@ def overlay_trajs(traj_path1, traj_path2):
     avg_img = cv2.cvtColor(avg_img, cv2.COLOR_BGR2RGB)
     cv2.imwrite(f"{traj_path1}_overlay.png", avg_img)
 
+def get_gripper_pos(self, qpos):
+    raise NotImplementedError
+
 
 if __name__ == "__main__":
     """

@@ -6,7 +6,6 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision.datasets.folder import has_file_allowed_extension
 
-# from src.dataset.locobot.locobot_dataset import LocobotDataset
 from src.dataset.robonet.robonet_dataset import RoboNetDataset
 
 def create_finetune_loaders(config):

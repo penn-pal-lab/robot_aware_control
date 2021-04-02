@@ -6,6 +6,7 @@ import imageio
 import matplotlib.pyplot as plt
 from scipy.spatial.transform.rotation import Rotation
 from pupil_apriltags import Detector
+from tqdm import tqdm
 
 
 from src.env.robotics.masks.locobot_mask_env import (LocobotMaskEnv,
@@ -22,7 +23,7 @@ if __name__ == "__main__":
     """
 
     # data_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12/"
-    data_path = "/home/huangkun/locobot_data/data_2021-03-12/"
+    data_path = "/scratch/edward/Robonet/locobot_views/c0"
 
     detector = Detector(families='tag36h11',
                         nthreads=1,
@@ -34,7 +35,7 @@ if __name__ == "__main__":
 
     n_files = 0
     skipped_files = []
-    for filename in os.listdir(data_path):
+    for filename in tqdm(os.listdir(data_path)):
         if filename.endswith(".hdf5"):
             overwrite = False
             with h5py.File(os.path.join(data_path, filename), "r") as f:
@@ -42,7 +43,7 @@ if __name__ == "__main__":
                     # TODO: overwrite for now, change to continue in the future
                     overwrite = True
 
-            print(os.path.join(data_path, filename))
+            # print(os.path.join(data_path, filename))
 
             qposes, imgs, eef_states, actions = load_data(os.path.join(data_path, filename))
             if qposes is None or imgs is None or eef_states is None or actions is None:
@@ -148,4 +149,4 @@ if __name__ == "__main__":
             n_files += 1
             if n_files > total_files:
                 break
-    print(skipped_files)
+    print("skipped", skipped_files)
