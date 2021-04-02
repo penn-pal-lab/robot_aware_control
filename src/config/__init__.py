@@ -242,7 +242,8 @@ def add_dataset_arguments(parser):
                         type=str,
                         choices=["train_robonet",
                                  "train_sawyer_multiview", "finetune_sawyer_view",
-                                 "finetune_widowx", "train_locobot_singleview"],
+                                 "finetune_widowx", "train_locobot_singleview",
+                                 "finetune_locobot"],
                         default="train_robonet")
     parser.add_argument("--preprocess_action", type=str,
                         choices=["raw", "camera_raw", "state_infer", "camera_state_infer"],
