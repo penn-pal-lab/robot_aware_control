@@ -90,7 +90,8 @@ if __name__ == "__main__":
             #     pos = env.get_gripper_pos(qpos)
             #     eef_states[i] = pos
 
-            # then do K step rollout and see how it is.
+            # >>>>>>>>>>> K step rollout for analytical masks!
+
             # K = 31
             # predicted_Kstep_qpos = [qposes[0]]
             # qpos_next = qposes[0]

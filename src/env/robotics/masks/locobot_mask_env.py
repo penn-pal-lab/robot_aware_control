@@ -1,15 +1,12 @@
 import os
 from scipy.spatial.transform.rotation import Rotation
 import numpy as np
-import time
 import imageio
 import h5py
 from pupil_apriltags import Detector
 import cv2
 
 from src.env.robotics.masks.base_mask_env import MaskEnv
-from src.env.robotics.rotations import euler2quat, mat2quat, quat2euler
-from src.env.robotics.robot_env import RobotEnv
 from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinematics as AIK
 
 
@@ -21,8 +18,8 @@ class LocobotMaskEnv(MaskEnv):
         n_substeps = 1
         seed = None
         super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
-        self._img_width = 640
-        self._img_height = 480
+        self._img_width = 64
+        self._img_height = 48
         self._camera_name = "main_cam"
         self._joints = [f"joint_{i}" for i in range(1, 6)]
         # self._joints.append("gripper_revolute_joint")

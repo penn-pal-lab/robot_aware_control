@@ -4,6 +4,7 @@ from collections import defaultdict
 from functools import partial
 
 import torchvision.transforms as tf
+from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
 from src.dataset.robonet.robonet_dataset import (
     create_heatmaps,
     get_batch,
@@ -117,12 +118,14 @@ class PredictionTrainer(object):
         # params = list(self.model.parameters()) + list(self.background_model.parameters())
         params = list(self.model.parameters())
         self.optimizer = optimizer(params)
-
-        if cf.learned_robot_model:
-            # learned robot models for evaluation
-            self.joint_model = JointPosPredictor(cf).to(self._device)
-            self.gripper_model = GripperStatePredictor(cf).to(self._device)
-            self._load_robot_model_checkpoint(cf.robot_model_ckpt)
+        if "finetune" in cf.experiment:
+            if cf.experiment == "finetune_locobot":
+                self.robot_model = LocobotAnalyticalModel(cf)
+            elif cf.learned_robot_model:
+                # learned robot models for evaluation
+                self.joint_model = JointPosPredictor(cf).to(self._device)
+                self.gripper_model = GripperStatePredictor(cf).to(self._device)
+                self._load_robot_model_checkpoint(cf.robot_model_ckpt)
 
     def _schedule_prob(self):
         """Returns probability of using ground truth"""
@@ -293,14 +296,21 @@ class PredictionTrainer(object):
             if cf.model_use_heatmap:
                 batch_data["heatmaps"] = data["heatmaps"][s:e]
 
-            if cf.learned_robot_model and "finetune" in cf.experiment:
+            if "finetune" in cf.experiment:
                 if cf.preprocess_action != "raw":
                     batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
-                if cf.model_use_heatmap:
-                    batch_data["low"] = data["low"]
-                    batch_data["high"] = data["high"]
+                batch_data["low"] = data["low"]
+                batch_data["high"] = data["high"]
 
-                out = self._generate_learned_robot_states(batch_data)
+                if cf.experiment == "finetune_locobot":
+                    # use analytical model
+                    # inputs: current qpos, state, list of actions
+                    # outputs: list of states, list of masks
+                    out = self.robot_model.predict_batch(batch_data)
+
+                elif cf.learned_robot_model:
+                    out = self._generate_learned_robot_states(batch_data)
+
                 if cf.model_use_heatmap:
                     states, masks, heatmaps = out
                     batch_data["heatmaps"] = heatmaps
@@ -461,9 +471,6 @@ class PredictionTrainer(object):
         progress = tqdm(total=len(data_loader), desc=f"computing {name} epoch")
         for data in data_loader:
             data = process_batch(data, self._device)
-            # info = self._eval_video(data)
-            # for k, v in info.items():
-            #     losses[k].append(v)
             info = self._eval_video(data, autoregressive=True)
             for k, v in info.items():
                 losses[k].append(v)
@@ -507,13 +514,31 @@ class PredictionTrainer(object):
             if cf.model_use_heatmap:
                 batch_data["heatmaps"] = data["heatmaps"][s:e]
 
-            # expose inputs necessary for learned robot model
-            if cf.learned_robot_model:
+            if "finetune" in cf.experiment:
                 if cf.preprocess_action != "raw":
                     batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
+                batch_data["low"] = data["low"]
+                batch_data["high"] = data["high"]
+
+                if cf.experiment == "finetune_locobot":
+                    # use analytical model
+                    # inputs: current qpos, state, list of actions
+                    # outputs: list of states, list of masks
+                    out = self.robot_model.predict_batch(batch_data)
+                elif cf.learned_robot_model:
+                    out = self._generate_learned_robot_states(batch_data)
+
                 if cf.model_use_heatmap:
-                    batch_data["low"] = data["low"]
-                    batch_data["high"] = data["high"]
+                    states, masks, heatmaps = out
+                    batch_data["heatmaps"] = heatmaps
+                else:
+                    states, masks = out
+
+                batch_data["states"] = states
+                # eval also needs true masks for computing world errors
+                batch_data["pred_masks"] = masks
+            else:  # use true masks for eval rollout
+                batch_data["pred_masks"] = batch_data["masks"]
 
             for sample in range(num_samples):
                 losses = self._eval_step(batch_data, autoregressive)
@@ -541,7 +566,8 @@ class PredictionTrainer(object):
         x = data["images"]
         states = data["states"]
         ac = data["actions"]
-        true_mask = mask = data["masks"]
+        true_masks = data["masks"]
+        masks = data["pred_masks"]
         if cf.model_use_heatmap:
             heatmaps = data["heatmaps"]
         robot_name = data["robot"]
@@ -555,23 +581,17 @@ class PredictionTrainer(object):
         all_robots = set(robot_name)
         x_pred = skip = None
         prefix = "autoreg" if autoregressive else "1step"
-        if autoregressive and cf.learned_robot_model:
-            out = self._generate_learned_robot_states(data)
-            if cf.model_use_heatmap:
-                states, mask, heatmaps = out
-            else:
-                states, mask = out
 
         if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-            self._zero_robot_region(mask[0], x[0], inplace=True)
+            self._zero_robot_region(masks[0], x[0], inplace=True)
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 x_j = x_pred.clone()
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep
-            m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
-            x_i, m_i, r_i = x[i], mask[i], states[i]
+            m_j, r_j, a_j = masks[i - 1], states[i - 1], ac[i - 1]
+            x_i, m_i, r_i = x[i], masks[i], states[i]
             hm_j, hm_i = None, None
             if cf.model_use_heatmap:
                 hm_j, hm_i = heatmaps[i - 1], heatmaps[i]
@@ -647,17 +667,17 @@ class PredictionTrainer(object):
                     losses[f"{prefix}_total_robot_loss"] += robot_mse_scalar
                     losses[f"{prefix}_total_world_loss"] += world_mse_scalar
             else:
-                view_loss = self._recon_loss(x_pred, x[i], true_mask[i])
+                view_loss = self._recon_loss(x_pred, x[i], true_masks[i])
                 losses[f"{prefix}_recon_loss"] += view_loss.cpu().item()
-                robot_mse = robot_mse_criterion(x_pred, x[i], true_mask[i])
-                world_mse = world_mse_criterion(x_pred, x[i], true_mask[i])
+                robot_mse = robot_mse_criterion(x_pred, x[i], true_masks[i])
+                world_mse = world_mse_criterion(x_pred, x[i], true_masks[i])
                 losses[f"{prefix}_robot_loss"] += robot_mse.cpu().item()
                 world_mse_value = world_mse.cpu().item()
                 losses[f"{prefix}_world_loss"] += world_mse_value
 
                 # black out robot with true mask before computing psnr, ssim
-                x_pred_black = self._zero_robot_region(true_mask[i], x_pred)
-                x_i_black = self._zero_robot_region(true_mask[i], x_i)
+                x_pred_black = self._zero_robot_region(true_masks[i], x_pred)
+                x_i_black = self._zero_robot_region(true_masks[i], x_i)
 
                 p = psnr(x_i_black.clamp(0, 1), x_pred_black.clamp(0, 1)).mean().item()
                 s = ssim(x_i_black, x_pred_black).mean().item()
@@ -678,7 +698,7 @@ class PredictionTrainer(object):
                     r_idx = r == robot_name
                     r_pred = x_pred[r_idx]
                     r_img = x[i][r_idx]
-                    r_mask = true_mask[i][r_idx]
+                    r_mask = true_masks[i][r_idx]
                     r_robot_mse = robot_mse_criterion(r_pred, r_img, r_mask)
                     r_world_mse = world_mse_criterion(r_pred, r_img, r_mask)
                     losses[f"{prefix}_{r}_robot_loss"] += r_robot_mse.cpu().item()
@@ -864,10 +884,10 @@ class PredictionTrainer(object):
         Setup the dataset and dataloaders
         """
         if self._config.experiment == "train_robonet":
-            from src.dataset.robonet.robonet_dataloaders import create_loaders
             from src.dataset.locobot.locobot_singleview_dataloader import (
                 create_transfer_loader,
             )
+            from src.dataset.robonet.robonet_dataloaders import create_loaders
 
             # measure zero shot performance on unseen locobot
             self.transfer_loader = create_transfer_loader(self._config)
@@ -951,9 +971,8 @@ class PredictionTrainer(object):
         if cf.model_use_heatmap:
             heatmaps = heatmaps[start:end, :b]
 
-        if cf.learned_robot_model:
+        if "finetune" in cf.experiment:
             input_data = dict(
-                images=x,
                 states=states,
                 actions=ac,
                 masks=mask,
@@ -961,14 +980,16 @@ class PredictionTrainer(object):
                 folder=folder,
                 robot=robot,
             )
+            input_data["low"] = data["low"][:b]
+            input_data["high"] = data["high"][:b]
             if cf.preprocess_action != "raw":
                 input_data["raw_actions"] = data["raw_actions"][start : end - 1, :b]
-            if cf.model_use_heatmap:
-                input_data["heatmaps"] = data["heatmaps"][start:end, :b]
-                input_data["low"] = data["low"][:b]
-                input_data["high"] = data["high"][:b]
 
-            out = self._generate_learned_robot_states(input_data)
+            if cf.experiment == "finetune_locobot":
+                out = self.robot_model.predict_batch(input_data)
+            elif cf.learned_robot_model:
+                out = self._generate_learned_robot_states(input_data)
+
             if cf.model_use_heatmap:
                 states, mask, heatmaps = out
             else:
@@ -1120,13 +1141,33 @@ class PredictionTrainer(object):
             }
             if cf.model_use_heatmap:
                 batch_data["heatmaps"] = data["heatmaps"][s:e]
-            # expose inputs necessary for learned robot model
-            if cf.learned_robot_model:
+
+            if "finetune" in cf.experiment:
                 if cf.preprocess_action != "raw":
                     batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
+                batch_data["low"] = data["low"]
+                batch_data["high"] = data["high"]
+
+                if cf.experiment == "finetune_locobot":
+                    # use analytical model
+                    # inputs: current qpos, state, list of actions
+                    # outputs: list of states, list of masks
+                    out = self.robot_model.predict_batch(batch_data)
+                elif cf.learned_robot_model:
+                    out = self._generate_learned_robot_states(batch_data)
+
                 if cf.model_use_heatmap:
-                    batch_data["low"] = data["low"]
-                    batch_data["high"] = data["high"]
+                    states, masks, heatmaps = out
+                    batch_data["heatmaps"] = heatmaps
+                else:
+                    states, masks = out
+
+                batch_data["states"] = states
+                # eval also needs true masks for computing world errors
+                batch_data["pred_masks"] = masks
+            else:  # use true masks for eval rollout
+                batch_data["pred_masks"] = batch_data["masks"]
+
             for sample in range(num_samples):
                 losses = self._predict_video(batch_data)
                 for k, v in losses.items():
@@ -1159,7 +1200,8 @@ class PredictionTrainer(object):
         x = data["images"]
         states = data["states"]
         ac = data["actions"]
-        true_mask = mask = data["masks"]
+        true_mask = data["masks"]
+        mask = data["pred_masks"]
         if cf.model_use_heatmap:
             heatmaps = data["heatmaps"]
         robot_name = data["robot"]
@@ -1178,12 +1220,6 @@ class PredictionTrainer(object):
 
         x_pred = skip = None
         prefix = "autoreg" if autoregressive else "1step"
-        if autoregressive and cf.learned_robot_model:
-            out = self._generate_learned_robot_states(data)
-            if cf.model_use_heatmap:
-                states, mask, heatmaps = out
-            else:
-                states, mask = out
 
         if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
             self._zero_robot_region(mask[0], x[0], inplace=True)

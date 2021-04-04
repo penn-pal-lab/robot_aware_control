@@ -2,14 +2,10 @@ import os
 
 from torch.utils.data.dataloader import DataLoader
 from typing import Any
-import cv2
 import h5py
-import imageio
-import ipdb
 import numpy as np
 from ipdb import set_trace as st
 import torch
-from torchvision.datasets.folder import has_file_allowed_extension
 import torchvision.transforms as tf
 import torchvision.transforms.functional as F
 import torch.utils.data as data
@@ -151,10 +147,12 @@ class RoboNetDataset(data.Dataset):
         }
         if self._config.model_use_heatmap:
             out["heatmaps"] = heatmaps
-            if "finetune" in self._config.experiment:
-                # needed to compute the future heatmaps
-                out["low"] = low
-                out["high"] = high
+
+        if "finetune" in self._config.experiment:
+            # needed to denormalize states for state / heatmap prediction
+            out["low"] = low
+            out["high"] = high
+
         if self._config.preprocess_action != "raw":
             out["raw_actions"] = raw_actions
         return out
@@ -343,10 +341,10 @@ def get_2d_eef_pos(state, cam_intrinsics, world_to_cam, target_dim, orig_dim):
 def process_batch(data, device):
     """Changes tensor idx from batch-first to time-first
     """
-    data_keys = ["qpos", "images", "states", "actions", "masks", "heatmaps", "raw_actions"]
+    transpose_keys = ["qpos", "images", "states", "actions", "masks", "heatmaps", "raw_actions"]
     meta_keys = ["robot", "folder", "file_path", "idx"]
     # transpose from (B, L, C, W, H) to (L, B, C, W, H)
-    for k in data_keys:
+    for k in transpose_keys:
         if k in data:
             data[k] = data[k].transpose_(1, 0).to(device, non_blocking=True)
     return data
