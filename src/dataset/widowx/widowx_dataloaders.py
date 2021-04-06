@@ -21,7 +21,7 @@ def create_finetune_loaders(config):
             high_error = any([x["high_error"] for x in motion_info[d.path]])
             if high_error:
                 files.append(d.path)
-                file_labels.append("widowx")
+                file_labels.append("widowx_widowx1_c0")
 
     files = sorted(files)
     random.seed(config.seed)
@@ -76,7 +76,7 @@ def create_transfer_loader(config):
             high_error = any([x["high_error"] for x in motion_info[d.path]])
             if high_error:
                 files.append(d.path)
-                file_labels.append("widowx")
+                file_labels.append("widowx_widowx1_c0")
 
     files = sorted(files)
     random.seed(config.seed)

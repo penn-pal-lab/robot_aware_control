@@ -48,7 +48,15 @@ def add_method_arguments(parser: ArgumentParser):
         "--reward_type",
         type=str,
         default="weighted",
-        choices=["weighted", "dense", "inpaint", "sparse" "blackrobot", "inpaint-blur", "eef_inpaint", "dontcare"],
+        choices=[
+            "weighted",
+            "dense",
+            "inpaint",
+            "sparse" "blackrobot",
+            "inpaint-blur",
+            "eef_inpaint",
+            "dontcare",
+        ],
     )
     # for use with inpaint blur
     parser.add_argument("--most_recent_background", type=str2bool, default=False)
@@ -133,7 +141,9 @@ def add_prediction_arguments(parser):
         "--beta1", default=0.9, type=float, help="momentum term for adam"
     )
     parser.add_argument("--batch_size", default=100, type=int, help="batch size")
-    parser.add_argument("--test_batch_size", default=16, type=int, help="test batch size")
+    parser.add_argument(
+        "--test_batch_size", default=16, type=int, help="test batch size"
+    )
     parser.add_argument("--optimizer", default="adam", help="optimizer to train with")
     parser.add_argument(
         "--niter", type=int, default=300, help="number of epochs to train for"
@@ -198,7 +208,9 @@ def add_prediction_arguments(parser):
         help="if true, skip connections go between frame t and frame t+t rather than last ground truth frame",
     )
 
-    parser.add_argument("--model", default="svg", choices=["svg", "det", "copy", "cdna_det"])
+    parser.add_argument(
+        "--model", default="svg", choices=["svg", "det", "copy", "cdna_det"]
+    )
     parser.add_argument("--model_use_mask", type=str2bool, default=True)
     parser.add_argument("--model_use_future_mask", type=str2bool, default=False)
     parser.add_argument("--model_use_robot_state", type=str2bool, default=True)
@@ -206,7 +218,11 @@ def add_prediction_arguments(parser):
     parser.add_argument("--model_use_heatmap", type=str2bool, default=False)
     parser.add_argument("--model_use_future_heatmap", type=str2bool, default=False)
     parser.add_argument("--black_robot_input", type=str2bool, default=False)
-    parser.add_argument("--reconstruction_loss", default="mse", choices=["mse", "l1", "dontcare_mse", "dontcare_l1"])
+    parser.add_argument(
+        "--reconstruction_loss",
+        default="mse",
+        choices=["mse", "l1", "dontcare_mse", "dontcare_l1"],
+    )
     parser.add_argument("--scheduled_sampling", type=str2bool, default=False)
     parser.add_argument("--scheduled_sampling_k", type=int, default=4000)
     parser.add_argument(
@@ -234,20 +250,33 @@ def add_dataset_arguments(parser):
         choices=["object_inpaint_demo", "robot_demo", "object_only_demo"],
     )
     # robonet video prediction dataset arguments
-    parser.add_argument("--video_length", type=int, default=31,
-                        help="max length of the video, used for evaluation dataloader")
+    parser.add_argument(
+        "--video_length",
+        type=int,
+        default=31,
+        help="max length of the video, used for evaluation dataloader",
+    )
     parser.add_argument("--impute_autograsp_action", type=str2bool, default=True)
     parser.add_argument("--preload_ram", type=str2bool, default=False)
-    parser.add_argument("--experiment",
-                        type=str,
-                        choices=["train_robonet",
-                                 "train_sawyer_multiview", "finetune_sawyer_view",
-                                 "finetune_widowx", "train_locobot_singleview",
-                                 "finetune_locobot"],
-                        default="train_robonet")
-    parser.add_argument("--preprocess_action", type=str,
-                        choices=["raw", "camera_raw", "state_infer", "camera_state_infer"],
-                        default="raw")
+    parser.add_argument(
+        "--experiment",
+        type=str,
+        choices=[
+            "train_robonet",
+            "train_sawyer_multiview",
+            "finetune_sawyer_view",
+            "finetune_widowx",
+            "train_locobot_singleview",
+            "finetune_locobot",
+        ],
+        default="train_robonet",
+    )
+    parser.add_argument(
+        "--preprocess_action",
+        type=str,
+        choices=["raw", "camera_raw", "state_infer", "camera_state_infer"],
+        default="raw",
+    )
     parser.add_argument("--img_augmentation", type=str2bool, default=False)
     parser.add_argument("--color_jitter_range", type=float, default=0.1)
     parser.add_argument("--random_crop_size", type=int, default=59)
@@ -256,6 +285,7 @@ def add_dataset_arguments(parser):
     parser.add_argument("--finetune_num_train", type=int, default=400)
     parser.add_argument("--finetune_num_test", type=int, default=100)
     parser.add_argument("--random_snippet", type=str2bool, default=False)
+
 
 # CEM Hyperparameters
 
@@ -284,6 +314,7 @@ def add_cem_arguments(parser):
     )
     parser.add_argument("--cem_init_std", type=float, default=1)
     parser.add_argument("--sparse_cost", type=str2bool, default=False)
+
 
 # Cost Fn Hyperparameters
 

@@ -1,4 +1,5 @@
-from src.dataset.robonet.robonet_dataset import denormalize, normalize
+from src.utils.plot import save_gif
+from src.dataset.robonet.robonet_dataset import create_heatmaps, denormalize, normalize
 import torch
 from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
 import numpy as np
@@ -79,10 +80,10 @@ class LocobotAnalyticalModel(object):
         states = [eef_curr]
         pred_qpos = [qpos_curr]
         for t in range(len(actions)):
-            # closed loop prediction
+            # >>>>> closed loop prediction
             act = actions[t, :2]
             eef_curr, qpos_curr = self.predict_next_state_qpos(eef_curr, qpos_curr, act)
-            # open loop prediction
+            # >>>>> open loop prediction
             # act = np.sum(actions[0:t+1, :2], 0)
             # eef_curr, qpos_curr = self.predict_next_state_qpos(start_eef, start_qpos, act)
             # add rotation and gripper state as 0
@@ -116,15 +117,15 @@ class LocobotAnalyticalModel(object):
             else:
                 actions = data["actions"][:, i].cpu().numpy()
 
-            p_states, p_masks = self.predict_trajectory(
+            raw_p_states, p_masks = self.predict_trajectory(
                 start_state, start_qpos, actions
             )
             # normalize the states again
-            p_states = normalize(p_states, low, high)
+            p_states = normalize(raw_p_states, low, high)
             pred_states[:, i] = p_states.to(device, non_blocking=True)
             pred_masks[:, i] = p_masks.to(device, non_blocking=True)
 
-            # visualize the projected masks
+            # >>>>>>>> visualize the projected masks
             # diff = p_masks.cpu().type(torch.bool) ^ data["masks"][:, i].cpu().type(torch.bool)
             # diff= (255 * diff.cpu().squeeze().numpy()).astype(np.uint8)
             # p_masks = (255 * p_masks.cpu().squeeze().numpy()).astype(np.uint8)
@@ -132,4 +133,38 @@ class LocobotAnalyticalModel(object):
             # gif = np.concatenate([masks, p_masks, diff], 2)
             # imageio.mimwrite(f"{i}_mask.gif", gif)
             # import ipdb; ipdb.set_trace()
+
+        # >>>>>>>> compute the average error per timestep
+        # raw_states = denormalize(data["states"].cpu(), data["low"], data["high"])
+        # p_states = denormalize(pred_states.cpu(), data["low"], data["high"])
+        # diff = (p_states.cpu() - raw_states).abs()[:, :, :3]
+        # diff= diff.mean(1)
+        # print("diff")
+        # print(diff)
+        if self._config.model_use_heatmap:
+            # T x B x 1 x H x W
+            heatmaps = data["heatmaps"].clone()
+            for idx in range(heatmaps.shape[1]):
+                # get states from t=1:T to generate heatmas
+                s = pred_states[1:, idx].cpu()
+                low = data["low"][idx].cpu().numpy().squeeze()
+                high = data["high"][idx].cpu().numpy().squeeze()
+                robot = data["robot"][idx]
+                vp = data["folder"][idx]
+                # import ipdb; ipdb.set_trace()
+                hm = create_heatmaps(s, low, high, robot, vp)
+                # use gt heatmap at t=0
+                heatmaps[1:, idx] = torch.from_numpy(hm)
+
+            # >>>>>>>> visualize heatmaps
+            # images = data["images"]
+            # hm = heatmaps.repeat(1,1,3,1,1)
+            # hm_images = (images * hm).transpose(0,1).unsqueeze(2)
+            # gt_hm = data["heatmaps"].repeat(1,1,3,1,1)
+            # gt_hm_images = (images * gt_hm).transpose(0,1).unsqueeze(2)
+            # gif = torch.cat([gt_hm_images, hm_images], 2)
+            # save_gif("hm.gif", gif)
+            # import ipdb; ipdb.set_trace()
+            return pred_states, pred_masks, heatmaps
+
         return pred_states, pred_masks

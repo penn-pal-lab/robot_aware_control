@@ -296,21 +296,19 @@ class RoboNetDataset(data.Dataset):
             self._impute_true_actions(states, actions, low, high)
             return torch.from_numpy(actions)
         # if actions are in camera frame...
-        filename = self._traj_names[idx]
         robot_type = self._traj_robots[idx]
         if self._config.experiment == "train_robonet":
-            # convert everything to camera coordinates.
-            filename = self._traj_names[idx]
             robot_type = self._traj_robots[idx]
             world2cam = world_to_camera_dict[robot_type]
         elif self._config.experiment == "train_sawyer_multiview":
             world2cam = world_to_camera_dict[robot_type]
-        elif self._config.experiment == "finetune":
-            # finetune on baxter, convert to camera frame
-            # Assumes the baxter arm is right arm!
-            arm = "left" if "left" in filename else "right"
-            world2cam = world_to_camera_dict[f"baxter_{arm}"]
         elif self._config.experiment == "finetune_sawyer_view":
+            world2cam = world_to_camera_dict[robot_type]
+        elif self._config.experiment == "finetune_widowx":
+            world2cam = world_to_camera_dict[robot_type]
+        elif self._config.experiment == "train_locobot_singleview":
+            world2cam = world_to_camera_dict[robot_type]
+        elif self._config.experiment == "finetune_locobot":
             world2cam = world_to_camera_dict[robot_type]
         else:
             raise ValueError
@@ -385,7 +383,8 @@ def create_heatmaps(states, low, high, robot, viewpoint):
         robot (str): type of robot
         viewpoint (str): robot viewpoint
     """
-        # first denormalize the eef states
+    # first denormalize the eef states
+    states = states.clone()
     states[:, :3] = denormalize(states[:, :3], low[:3], high[:3])
     eef_pos = states[:, :3].numpy()
     # depending on the robot configuration, add Z offset to the gripper
