@@ -296,7 +296,7 @@ class PredictionTrainer(object):
             if cf.model_use_heatmap:
                 batch_data["heatmaps"] = data["heatmaps"][s:e]
 
-            if "finetune" in cf.experiment:
+            if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
                 if cf.preprocess_action != "raw":
                     batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
                 batch_data["low"] = data["low"]
@@ -514,7 +514,7 @@ class PredictionTrainer(object):
             if cf.model_use_heatmap:
                 batch_data["heatmaps"] = data["heatmaps"][s:e]
 
-            if "finetune" in cf.experiment:
+            if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
                 if cf.preprocess_action != "raw":
                     batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
                 batch_data["low"] = data["low"]
@@ -971,7 +971,7 @@ class PredictionTrainer(object):
         if cf.model_use_heatmap:
             heatmaps = heatmaps[start:end, :b]
 
-        if "finetune" in cf.experiment:
+        if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
             input_data = dict(
                 states=states,
                 actions=ac,
@@ -1004,10 +1004,11 @@ class PredictionTrainer(object):
             skip = None
             self.model.init_hidden(b)
             if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-                self._zero_robot_region(mask[0], x[0], inplace=True)
-            gen_seq[s].append(x[0])
+                x_j = self._zero_robot_region(mask[0], x[0])
+            else:
+                x_j = x[0]
+            gen_seq[s].append(x_j)
             gen_mask[s].append(mask[0])
-            x_j = x[0]
             for i in range(1, video_len):
                 # let j be i - 1, or previous timestep
                 m_j, r_j, a_j = mask[i - 1], states[i - 1], ac[i - 1]
@@ -1018,10 +1019,11 @@ class PredictionTrainer(object):
                 if cf.model == "copy":
                     x_pred = self.model(x_j, m_j, x_i, m_i)
                 else:
+                    x_j_black, x_i_black = x_j, x_i
                     # zero out robot pixels in input for norobot cost
                     if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-                        self._zero_robot_region(mask[i - 1], x_j, inplace=True)
-                        self._zero_robot_region(mask[i], x[i], inplace=True)
+                        x_j_black = self._zero_robot_region(m_j, x_j)
+                        x_i_black = self._zero_robot_region(m_i, x_i)
                     m_in = m_j
                     if cf.model_use_future_mask:
                         m_in = torch.cat([m_j, m_i], 1)
@@ -1040,14 +1042,14 @@ class PredictionTrainer(object):
                         x_pred, curr_skip = self.model(x_j, m_in, r_j, a_j, skip)
                     elif cf.model == "svg":
                         # don't use posterior.
-                        x_i, m_next_in, r_i, hm_next_in = None, None, None, None
+                        x_i_black, m_next_in, r_i, hm_next_in = None, None, None, None
                         out = self.model(
-                            x_j,
+                            x_j_black,
                             m_in,
                             r_in,
                             hm_in,
                             a_j,
-                            x_i,
+                            x_i_black,
                             m_next_in,
                             r_i,
                             hm_next_in,
@@ -1063,7 +1065,7 @@ class PredictionTrainer(object):
                         skip = curr_skip
 
                     if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-                        self._zero_robot_region(mask[i], x_pred, inplace=True)
+                        self._zero_robot_region(m_i, x_pred, inplace=True)
                 if i < cf.n_past:
                     x_j = x_i
                 else:
