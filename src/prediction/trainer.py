@@ -130,7 +130,7 @@ class PredictionTrainer(object):
     def _schedule_prob(self):
         """Returns probability of using ground truth"""
         # assume 50k max training steps
-        # https://www.desmos.com/calculator/bo4aoyqje1
+        # https://www.desmos.com/calculator/czolgrcelz
         k = self._config.scheduled_sampling_k
         use_truth = k / (k + np.exp(self._step / k))
         use_model = 1 - use_truth
