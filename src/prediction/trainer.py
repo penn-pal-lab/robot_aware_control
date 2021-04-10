@@ -352,7 +352,7 @@ class PredictionTrainer(object):
             self._zero_robot_region(mask[0], x[0], inplace=True)
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
-                x_j = x[i - 1] if self._use_true_token() else x_pred.clone().detach()
+                x_j = x[i - 1] if self._use_true_token() else x_pred.clone()
             else:
                 x_j = x[i - 1]
             # let j be i - 1, or previous timestep

@@ -106,6 +106,7 @@ class LocobotAnalyticalModel(object):
         B = data["states"].shape[1]
         pred_states = torch.zeros_like(data["states"])
         pred_masks = torch.zeros_like(data["masks"])
+        assert data["qpos"].shape[-1] == 5, f"locobot qpos {data['qpos'].shape[-1]} != 5"
         for i in range(B):
             start_state = data["states"][0, i].cpu().numpy()
             low = data["low"][i].cpu()
