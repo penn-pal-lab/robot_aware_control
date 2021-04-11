@@ -3,11 +3,13 @@ import torch
 from src.config import argparser
 from src.dataset.locobot.locobot_singleview_dataloader import \
     create_transfer_loader
-from src.dataset.robonet.robonet_dataset import get_batch
+from src.dataset.robonet.robonet_dataset import denormalize, get_batch
 from src.prediction.models.dynamics import SVGConvModel
 from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
 from src.utils.plot import save_gif
 from tqdm import trange
+import ipdb
+from src.utils.camera_calibration import world_to_camera_dict
 
 """
 Apply different actions to the SVG model to see video prediction performance
@@ -26,6 +28,12 @@ def zero_robot_region(mask, image, inplace=False):
     image[robot_mask] *= 0
     return image
 
+def convert_world_to_camera_pos(state, w_to_c):
+        e_to_w = np.eye(4)
+        e_to_w[:3, 3] = state[:3]
+        e_to_c = w_to_c @ e_to_w
+        pos_c = e_to_c[:3, 3]
+        return pos_c
 
 def load_model(config, ckpt_path):
     ckpt = torch.load(ckpt_path, map_location=device)
@@ -180,8 +188,7 @@ if __name__ == "__main__":
     cf, _ = argparser()
     cf.device = device
     cf.batch_size = 3  # number of videos
-    cf.data_root = "/home/ed/Downloads"
-    CKPT_PATH = "ft_roboaware_10200.pt"
+    CKPT_PATH = "logs/ft389locobot_norobot_raw_144k_analytical_scheduledsampling/ckpt_10200.pt"
     video_len = 5
     nsample = 3  # number of stochastic samples per video
 
@@ -199,6 +206,7 @@ if __name__ == "__main__":
     ALL_DIRECTIONS = [-1, 1]
     ALL_AXES = ["x", "y"]
     STEP_SIZE = 0.02
+    world2cam = world_to_camera_dict["locobot_c0"]
 
     for direction in ALL_DIRECTIONS:
         for ax in ALL_AXES:
@@ -213,17 +221,34 @@ if __name__ == "__main__":
             else:
                 raise ValueError
             fake_actions[:, :, axis] = STEP_SIZE * direction
+            # check one action trajectory 
+            true_states = data["states"][:, 0].cpu().clone().numpy()
+            true_states[:, :3] = denormalize(true_states[:,  :3], data["low"][0,:3].cpu().numpy(), data["high"][0, :3].cpu().numpy())
+            old_actions = fake_actions[:, 0].cpu().numpy().copy()
+            new_actions = []
+            for t in range(len(fake_actions)):
+                state = true_states[t]
+                pos_c = convert_world_to_camera_pos(state, world2cam)
+                next_state = true_states[t].copy()
+                next_state[:4] += old_actions[t][:4]
+                next_pos_c = convert_world_to_camera_pos(next_state, world2cam)
+                true_offset_c = next_pos_c - pos_c
+                new_actions.append( true_offset_c)
+
+            
             gif_name = f"{ax}_{int(direction * STEP_SIZE * 1000)}mm.gif"
-            plot_rollout(model, data, fake_actions, gif_name)
+            print(gif_name)
+            print(new_actions[0])
+            # plot_rollout(model, data, fake_actions, gif_name)
 
-    # diagonal pushing
-    ALL_AXES = np.asarray([[1,1], [1, -1], [-1, 1], [-1, -1]]).astype(np.float32)
-    STEP_SIZE = 0.015
+    ''' diagonal pushing'''
+    # ALL_AXES = np.asarray([[1,1], [1, -1], [-1, 1], [-1, -1]]).astype(np.float32)
+    # STEP_SIZE = 0.015
 
-    for ax in ALL_AXES:
-        # apply actions (T x B x 5)
-        fake_actions = torch.zeros_like(data["actions"])
-        fake_actions[:, :, 2] = data["actions"][:, :, 2]  # use same z
-        fake_actions[:,:, :2] = torch.from_numpy(STEP_SIZE * ax)
-        gif_name = f"diag{int(ax[0])}{int(ax[1])}_{int(STEP_SIZE * 1000)}mm.gif"
-        plot_rollout(model, data, fake_actions, gif_name)
+    # for ax in ALL_AXES:
+    #     # apply actions (T x B x 5)
+    #     fake_actions = torch.zeros_like(data["actions"])
+    #     fake_actions[:, :, 2] = data["actions"][:, :, 2]  # use same z
+    #     fake_actions[:,:, :2] = torch.from_numpy(STEP_SIZE * ax)
+    #     gif_name = f"diag{int(ax[0])}{int(ax[1])}_{int(STEP_SIZE * 1000)}mm.gif"
+    #     plot_rollout(model, data, fake_actions, gif_name)
