@@ -335,7 +335,7 @@ def collect_multiview_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 100  # per worker
+    num_trajectories = 2000  # per worker
     num_workers = 1
     record = False
     behavior = "straight_push"
@@ -343,7 +343,7 @@ def collect_multiview_trajectories():
 
     config, _ = argparser()
     config.large_block = True
-    config.demo_dir = "demos/tckn_data"
+    config.demo_dir = "/home/edward/tckn_data"
     config.multiview = True
     config.norobot_pixels_ob = False
     config.reward_type = "dense"
