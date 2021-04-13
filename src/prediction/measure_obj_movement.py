@@ -1,7 +1,6 @@
 """ Find videos with object interaction in the dataset """
 import os
 import pickle
-import random
 from collections import defaultdict
 from math import floor
 
@@ -16,6 +15,7 @@ from src.prediction.models.dynamics import CopyModel
 from torch.utils.data.dataloader import DataLoader
 from torchvision.datasets.folder import has_file_allowed_extension
 from tqdm import tqdm
+import torch
 
 
 def eval_step(data, model: CopyModel, cf):
@@ -31,21 +31,16 @@ def eval_step(data, model: CopyModel, cf):
         losses["world_mse"] += world_mse
     return losses
 
-def visualize_error(loader, model, name):
+def plot_error(loader, model, name):
     """ Visualize histogram of the copy error over the data"""
     all_err = []
-    for d in loader:
+    for d in tqdm(loader, desc="plot error"):
         x = d["images"].transpose_(0, 1)  # T x B
         masks = d["masks"].transpose_(0, 1)  # T x B
         names = d["folder"]  # B
-        T = x.shape[0]
-        for i in range(floor(T / window)):
-            s = i * window
-            e = (i + 1) * window
-            batch = x[s:e], masks[s:e], names
-            losses = eval_step(batch, model, config)
-            all_err.append(losses["world_mse"])
-            pbar.update()
+        batch = x, masks, names
+        losses = eval_step(batch, model, config)
+        all_err.append(losses["world_mse"])
 
     # histogram of world err
     all_err = np.asarray(all_err)
@@ -58,6 +53,60 @@ def visualize_error(loader, model, name):
     plt.savefig(f"{name}_histogram.png")
     plt.show()
 
+def make_above_threshold_videos(loader, model, threshold, max_gifs):
+    """ Create GIFs of the videos that are above the defined error threshold."""
+    all_err = []
+    gifs_created = 0
+    for d in tqdm(loader, desc="make gifs"):
+        x = d["images"].transpose_(0, 1)  # T x B
+        masks = d["masks"].transpose_(0, 1)  # T x B
+        names = d["folder"]  # B
+        batch = x, masks, names
+        losses = eval_step(batch, model, config)
+        all_err.append(losses["world_mse"])
+        if losses["world_mse"].item() > threshold and gifs_created < max_gifs:
+            mask = batch[1]
+            robot_mask = mask.type(torch.bool)
+            robot_mask = robot_mask.repeat(1,1,3,1,1)
+            batch[0][robot_mask] *= 0
+            imgs = (255 * batch[0].squeeze().permute(0,2,3,1)).cpu().numpy().astype(np.uint8)
+            gif_name = f"{names[0]}_{losses['world_mse']:.6f}.gif"
+            imageio.mimwrite(gif_name, imgs)
+            gifs_created += 1
+        if gifs_created >= max_gifs:
+            break
+
+def make_metadata(loader, model, threshold, write_path):
+    """ make metadata dictionary to contain error metric info for training"""
+    pass
+    """
+    Meta dictionary that stores information about each sequence.
+    Key: video name
+    Value: List of dictionaries containing
+            - start / end of sequence
+            - cost of sequence
+    """
+    meta_dict = defaultdict(bool)
+    num_high_err_videos = 0
+    for d in tqdm(loader, desc="make metadata"):
+        x = d["images"].transpose_(0, 1)  # T x B
+        masks = d["masks"].transpose_(0, 1)  # T x B
+        names = d["folder"]  # B
+        high_err_video = False
+        video_name = names[0]
+        batch = x, masks, names
+        losses = eval_step(batch, model, config)
+        if losses["world_mse"].item() >= threshold:
+            high_err_video = True
+            num_high_err_videos += 1
+        meta_dict[video_name] = high_err_video
+
+    print(f"above threshold videos: {num_high_err_videos}")
+    # save meta dict
+    with open(write_path, "wb") as f:
+        pickle.dump(meta_dict, f)
+
+
 if __name__ == "__main__":
     """
     Generate meta dictionary for recording baseline error per video
@@ -65,7 +114,7 @@ if __name__ == "__main__":
     2. Use copy model to get error metrics of the videos
     3. Visualize the error in a histogram to pick object interaction threshold
     4. Save some GIFs of the object interaction threshold to verify
-    5. Generate metadata file for the robot viewpoint.
+    5. Generate metadata file for the robot viewpoint. Print some statistics about the metadata like how many videos are above the threshold.
     """
     config, _ = argparser()
     config.data_root = "/home/ed/Robonet"
@@ -76,16 +125,21 @@ if __name__ == "__main__":
     config.num_workers = 4
     config.action_dim = 5
     config.n_past = 1
-    config.n_future = 5
+    config.n_future = 30
+
+    window = config.n_past + config.n_future
 
     MAX_VIDEOS = 1000
-    ROBOT = "sawyer"
-    VIEWPOINT_FOLDER = "sudri0_c0"
+    ROBOT = "widowx"
+    VIEWPOINT_FOLDER = "widowx1_c0"
+    DATA_PATH = os.path.join(config.data_root, f"{ROBOT}_views", VIEWPOINT_FOLDER)
+    MAX_GIFS = 10
+    METADATA_PATH = os.path.join(DATA_PATH, "obj_movement.pkl")
+
     files = []
     file_labels = []
-    data_path = os.path.join(config.data_root, f"{ROBOT}_views", VIEWPOINT_FOLDER)
     count = 0
-    for d in os.scandir(data_path):
+    for d in os.scandir(DATA_PATH):
         if d.is_file() and has_file_allowed_extension(d.path, "hdf5"):
             files.append(d.path)
             file_labels.append(f"{ROBOT}_{VIEWPOINT_FOLDER}")
@@ -98,93 +152,29 @@ if __name__ == "__main__":
         dataset,
         num_workers=config.data_threads,
         batch_size=config.batch_size,
-        shuffle=True,
-        drop_last=True,
         pin_memory=True,
     )
     model = CopyModel()
-    window = config.n_past + config.n_future
-    T = config.video_length
-    pbar = tqdm(
-        initial=0, total=len(dataset) * (floor(T / window)), desc="processing videos"
-    )
+    plot_error(loader, model, ROBOT + "_" + VIEWPOINT_FOLDER)
+    """ Set some thresholds to inf since their viewpoints are bad"""
+    THRESHOLDS = {
+        "sawyer_sudri0_c0": 0.114,
+        "sawyer_sudri0_c1": 0.21, # overhead view
+        "sawyer_sudri0_c2": 0.18,
+        "sawyer_vestri_table2_c0": 0.09,
+        "sawyer_vestri_table2_c1": 0.26, # overhead view, looks bad
+        "sawyer_vestri_table2_c2": 0.149,
+        "sawyer_sudri2_c0": 0.095,
+        "sawyer_sudri2_c1": 0.223,
+        "sawyer_sudri2_c2": 0.165,
+        "baxter_left_c0": 0.017,
+        "widowx_widowx1_c0": 0, # do on server
+        "locobot_c0": 0, # do on server
+    }
+    threshold = THRESHOLDS[ROBOT + "_" + VIEWPOINT_FOLDER]
+    # make_above_threshold_videos(loader, model, threshold, MAX_GIFS)
+    # make_metadata(loader, model, threshold, METADATA_PATH)
+    # print("total videos", len(dataset))
 
-    visualize_error(loader, model, ROBOT + "_" + VIEWPOINT_FOLDER)
-
-    # num_high_err_videos = 0
-    # num_high_err_snippets = 0
-    # num_snippets = 0
-
-    # num_gifs = 0
-    # max_gifs = 20
-
-    # """
-    # Meta dictionary that stores information about each sequence.
-    # Key: video name
-    # Value: List of dictionaries containing
-    #         - start / end of sequence
-    #         - cost of sequence
-    # """
-    # meta_dict = defaultdict(list)
-    # err_threshold = 0.06
-    # all_err = []
-    # for d in loader:
-    #     x = d["images"].transpose_(0, 1)  # T x B
-    #     masks = d["masks"].transpose_(0, 1)  # T x B
-    #     names = d["folder"]  # B
-    #     T = x.shape[0]
-    #     all_losses = defaultdict(float)
-    #     high_err_video = False
-    #     for i in range(floor(T / window)):
-    #         video_name = names[0]
-    #         s = i * window
-    #         e = (i + 1) * window
-    #         batch = x[s:e], masks[s:e], names
-    #         losses = eval_step(batch, model, config)
-    #         num_snippets += 1
-    #         if losses["world_mse"].item() > err_threshold:
-    #             high_err_video = True
-    #             num_high_err_snippets += 1
-    #         entry = {
-    #             "start": s,
-    #             "end": e,
-    #             "world_mse": losses["world_mse"].item(),
-    #             "high_error": losses["world_mse"].item() > err_threshold,
-    #         }
-    #         meta_dict[video_name].append(entry)
-    #         # if losses["world_mse"] > err_threshold and num_gifs < max_gifs:
-    #         #     # save video
-    #         #     mask = batch[1]
-    #         #     robot_mask = mask.type(torch.bool)
-    #         #     robot_mask = robot_mask.repeat(1,1,3,1,1)
-    #         #     batch[0][robot_mask] *= 0
-    #         #     imgs = (255 * batch[0].squeeze().permute(0,2,3,1)).cpu().numpy().astype(np.uint8)
-    #         #     name = names[0].split("/")[-1][:-5]
-    #         #     err = losses["world_mse"]
-    #         #     gif_name = f"{name}_{losses['world_mse']:.6f}.gif"
-    #         #     imageio.mimwrite(gif_name, imgs)
-    #         #     num_gifs += 1
-    #         # if num_gifs >= max_gifs:
-    #         #     break
-    #         all_err.append(losses["world_mse"])
-    #         pbar.update()
-    #     if num_gifs >= max_gifs:
-    #         break
-    #     if high_err_video:
-    #         num_high_err_videos += 1
-    # print(f"number of videos with high errors {num_high_err_videos}/{len(dataset)}")
-    # print(
-    #     f"number of snippets with high errror: {num_high_err_snippets}/{num_snippets}"
-    # )
-
-    # # histogram of world err
-    # # all_err = np.asarray(all_err)
-    # # print(all_err.mean())
-    # # plt.hist(all_err, bins=24, color='c', edgecolor='k', alpha=0.65)
-    # # plt.axvline(all_err.mean(), color='k', linestyle='dashed', linewidth=1)
-    # # plt.savefig("world_error_histogram.png")
-    # # plt.show()
-
-    # # save meta dict
-    # with open(f"widowx1_c0_world_error.pkl", "wb") as f:
-    #     pickle.dump(meta_dict, f)
+# if __name__ == "__main__":
+#    all_robots = ["sawyer", "baxter", "widowx"]

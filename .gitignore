@@ -15,6 +15,7 @@ pixel_changes.npy
 widowx1_c2_calibration
 widowx_configurations
 *.gif
+src/prediction/obj_movement_histograms
 
 # IDE
 *.swp
