@@ -103,11 +103,15 @@ class RoboNetDataset(data.Dataset):
             else:
                 low = hf["low_bound"][:]
                 high = hf["high_bound"][:]
+            '''Try using raw state'''
             if "locobot" in robot_viewpoint:
                 # normalize the locobot xyz to the 0-1 bounds
                 # rotation, gripper are always zero so it doesn't matter
-                states = normalize(states, low, high)
+                # states = normalize(states, low, high)
                 robot = "locobot"
+            else:
+                states[:, :3] = denormalize(states[:, :3], low[:3], high[:3])
+
             actions = self._load_actions(hf, low, high, start, end - 1)
             if self._config.preprocess_action != "raw":
                 raw_actions = actions.copy()
