@@ -7,7 +7,6 @@ import torch
 from sklearn.model_selection import train_test_split
 from src.dataset.robonet.robonet_dataset import RoboNetDataset
 from torch.utils.data import DataLoader
-from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision.datasets.folder import has_file_allowed_extension
 
 BAXTER_TRAIN_DIRS = ["left_c0"]
