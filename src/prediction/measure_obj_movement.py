@@ -106,8 +106,7 @@ def make_metadata(loader, model, threshold, write_path):
     with open(write_path, "wb") as f:
         pickle.dump(meta_dict, f)
 
-
-if __name__ == "__main__":
+def measure_obj_movement(ROBOT, VIEWPOINT_FOLDER, config):
     """
     Generate meta dictionary for recording baseline error per video
     1. Load all videos
@@ -116,22 +115,9 @@ if __name__ == "__main__":
     4. Save some GIFs of the object interaction threshold to verify
     5. Generate metadata file for the robot viewpoint. Print some statistics about the metadata like how many videos are above the threshold.
     """
-    config, _ = argparser()
-    config.data_root = "/home/ed/Robonet"
-    config.batch_size = 1
-    config.video_length = 31
-    config.image_width = 64
-    # config.impute_autograsp_action = True
-    config.num_workers = 4
-    config.action_dim = 5
-    config.n_past = 1
-    config.n_future = 30
-
     window = config.n_past + config.n_future
 
-    MAX_VIDEOS = 1000
-    ROBOT = "widowx"
-    VIEWPOINT_FOLDER = "widowx1_c0"
+    MAX_VIDEOS = 10000000
     DATA_PATH = os.path.join(config.data_root, f"{ROBOT}_views", VIEWPOINT_FOLDER)
     MAX_GIFS = 10
     METADATA_PATH = os.path.join(DATA_PATH, "obj_movement.pkl")
@@ -155,7 +141,7 @@ if __name__ == "__main__":
         pin_memory=True,
     )
     model = CopyModel()
-    plot_error(loader, model, ROBOT + "_" + VIEWPOINT_FOLDER)
+    # plot_error(loader, model, ROBOT + "_" + VIEWPOINT_FOLDER)
     """ Set some thresholds to inf since their viewpoints are bad"""
     THRESHOLDS = {
         "sawyer_sudri0_c0": 0.114,
@@ -168,13 +154,34 @@ if __name__ == "__main__":
         "sawyer_sudri2_c1": 0.223,
         "sawyer_sudri2_c2": 0.165,
         "baxter_left_c0": 0.017,
-        "widowx_widowx1_c0": 0, # do on server
-        "locobot_c0": 0, # do on server
+        "widowx_widowx1_c0": 0.11,
+        "locobot_c0": 0.15,
     }
     threshold = THRESHOLDS[ROBOT + "_" + VIEWPOINT_FOLDER]
     # make_above_threshold_videos(loader, model, threshold, MAX_GIFS)
-    # make_metadata(loader, model, threshold, METADATA_PATH)
+    make_metadata(loader, model, threshold, METADATA_PATH)
     # print("total videos", len(dataset))
 
-# if __name__ == "__main__":
-#    all_robots = ["sawyer", "baxter", "widowx"]
+if __name__ == "__main__":
+    config, _ = argparser()
+    config.data_root = "/scratch/edward/Robonet"
+    config.batch_size = 1
+    config.video_length = 31
+    config.image_width = 64
+    # config.impute_autograsp_action = True
+    config.num_workers = 4
+    config.action_dim = 5
+    config.n_past = 1
+    config.n_future = 30
+
+    all_robots = ["sawyer", "baxter", "widowx"]
+    robot_viewpoints = {
+        "baxter" : ["left_c0"],
+        "widowx" : ["widowx1_c0"],
+        "sawyer" : ["sudri0_c0", "sudri0_c1", "sudri0_c2", "sudri2_c0", "sudri2_c1", "sudri2_c2", "vestri_table2_c0", "vestri_table2_c1", "vestri_table2_c2"],
+        "locobot": ["c0"],
+    }
+
+    for robot, viewpoints in robot_viewpoints.items():
+        for vp in viewpoints:
+            measure_obj_movement(robot, vp, config)
