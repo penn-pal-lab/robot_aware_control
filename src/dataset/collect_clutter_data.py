@@ -343,7 +343,7 @@ def collect_multiview_trajectories():
 
     config, _ = argparser()
     config.large_block = True
-    config.demo_dir = "/home/edward/tckn_data"
+    config.demo_dir = "/Datasets/tckn_data"
     config.multiview = True
     config.norobot_pixels_ob = False
     config.reward_type = "dense"

@@ -1170,8 +1170,8 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             history["pushed_obj"] = obj
             self.random_robot_moving_object(history, ep_len, object=obj)
         elif behavior == "straight_push":
-            # obj = np.random.choice(self._objects)
-            obj = "object1"
+            obj = np.random.choice(self._objects)
+            #obj = "object1"
             history["pushed_obj"] = obj
             self.straight_push(history, object=obj, noise=noise)
         return history
