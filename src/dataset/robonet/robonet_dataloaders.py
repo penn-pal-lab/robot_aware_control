@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from src.dataset.robonet.robonet_dataset import RoboNetDataset
 from torch.utils.data import DataLoader
 from torchvision.datasets.folder import has_file_allowed_extension
+import pickle
 
 BAXTER_TRAIN_DIRS = ["left_c0"]
 BAXTER_TEST_DIRS = []
@@ -206,6 +207,153 @@ def get_sawyer_data(config):
     return file_and_labels
 
 
+def get_baxter_movement_data(config):
+    file_type = "hdf5"
+    files = []
+    file_labels = []
+    data_path = os.path.join(config.data_root, "baxter_views")
+
+    # load the movement info dict
+    movement_vp = {}
+    for folder in os.scandir(data_path):
+        if folder.is_dir() and folder.name in BAXTER_TRAIN_DIRS:
+            dict_path = os.path.join(folder.path, "obj_movement.pkl")
+            with open(dict_path, "rb") as f:
+                movement_vp[folder.name] = pickle.load(f)
+
+    for folder in os.scandir(data_path):
+        if folder.is_dir() and folder.name in BAXTER_TRAIN_DIRS:
+            for d in os.scandir(folder.path):
+                if d.is_file() and has_file_allowed_extension(d.path, file_type):
+                    if movement_vp[folder.name][d.path]:
+                        files.append(d.path)
+                        file_labels.append(f"baxter_{folder.name}")
+
+    file_and_labels = zip(files, file_labels)
+    file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
+    random.seed(config.seed)
+    random.shuffle(file_and_labels)
+    return file_and_labels
+
+def get_widowx_movement_data(config):
+    file_type = "hdf5"
+    files = []
+    file_labels = []
+    data_path = os.path.join(config.data_root, "widowx_views")
+
+    # load the movement info dict
+    movement_vp = {}
+    for folder in os.scandir(data_path):
+        if folder.is_dir() and folder.name in WIDOWX_TRAIN_DIRS:
+            dict_path = os.path.join(folder.path, "obj_movement.pkl")
+            with open(dict_path, "rb") as f:
+                movement_vp[folder.name] = pickle.load(f)
+
+    for folder in os.scandir(data_path):
+        if folder.is_dir() and folder.name in WIDOWX_TRAIN_DIRS:
+            for d in os.scandir(folder.path):
+                if d.is_file() and has_file_allowed_extension(d.path, file_type):
+                    if movement_vp[folder.name][d.path]:
+                        files.append(d.path)
+                        file_labels.append(f"widowx_{folder.name}")
+
+    file_and_labels = zip(files, file_labels)
+    file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
+    random.seed(config.seed)
+    random.shuffle(file_and_labels)
+    return file_and_labels
+
+def get_sawyer_movement_data(config):
+    file_type = "hdf5"
+    files = []
+    file_labels = []
+    data_path = os.path.join(config.data_root, "sawyer_views")
+
+    # load the movement info dict
+    movement_vp = {}
+    for folder in os.scandir(data_path):
+        if folder.is_dir() and folder.name in SAWYER_TRAIN_DIRS:
+            dict_path = os.path.join(folder.path, "obj_movement.pkl")
+            with open(dict_path, "rb") as f:
+                movement_vp[folder.name] = pickle.load(f)
+
+    for folder in os.scandir(data_path):
+        if folder.is_dir() and folder.name in SAWYER_TRAIN_DIRS:
+            for d in os.scandir(folder.path):
+                if d.is_file() and has_file_allowed_extension(d.path, file_type):
+                    if movement_vp[folder.name][d.path]:
+                        files.append(d.path)
+                        file_labels.append(f"sawyer_{folder.name}")
+
+    file_and_labels = zip(files, file_labels)
+    file_and_labels = sorted(file_and_labels, key=lambda x: x[0])
+    random.seed(config.seed)
+    random.shuffle(file_and_labels)
+    return file_and_labels
+
+
+def create_movement_loader(config):
+    """
+    Create a loader with 400 high movement videos
+    """
+    baxter_fl = get_baxter_movement_data(config)
+    widowx_fl = get_widowx_movement_data(config)
+    sawyer_fl = get_sawyer_movement_data(config)
+
+    print("baxter movement data", len(baxter_fl))
+    print("widowx movement data", len(widowx_fl))
+    print("sawyer movement data", len(sawyer_fl))
+
+    file_and_labels = baxter_fl + widowx_fl + sawyer_fl
+    random.seed(config.seed)
+    random.shuffle(file_and_labels)
+
+    files = [x[0] for x in file_and_labels]
+    file_labels = [x[1] for x in file_and_labels]
+
+    split_rng = np.random.RandomState(config.seed)
+    X_train = files[:4000]
+    y_train = file_labels[:4000]
+    train_data = RoboNetDataset(X_train, y_train, config)
+    train_loader = DataLoader(
+        train_data,
+        num_workers=config.data_threads,
+        batch_size=config.batch_size,
+        shuffle=True,
+        drop_last=False,
+        pin_memory=True,
+        generator=torch.Generator().manual_seed(config.seed),
+    )
+    return train_loader
+    # >>>>>>>>>>> Normal sampling
+    #X_train, X_test, y_train, y_test = train_test_split(
+    #    files,
+    #    file_labels,
+    #    test_size=1 - config.train_val_split,
+    #    random_state=split_rng,
+    #)
+    #augment_img = config.img_augmentation
+    #train_data = RoboNetDataset(X_train, y_train, config, augment_img=augment_img)
+    #test_data = RoboNetDataset(X_test, y_test, config)
+    #train_loader = DataLoader(
+    #    train_data,
+    #    num_workers=config.data_threads,
+    #    batch_size=config.batch_size,
+    #    shuffle=True,
+    #    drop_last=False,
+    #    pin_memory=True,
+    #    generator=torch.Generator().manual_seed(config.seed),
+    #)
+    #test_loader = DataLoader(
+    #    test_data,
+    #    num_workers=config.data_threads,
+    #    batch_size=config.test_batch_size,
+    #    shuffle=True,
+    #    drop_last=False,
+    #    pin_memory=True,
+    #    generator=torch.Generator().manual_seed(config.seed),
+    #)
+    #return train_loader, test_loader
 
 if __name__ == "__main__":
     import imageio

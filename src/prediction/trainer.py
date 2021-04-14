@@ -430,7 +430,7 @@ class PredictionTrainer(object):
             else:
                 if self._config.load_movement_info:
                     batch_weight = (self._config.movement_weight * movement_info).to(self._device)
-                    batch_weight[~movement_info] = 1
+                    batch_weight[~movement_info] = 1.0
                     view_loss = self._recon_loss(x_pred, x_i, m_i, batch_weight)
                 else:
                     view_loss = self._recon_loss(x_pred, x_i, m_i)
@@ -937,13 +937,14 @@ class PredictionTrainer(object):
         self.testing_batch_generator = get_batch(self.test_loader, self._device)
 
     @torch.no_grad()
-    def plot(self, data, epoch, name, random_start=True):
+    def plot(self, data, epoch, name, random_start=True, instance=None):
         """Plot the generation with learned prior. Autoregressive output.
         Args:
             data (DataLoader): dictionary from dataloader
             epoch (int): epoch number
             name (str): name of the dataset
             random_start (bool, optional): Choose a random timestep as the starting frame
+            instance: idx when more than one gif is generated per epoch
         """
         cf = self._config
         x = data["images"]
@@ -958,7 +959,7 @@ class PredictionTrainer(object):
         if cf.model == "svg":
             nsample = 3
 
-        b = min(x.shape[1], 10)
+        b = min(x.shape[1], 16)
         # first frame of all videos
         start = 0
         video_len = cf.n_eval
@@ -967,18 +968,18 @@ class PredictionTrainer(object):
         end = start + video_len
         if random_start:
             offset = x.shape[0] - video_len
-            start = self._plot_rng.randint(0, offset + 1)
+            start = self._plot_rng.randint(0, offset + 1, size=b)
             end = start + video_len
         # truncate batch by time and batch dim
-        x = x[start:end, :b]
-        states = states[start:end, :b]
-        ac = ac[start : end - 1, :b]
-        mask = mask[start:end, :b]
-        qpos = qpos[start:end, :b]
+        x = torch.stack([x[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
+        states = torch.stack([states[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
+        ac = torch.stack([ac[s:e-1, i] for i, (s, e) in enumerate(zip(start, end))], 1)
+        mask = torch.stack([mask[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
+        qpos = torch.stack([qpos[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
         folder = data["folder"][:b]
         robot = robot[:b]
         if cf.model_use_heatmap:
-            heatmaps = heatmaps[start:end, :b]
+            heatmaps = torch.stack([heatmaps[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
 
         if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
             input_data = dict(
@@ -1112,15 +1113,19 @@ class PredictionTrainer(object):
                 gifs[t].append(row)
                 mask_gifs[t].append(mask_row)
         # gifs is T x B x S x |I|
-        fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.gif")
+        if instance is None:
+            fname = os.path.join(cf.plot_dir, f"{name}_{epoch}.gif")
+            mask_fname = os.path.join(cf.plot_dir, f"{name}_{epoch}_masks.gif")
+        else:
+            fname = os.path.join(cf.plot_dir, f"{name}_ep{epoch}_{instance}.gif")
+            mask_fname = os.path.join(cf.plot_dir, f"{name}_ep{epoch}_{instance}_masks.gif")
         save_gif(fname, gifs)
-        wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
-
-        fname = os.path.join(cf.plot_dir, f"{name}_{epoch}_masks.gif")
-        save_gif(fname, mask_gifs)
-        wandb.log(
-            {f"{name}/masks_gifs": wandb.Video(fname, format="gif")}, step=self._step
-        )
+        save_gif(mask_fname, mask_gifs)
+        if cf.wandb:
+            wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
+            wandb.log(
+            {f"{name}/masks_gifs": wandb.Video(mask_fname, format="gif")}, step=self._step
+            )
 
     def predict_video(self, data):
         """Generate predictions for the video
