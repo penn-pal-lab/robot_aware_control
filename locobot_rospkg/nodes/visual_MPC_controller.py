@@ -49,6 +49,7 @@ class Visual_MPC(object):
         self.depth = np.zeros((480, 640), dtype=np.uint16)
 
         self.device = device
+        self.model = None
 
     def img_callback(self, data):
         self.img = self.cv_bridge.imgmsg_to_cv2(data)
@@ -99,6 +100,18 @@ class Visual_MPC(object):
         self.model = SVGConvModel(config).to(self.device)
         self.model.load_state_dict(ckpt["model"])
 
+    @torch.no_grad()
+    def vanilla_rollout(self):
+        """
+        Rollout using Vanilla Locobot Model
+        """
+        if self.model is None:
+            print("No vanilla model loaded")
+            return
+
+        pass
+
+    @torch.no_grad()
     def rollout(self):
         pass
 
