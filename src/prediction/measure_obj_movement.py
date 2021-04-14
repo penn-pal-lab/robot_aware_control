@@ -92,14 +92,14 @@ def make_metadata(loader, model, threshold, write_path):
         x = d["images"].transpose_(0, 1)  # T x B
         masks = d["masks"].transpose_(0, 1)  # T x B
         names = d["folder"]  # B
+        paths = d["file_path"]
         high_err_video = False
-        video_name = names[0]
         batch = x, masks, names
         losses = eval_step(batch, model, config)
         if losses["world_mse"].item() >= threshold:
             high_err_video = True
             num_high_err_videos += 1
-        meta_dict[video_name] = high_err_video
+        meta_dict[paths[0]] = high_err_video
 
     print(f"above threshold videos: {num_high_err_videos}")
     # save meta dict
@@ -117,7 +117,7 @@ def measure_obj_movement(ROBOT, VIEWPOINT_FOLDER, config):
     """
     window = config.n_past + config.n_future
 
-    MAX_VIDEOS = 10000000
+    MAX_VIDEOS = 100000000
     DATA_PATH = os.path.join(config.data_root, f"{ROBOT}_views", VIEWPOINT_FOLDER)
     MAX_GIFS = 10
     METADATA_PATH = os.path.join(DATA_PATH, "obj_movement.pkl")

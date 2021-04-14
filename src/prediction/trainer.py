@@ -144,17 +144,17 @@ class PredictionTrainer(object):
             return True
         return np.random.choice([True, False], p=self._schedule_prob())
 
-    def _recon_loss(self, prediction, target, mask=None):
+    def _recon_loss(self, prediction, target, mask=None, batch_weight=None):
         if self._config.reconstruction_loss == "mse":
             return mse_criterion(prediction, target)
         elif self._config.reconstruction_loss == "l1":
-            return l1_criterion(prediction, target)
+            return l1_criterion(prediction, target, batch_weight)
         elif self._config.reconstruction_loss == "dontcare_mse":
             robot_weight = self._config.robot_pixel_weight
             return dontcare_mse_criterion(prediction, target, mask, robot_weight)
         elif self._config.reconstruction_loss == "dontcare_l1":
             robot_weight = self._config.robot_pixel_weight
-            return dontcare_l1_criterion(prediction, target, mask, robot_weight)
+            return dontcare_l1_criterion(prediction, target, mask, robot_weight, batch_weight)
         else:
             raise NotImplementedError(f"{self._config.reconstruction_loss}")
 
@@ -295,6 +295,8 @@ class PredictionTrainer(object):
             }
             if cf.model_use_heatmap:
                 batch_data["heatmaps"] = data["heatmaps"][s:e]
+            if cf.load_movement_info:
+                batch_data["high_movement"] = data["high_movement"]
 
             if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
                 if cf.preprocess_action != "raw":
@@ -335,6 +337,8 @@ class PredictionTrainer(object):
         states = data["states"]
         ac = data["actions"]
         mask = data["masks"]
+        if cf.load_movement_info:
+            movement_info = data["high_movement"]
         if cf.model_use_heatmap:
             heatmaps = data["heatmaps"]
         robot_name = data["robot"]
@@ -424,7 +428,12 @@ class PredictionTrainer(object):
                     losses[f"view_{n}"] += view_loss_scalar
                     losses["recon_loss"] += view_loss_scalar
             else:
-                view_loss = self._recon_loss(x_pred, x_i, m_i)
+                if self._config.load_movement_info:
+                    batch_weight = (self._config.movement_weight * movement_info).to(self._device)
+                    batch_weight[~movement_info] = 1
+                    view_loss = self._recon_loss(x_pred, x_i, m_i, batch_weight)
+                else:
+                    view_loss = self._recon_loss(x_pred, x_i, m_i)
                 recon_loss += view_loss  # accumulate for backprop
                 losses["recon_loss"] += view_loss.cpu().item()
 

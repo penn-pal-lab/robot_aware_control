@@ -9,7 +9,14 @@ from torchvision.transforms import ToTensor
 from src.utils.state import State
 
 mse_criterion = nn.MSELoss()
-l1_criterion = nn.L1Loss()
+
+def l1_criterion(prediction, target, batch_weight=None):
+    diff = target - prediction # B, 3, H, W
+    if batch_weight is None:
+        mean_err = (diff.abs_()).mean()
+    else:
+        mean_err = torch.mean(batch_weight * (diff.abs_()).mean((1,2,3)))
+    return mean_err
 
 def dontcare_mse_criterion(prediction, target, mask, robot_weight):
     """
@@ -25,18 +32,21 @@ def dontcare_mse_criterion(prediction, target, mask, robot_weight):
     mean_err = torch.mean((diff ** 2).sum((1,2,3)) / num_world_pixels)
     return mean_err
 
-def dontcare_l1_criterion(prediction, target, mask, robot_weight):
+def dontcare_l1_criterion(prediction, target, mask, robot_weight, batch_weight=None):
     """
     Zero out the robot region from the target image before summing up the cost
     prediction / target is B x C x H x W
     mask is B x 1 x H x W
     """
-    diff = target - prediction # 3 x H x W
+    diff = target - prediction # B, 3, H, W
     mask = mask.type(torch.bool)
     repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
     diff[repeat_mask] *= robot_weight
     num_world_pixels = (~repeat_mask).sum((1,2,3)) + 1
-    mean_err = torch.mean((diff.abs_()).sum((1,2,3)) / num_world_pixels)
+    if batch_weight is None:
+        mean_err = torch.mean((diff.abs_()).sum((1,2,3)) / num_world_pixels)
+    else:
+        mean_err = torch.mean(batch_weight * (diff.abs_()).sum((1,2,3)) / num_world_pixels)
     return mean_err
 
 def robot_mse_criterion(prediction, target, mask):

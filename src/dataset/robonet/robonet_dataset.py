@@ -2,6 +2,7 @@ import os
 
 import h5py
 import numpy as np
+import pickle
 import torch
 import torchvision.transforms as tf
 import torchvision.transforms.functional as F
@@ -24,6 +25,19 @@ class RoboNetDataset(data.Dataset):
         self._traj_robots = robot_list
         self._config = config
         self._data_root = config.data_root
+        if config.load_movement_info:
+            # check for movement info dictionaries
+            movement_vp = {}
+            for name in self._traj_names:
+                folder = os.path.basename(os.path.dirname(name))
+                if folder in movement_vp:
+                    continue
+
+                dict_path = os.path.join(os.path.dirname(name), "obj_movement.pkl")
+                with open(dict_path, "rb") as f:
+                    info = pickle.load(f)
+                movement_vp[folder] = info
+            self._movement_vp = movement_vp
 
         self._video_length = config.video_length
         if load_snippet:
@@ -152,6 +166,9 @@ class RoboNetDataset(data.Dataset):
 
         if self._config.preprocess_action != "raw":
             out["raw_actions"] = raw_actions
+
+        if self._config.load_movement_info:
+            out["high_movement"] = self._movement_vp[folder][hdf5_path]
         return out
 
     def _load_actions(self, file_pointer, low, high, start, end):
