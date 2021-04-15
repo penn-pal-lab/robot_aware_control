@@ -662,7 +662,7 @@ class PredictionTrainer(object):
                     start, end = n * cf.image_width, (n + 1) * cf.image_width
                     view_pred = x_pred[:, :, start:end, :]
                     view = x[i][:, :, start:end, :]
-                    view_mask = mask[i][:, :, start:end, :]
+                    view_mask = masks[i][:, :, start:end, :]
                     view_loss = self._recon_loss(view_pred, view, view_mask)
                     view_loss_scalar = view_loss.cpu().item()
                     robot_mse = robot_mse_criterion(view_pred, view, view_mask)
