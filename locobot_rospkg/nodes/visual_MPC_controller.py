@@ -31,8 +31,12 @@ from locobot_rospkg.nodes.data_collection_client import (
 
 from src.config import argparser
 from src.prediction.models.dynamics import SVGConvModel
+from src.prediction.losses import (
+    ImgL2Cost
+)
 from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
 from src.dataset.robonet.robonet_dataset import normalize
+from src.utils.state import State
 
 
 class Visual_MPC(object):
@@ -57,6 +61,7 @@ class Visual_MPC(object):
 
         w, h = config.image_width, config.image_height
         self._img_transform = tf.Compose([tf.ToTensor(), tf.Resize((h, w))])
+        self.t = 1
 
     def img_callback(self, data):
         self.img = self.cv_bridge.imgmsg_to_cv2(data)
@@ -99,8 +104,17 @@ class Visual_MPC(object):
         # Tag pose w.r.t. camera
         return pose_t, pose_R
 
-    def read_target_image(self, path):
-        pass
+    def read_target_image(self):
+        if self.config.test_without_robot:
+            with h5py.File(self.config.h5py_path, "r") as hf:
+                IMAGE_KEY = "observations"
+                images = hf[IMAGE_KEY][:]
+                images = torch.stack([self._img_transform(i)
+                                     for i in images]).to(self.device)
+                self.target_img = images[self.t + 1]
+
+                gt_actions = hf["actions"][self.t].astype(np.float32)
+                print("gt action:", gt_actions)
 
     def load_model(self, ckpt_path):
         ckpt = torch.load(ckpt_path, map_location=self.device)
@@ -152,12 +166,13 @@ class Visual_MPC(object):
                     qpos = np.pad(qpos, [(0, 0), (0, pad)])
 
                 # preprocessing
-                images = torch.stack([self._img_transform(i) for i in images]).to(self.device)
+                images = torch.stack([self._img_transform(i)
+                                     for i in images]).to(self.device)
                 gt_actions = torch.from_numpy(gt_actions).to(self.device)
                 states = torch.from_numpy(states).to(self.device)
 
-                image = torch.unsqueeze(images[0], 0)
-                gt_action = torch.unsqueeze(gt_actions[0], 0)
+                image = torch.unsqueeze(images[self.t], 0)
+                gt_action = torch.unsqueeze(gt_actions[self.t], 0)
 
         b = min(image.shape[0], 10)
         self.model.init_hidden(b)
@@ -171,17 +186,38 @@ class Visual_MPC(object):
         img_pred = np.transpose(img_pred, axes=(1, 2, 0))
         img_pred = np.uint8(img_pred * 255)
         img_pred = cv2.cvtColor(img_pred, cv2.COLOR_BGR2RGB)
-        return img_pred
+        return img_pred, x_pred.squeeze()
 
     @torch.no_grad()
     def rollout(self):
         pass
 
     def cem(self):
-        action_samples = gaussian_push()
+        self.read_target_image()
+        goal_visual = self.target_img.cpu().clamp_(0, 1).numpy()
+        goal_visual = np.transpose(goal_visual, axes=(1, 2, 0))
+        goal_visual = np.uint8(goal_visual * 255)
+        goal_visual = cv2.cvtColor(goal_visual, cv2.COLOR_BGR2RGB)
+        cv2.imwrite("figures/goal_visual.png", goal_visual)
+
+        goal_state = State(img=self.target_img)
+        rew_func = ImgL2Cost(self.config)
+        all_rews = []
+
+        action_samples = gaussian_push(nactions=100)
+        action_samples[:, 2:] = 0
         for i in range(action_samples.shape[0]):
-            img_pred = self.vanilla_rollout(action_samples[i])
+            img_pred, x_pred = self.vanilla_rollout(action_samples[i])
             cv2.imwrite("figures/img_pred_" + str(i) + ".png", img_pred)
+            pred_state = State(img=x_pred)
+            rew = rew_func(pred_state, goal_state)
+            all_rews.append(rew)
+        all_rews = np.array(all_rews)
+        best_action_id = np.argmax(all_rews)
+        best_action = action_samples[best_action_id]
+        print("best action idx:", best_action_id)
+        print("best action:", best_action)
+        return best_action
 
 
 if __name__ == '__main__':
@@ -189,10 +225,10 @@ if __name__ == '__main__':
     cf, _ = argparser()
     cf.device = device
     cf.test_without_robot = True
-    cf.h5py_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-20/data_2021-03-20_19_05_02.hdf5"
-
-    # CKPT_PATH = "/home/pallab/locobot_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
-    CKPT_PATH = "/mnt/ssd1/pallab/pal_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
+    cf.h5py_path = "/home/pallab/locobot_ws/src/eef_control/data/data_2021-04-14_18:54:25.hdf5"
+    CKPT_PATH = "/home/pallab/locobot_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
+    # cf.h5py_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-20/data_2021-03-20_19_05_02.hdf5"
+    # CKPT_PATH = "/mnt/ssd1/pallab/pal_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
 
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.

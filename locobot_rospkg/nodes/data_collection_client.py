@@ -224,11 +224,13 @@ def process_action(action, state):
     return output_action
 
 
-def gaussian_push():
+def gaussian_push(nactions=None):
     """
     adim: Environment's action dimension, 5
     sdim: Environment's state dimension, 5
     """
+    if nactions is not None:
+        policy['nactions'] = nactions
     mean = np.zeros(policy['adim'] * policy['nactions'])
     # initialize mean and variance of the discrete actions to their mean and variance used during data collection
     sigma = construct_initial_sigma(policy, policy['adim'])
