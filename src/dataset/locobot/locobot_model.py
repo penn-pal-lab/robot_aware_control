@@ -8,7 +8,7 @@ from src.env.robotics.masks.locobot_analytical_ik import (
 )
 import torchvision.transforms as tf
 import imageio
-from src.utils.camera_calibration import camera_to_world_dict
+from src.utils.camera_calibration import camera_to_world_dict, world_to_camera_dict
 
 
 # TODO: record pitch/roll in eef pose in the future
@@ -102,21 +102,31 @@ class LocobotAnalyticalModel(object):
         return states, masks
 
     def predict_batch(self, data):
+        """
+        Get the next timestep's states, masks, and heatmaps.
+        """
         device = self._config.device
-        B = data["states"].shape[1]
+        T, B, S = data["states"].shape
         pred_states = torch.zeros_like(data["states"])
         pred_masks = torch.zeros_like(data["masks"])
         assert data["qpos"].shape[-1] == 5, f"locobot qpos {data['qpos'].shape[-1]} != 5"
         for i in range(B):
-            start_state = data["states"][0, i].cpu().numpy()
-            low = data["low"][i].cpu()
-            high = data["high"][i].cpu()
-            start_state = denormalize(start_state, low.numpy(), high.numpy())
             start_qpos = data["qpos"][0, i].cpu().numpy()
             if self._config.preprocess_action != "raw":
                 actions = data["raw_actions"][:, i].cpu().numpy()
+                # normalized world states
+                low = data["raw_low"][i].cpu()
+                high = data["raw_high"][i].cpu()
+                c_low = data["low"][i].cpu()
+                c_high = data["high"][i].cpu()
+                start_state = data["raw_states"][0, i].cpu().numpy()
+                start_state = denormalize(start_state, low.numpy(), high.numpy())
             else:
                 actions = data["actions"][:, i].cpu().numpy()
+                low = data["low"][i].cpu()
+                high = data["high"][i].cpu()
+                start_state = data["states"][0, i].cpu().numpy()
+                start_state = denormalize(start_state, low.numpy(), high.numpy())
 
             raw_p_states, p_masks = self.predict_trajectory(
                 start_state, start_qpos, actions
@@ -136,13 +146,37 @@ class LocobotAnalyticalModel(object):
             # import ipdb; ipdb.set_trace()
 
         # >>>>>>>> compute the average error per timestep
-        # raw_states = denormalize(data["states"].cpu(), data["low"], data["high"])
-        # p_states = denormalize(pred_states.cpu(), data["low"], data["high"])
+        # raw_states = denormalize(data["raw_states"].cpu(), data["raw_low"], data["raw_high"])
+        # p_states = denormalize(pred_states.cpu(), data["raw_low"], data["raw_high"])
         # diff = (p_states.cpu() - raw_states).abs()[:, :, :3]
         # diff= diff.mean(1)
-        # print("diff")
+        # print("raw diff")
         # print(diff)
+        ''' convert pred_states to camera space if necessary'''
+        if "camera" in self._config.preprocess_action:
+            # flatten into array
+            raw_pred_eef = pred_states[:, :, :3].flatten(0,1).cpu() # (T, B, 5)
+            raw_pred_eef = denormalize(raw_pred_eef, low[:3], high[:3]).numpy()
+            raw_pred_eef = np.concatenate([raw_pred_eef, np.ones((T*B, 1))], 1).T
+            # denormalize
+            # TODO: account for multiple viewpoints of locobot
+            world2cam = world_to_camera_dict["locobot_c0"]
+            c_pred_eef = (world2cam @ raw_pred_eef).T[:, :3] # (T*B, 3)
+            c_pred_eef = normalize(torch.from_numpy(c_pred_eef), c_low[:3], c_high[:3])
+            c_pred_eef = c_pred_eef.reshape(T,B,3)
+            # normalize in camera space
+            pred_states[:, :, :3] = c_pred_eef
+            # >>>>>>>> compute the average error per timestep
+            # states = denormalize(data["states"].cpu(), data["low"], data["high"])
+            # p_states = denormalize(pred_states.cpu(), data["low"], data["high"])
+            # diff = (p_states.cpu() - states).abs()[:, :, :3]
+            # diff= diff.mean(1)
+            # print("cam diff")
+            # print(diff)
+            # import ipdb; ipdb.set_trace()
+
         if self._config.model_use_heatmap:
+            # TODO: account for camera space states
             # T x B x 1 x H x W
             heatmaps = data["heatmaps"].clone()
             for idx in range(heatmaps.shape[1]):
