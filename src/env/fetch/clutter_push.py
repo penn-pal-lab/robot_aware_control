@@ -175,7 +175,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                     obj_pos = self.sim.data.get_joint_qpos(obj + ":joint")[:3]
                     u, v = self.world_to_pixel(obj_pos, cam_id, self._img_dim, self._img_dim)
                     obs[f"{cam_id}_{obj}_keypoint"] = [u, v]
-                  
+
 
             for obj in self._objects:
                 obs[obj + ":joint"] = self.sim.data.get_joint_qpos(
@@ -1170,8 +1170,9 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             history["pushed_obj"] = obj
             self.random_robot_moving_object(history, ep_len, object=obj)
         elif behavior == "straight_push":
+            # TODO: aurora change this
             obj = np.random.choice(self._objects)
-            #obj = "object1"
+            #obj = "object0"
             history["pushed_obj"] = obj
             self.straight_push(history, object=obj, noise=noise)
         return history

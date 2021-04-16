@@ -272,6 +272,7 @@ def collect_multiview_trajectory(
     all_frames = []
     all_world_coord = []
     all_keypoints = []
+    all_pushed_obj = []
     if rank == 0:
         it = tqdm(it)
     for i in it:
@@ -307,6 +308,7 @@ def collect_multiview_trajectory(
         all_world_coord.append(world_coord)
         all_frames.append(frames)
         all_keypoints.append(keypoints)
+        all_pushed_obj.append(history["pushed_obj"])
         # robot = np.asarray(robot)
         # actions = history["ac"]
         # assert len(frames) - 1 == len(actions)
@@ -315,6 +317,10 @@ def collect_multiview_trajectory(
             hf.create_dataset(f"frame_{i}", data=frame, compression="gzip")
             hf.create_dataset(f"world_coord_{i}", data=world_coord, compression="gzip")
             hf.create_dataset(f"keypoints_{i}", data=kp, compression="gzip")
+
+        hf.attrs["pushed_obj"] = all_pushed_obj
+        # hf.create_dataset(f"pushed_obj", data=all_pushed_obj, compression="gzip")
+            #hf.attrs[f"pushed_obj_{i}"] = all_pushed_obj[i]
         # print("Frame shape:", all_frames.shape)
         # print("World Coord shape:", all_world_coord.shape)
         # hf.create_dataset("frames", data=all_frames, compression="gzip")
