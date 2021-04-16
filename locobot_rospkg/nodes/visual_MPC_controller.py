@@ -32,6 +32,9 @@ from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
 from src.utils.plot import save_gif
 
 
+TEST_WITHOUT_ROBOT = True
+
+
 class Visual_MPC(object):
     def __init__(self, device="cuda"):
         # Creates the SimpleActionClient, passing the type of the action
@@ -121,7 +124,8 @@ if __name__ == '__main__':
     cf, _ = argparser()
     cf.device = device
 
-    CKPT_PATH = "/home/pallab/locobot_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
+    # CKPT_PATH = "/home/pallab/locobot_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
+    CKPT_PATH = "/mnt/ssd1/pallab/pal_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
 
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.
