@@ -6,6 +6,7 @@ import os
 import random
 import cv2
 from cv_bridge import CvBridge
+import imageio
 import pathlib
 import h5py
 from pupil_apriltags import Detector
@@ -143,6 +144,13 @@ class Visual_MPC(object):
                                                          DEFAULT_PITCH,
                                                          DEFAULT_ROLL])
         input("Move the object close to the EEF. Press Enter to continue...")
+        self.start_img = np.copy(self.img)
+        self.start_img = self._img_transform(
+            self.start_img).to(self.device)
+        self.start_img = self.start_img.cpu().clamp_(0, 1).numpy()
+        self.start_img = np.transpose(self.start_img, axes=(1, 2, 0))
+        self.start_img = np.uint8(self.start_img * 255)
+        # self.start_img = cv2.cvtColor(self.start_img, cv2.COLOR_BGR2RGB)
 
     def load_model(self, ckpt_path):
         ckpt = torch.load(ckpt_path, map_location=self.device)
@@ -217,7 +225,7 @@ class Visual_MPC(object):
         img_pred = x_pred.squeeze().cpu().clamp_(0, 1).numpy()
         img_pred = np.transpose(img_pred, axes=(1, 2, 0))
         img_pred = np.uint8(img_pred * 255)
-        img_pred = cv2.cvtColor(img_pred, cv2.COLOR_BGR2RGB)
+        # img_pred = cv2.cvtColor(img_pred, cv2.COLOR_BGR2RGB)
         return img_pred, x_pred.squeeze()
 
     @torch.no_grad()
@@ -240,7 +248,9 @@ class Visual_MPC(object):
         action_samples[:, 2:] = 0
         for i in range(action_samples.shape[0]):
             img_pred, x_pred = self.vanilla_rollout(action_samples[i])
-            cv2.imwrite("figures/img_pred_" + str(i) + ".png", img_pred)
+            # cv2.imwrite("figures/img_pred_" + str(i) + ".png", img_pred)
+            imageio.mimwrite("figures/img_pred_" + str(i) +
+                             ".gif", [self.start_img, img_pred], fps=2)
             pred_state = State(img=x_pred)
             rew = rew_func(pred_state, goal_state)
             all_rews.append(rew)
