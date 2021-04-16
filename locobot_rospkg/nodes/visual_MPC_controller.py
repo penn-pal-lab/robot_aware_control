@@ -24,7 +24,10 @@ import torchvision.transforms as tf
 
 # Defined by us
 from eef_control.msg import *
-from locobot_rospkg.nodes.data_collection_client import eef_control_client
+from locobot_rospkg.nodes.data_collection_client import (
+    eef_control_client,
+    gaussian_push
+)
 
 from src.config import argparser
 from src.prediction.models.dynamics import SVGConvModel
@@ -106,9 +109,10 @@ class Visual_MPC(object):
         self.model.eval()
 
     @torch.no_grad()
-    def vanilla_rollout(self):
+    def vanilla_rollout(self, a_in):
         """
         Rollout using Vanilla Locobot Model
+        a_in: numpy array (5, ), input action
         """
         if self.model is None:
             print("No vanilla model loaded")
@@ -116,6 +120,8 @@ class Visual_MPC(object):
 
         image, mask, robot, heatmap, action, next_image, next_mask, next_robot, next_heatmap \
             = None, None, None, None, None, None, None, None, None
+        action = torch.from_numpy(a_in).type(torch.float32).to(self.device)
+        action = torch.unsqueeze(action, 0)
 
         if self.config.test_without_robot:
             with h5py.File(self.config.h5py_path, "r") as hf:
@@ -135,7 +141,7 @@ class Visual_MPC(object):
                 # rotation, gripper are always zero so it doesn't matter
                 states = normalize(states, low, high)
                 robot = "locobot"
-                actions = hf["actions"][:].astype(np.float32)
+                gt_actions = hf["actions"][:].astype(np.float32)
 
                 # masks = hf[MASK_KEY][:].astype(np.float32)
 
@@ -147,11 +153,11 @@ class Visual_MPC(object):
 
                 # preprocessing
                 images = torch.stack([self._img_transform(i) for i in images]).to(self.device)
-                actions = torch.from_numpy(actions).to(self.device)
+                gt_actions = torch.from_numpy(gt_actions).to(self.device)
                 states = torch.from_numpy(states).to(self.device)
 
                 image = torch.unsqueeze(images[0], 0)
-                action = torch.unsqueeze(actions[0], 0)
+                gt_action = torch.unsqueeze(gt_actions[0], 0)
 
         b = min(image.shape[0], 10)
         self.model.init_hidden(b)
@@ -165,11 +171,17 @@ class Visual_MPC(object):
         img_pred = np.transpose(img_pred, axes=(1, 2, 0))
         img_pred = np.uint8(img_pred * 255)
         img_pred = cv2.cvtColor(img_pred, cv2.COLOR_BGR2RGB)
-        cv2.imwrite("figures/img_pred.png", img_pred)
+        return img_pred
 
     @torch.no_grad()
     def rollout(self):
         pass
+
+    def cem(self):
+        action_samples = gaussian_push()
+        for i in range(action_samples.shape[0]):
+            img_pred = self.vanilla_rollout(action_samples[i])
+            cv2.imwrite("figures/img_pred_" + str(i) + ".png", img_pred)
 
 
 if __name__ == '__main__':
@@ -190,4 +202,4 @@ if __name__ == '__main__':
     vmpc.load_model(ckpt_path=CKPT_PATH)
     vmpc.get_camera_pose_from_apriltag()
 
-    vmpc.vanilla_rollout()
+    vmpc.cem()
