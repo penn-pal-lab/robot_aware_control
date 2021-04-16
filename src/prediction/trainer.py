@@ -238,6 +238,7 @@ class PredictionTrainer(object):
 
         states = predicted_states
         mask = predicted_masks
+        # TODO: transform the state back to camera space
         if self._config.model_use_heatmap:
             # T x B x 1 x H x W
             heatmaps = data["heatmaps"].clone()
@@ -301,6 +302,10 @@ class PredictionTrainer(object):
             if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
                 if cf.preprocess_action != "raw":
                     batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
+                    batch_data["raw_states"] = data["raw_states"][s : e]
+                    batch_data["raw_low"] = data["raw_low"]
+                    batch_data["raw_high"] = data["raw_high"]
+
                 batch_data["low"] = data["low"]
                 batch_data["high"] = data["high"]
 
@@ -526,6 +531,10 @@ class PredictionTrainer(object):
             if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
                 if cf.preprocess_action != "raw":
                     batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
+                    batch_data["raw_states"] = data["raw_states"][s : e]
+                    batch_data["raw_low"] = data["raw_low"]
+                    batch_data["raw_high"] = data["raw_high"]
+
                 batch_data["low"] = data["low"]
                 batch_data["high"] = data["high"]
 
@@ -993,7 +1002,10 @@ class PredictionTrainer(object):
             input_data["low"] = data["low"][:b]
             input_data["high"] = data["high"][:b]
             if cf.preprocess_action != "raw":
-                input_data["raw_actions"] = data["raw_actions"][start : end - 1, :b]
+                input_data["raw_low"] = data["raw_low"][:b]
+                input_data["raw_high"] = data["raw_high"][:b]
+                input_data["raw_actions"] = torch.stack([data["raw_actions"][s:e-1, i] for i, (s, e) in enumerate(zip(start, end))], 1)
+                input_data["raw_states"] = torch.stack([data["raw_states"][s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
 
             if cf.experiment == "finetune_locobot":
                 out = self.robot_model.predict_batch(input_data)
