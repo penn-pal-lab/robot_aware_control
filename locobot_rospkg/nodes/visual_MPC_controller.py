@@ -26,7 +26,10 @@ import torchvision.transforms as tf
 from eef_control.msg import *
 from locobot_rospkg.nodes.data_collection_client import (
     eef_control_client,
-    gaussian_push
+    gaussian_push,
+    PUSH_HEIGHT,
+    DEFAULT_PITCH,
+    DEFAULT_ROLL,
 )
 
 from src.config import argparser
@@ -62,6 +65,7 @@ class Visual_MPC(object):
         w, h = config.image_width, config.image_height
         self._img_transform = tf.Compose([tf.ToTensor(), tf.Resize((h, w))])
         self.t = 1
+        self.target_img = None
 
     def img_callback(self, data):
         self.img = self.cv_bridge.imgmsg_to_cv2(data)
@@ -115,6 +119,30 @@ class Visual_MPC(object):
 
                 gt_actions = hf["actions"][self.t].astype(np.float32)
                 print("gt action:", gt_actions)
+        else:
+            if self.target_img is None:
+                print("Collect target image before MPC first!")
+                return
+            self.target_img = self._img_transform(
+                self.target_img).to(self.device)
+
+    def collect_target_img(self, eef_target):
+        """ set up the scene and collect goal image """
+        control_result = eef_control_client(self.control_client,
+                                            target_pose=[*eef_target,
+                                                         PUSH_HEIGHT,
+                                                         DEFAULT_PITCH,
+                                                         DEFAULT_ROLL])
+        self.target_img = np.copy(self.img)
+
+    def go_to_start_pose(self, eef_start):
+        """ set up the starting scene """
+        control_result = eef_control_client(self.control_client,
+                                            target_pose=[*eef_start,
+                                                         PUSH_HEIGHT,
+                                                         DEFAULT_PITCH,
+                                                         DEFAULT_ROLL])
+        input("Move the object close to the EEF. Press Enter to continue...")
 
     def load_model(self, ckpt_path):
         ckpt = torch.load(ckpt_path, map_location=self.device)
@@ -173,6 +201,10 @@ class Visual_MPC(object):
 
                 image = torch.unsqueeze(images[self.t], 0)
                 gt_action = torch.unsqueeze(gt_actions[self.t], 0)
+        else:
+            """ Real robot visual MPC """
+            image = torch.unsqueeze(self._img_transform(np.copy(self.img)),
+                                    0).to(self.device)
 
         b = min(image.shape[0], 10)
         self.model.init_hidden(b)
@@ -219,13 +251,24 @@ class Visual_MPC(object):
         print("best action:", best_action)
         return best_action
 
+    def execute_traj(self, action):
+        control_result = eef_control_client(self.control_client,
+                                            target_pose=[])
+        end_xy = [control_result.end_pose[0]+action[0],
+                  control_result.end_pose[1]+action[1]]
+        control_result = eef_control_client(self.control_client,
+                                            target_pose=[*end_xy,
+                                                         PUSH_HEIGHT,
+                                                         DEFAULT_PITCH,
+                                                         DEFAULT_ROLL])
+
 
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cf, _ = argparser()
     cf.device = device
-    cf.test_without_robot = True
-    cf.h5py_path = "/home/pallab/locobot_ws/src/eef_control/data/data_2021-04-14_18:54:25.hdf5"
+    cf.test_without_robot = False
+    # cf.h5py_path = "/home/pallab/locobot_ws/src/eef_control/data/data_2021-04-14_18:54:25.hdf5"
     CKPT_PATH = "/home/pallab/locobot_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
     # cf.h5py_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-20/data_2021-03-20_19_05_02.hdf5"
     # CKPT_PATH = "/mnt/ssd1/pallab/pal_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
@@ -238,4 +281,9 @@ if __name__ == '__main__':
     vmpc.load_model(ckpt_path=CKPT_PATH)
     vmpc.get_camera_pose_from_apriltag()
 
-    vmpc.cem()
+    eef_target_pos = [0.33, 0]
+    vmpc.collect_target_img(eef_target_pos)
+    vmpc.go_to_start_pose(eef_start=[eef_target_pos[0],
+                                     eef_target_pos[1] + 0.05])
+    best_action = vmpc.cem()
+    vmpc.execute_traj(best_action)
