@@ -232,6 +232,7 @@ def add_prediction_arguments(parser):
     parser.add_argument("--learned_robot_model", type=str2bool, default=False)
     parser.add_argument("--robot_model_ckpt", type=str, default=None)
     parser.add_argument("--cdna_kernel_size", type=int, default=5)
+    parser.add_argument("--lstm_group_norm", type=str2bool, default=False)
 
 
 def add_dataset_arguments(parser):

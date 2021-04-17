@@ -472,9 +472,11 @@ class SVGConvModel(nn.Module):
             lstm_c += cf.robot_dim
         if cf.model_use_future_robot_state:
             lstm_c += cf.robot_dim
+        # convolve input channels into g_dim
+        self.frame_pred_input_conv = frame_pred_in = nn.Conv2d(lstm_c, cf.g_dim, 3,1,1)
 
         # encoder channels, noise channels, ac channels, state channels
-        self.frame_predictor = frame_pred = ConvLSTM(cf, lstm_c)
+        self.frame_predictor = frame_pred = ConvLSTM(cf, cf.g_dim)
 
         ''' posterior and prior '''
         post_c = cf.g_dim # takes in future img and future state
@@ -485,12 +487,15 @@ class SVGConvModel(nn.Module):
         if cf.model_use_future_robot_state:
             prior_c += cf.robot_dim
 
-        self.posterior = post = GaussianConvLSTM(cf, post_c, cf.z_dim)
-        self.prior = prior = GaussianConvLSTM(cf, prior_c, cf.z_dim)
+        self.posterior_input_conv = post_in = nn.Conv2d(post_c, cf.g_dim, 3,1,1)
+        self.prior_input_conv = prior_in = nn.Conv2d(prior_c, cf.g_dim, 3,1,1)
 
-        self.decoder = dec = ConvDecoder(lstm_c, cf.channels + 1) # extra channel for attention
+        self.posterior = post = GaussianConvLSTM(cf, cf.g_dim, cf.z_dim)
+        self.prior = prior = GaussianConvLSTM(cf, cf.g_dim, cf.z_dim)
 
-        self.all_models = [frame_pred, enc, dec, post, prior]
+        self.decoder = dec = ConvDecoder(cf.g_dim, cf.channels + 1) # extra channel for attention
+
+        self.all_models = [frame_pred, frame_pred_in, enc, dec, post, post_in, prior, prior_in]
         self.to(self._device)
         for model in self.all_models:
             model.apply(init_weights)
@@ -546,12 +551,15 @@ class SVGConvModel(nn.Module):
                 r, r_next = robot
                 r = r.repeat(height, width, 1, 1).permute(2,3,0,1)
                 r_next = r_next.repeat(height, width, 1, 1).permute(2,3,0,1)
-                z_p, mu_p, logvar_p = self.prior(cat([a, r, r_next, h], 1))
+                prior_in = self.prior_input_conv(cat([a, r, r_next, h], 1))
+                z_p, mu_p, logvar_p = self.prior(prior_in)
             else:
                 r = robot.repeat(height, width, 1, 1).permute(2,3,0,1)
-                z_p, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
+                prior_in = self.prior_input_conv(cat([a, r, h], 1))
+                z_p, mu_p, logvar_p = self.prior(prior_in)
         else:
-            z_p, mu_p, logvar_p = self.prior(cat([a, h], 1))
+            prior_in = self.prior_input_conv(cat([a, h], 1))
+            z_p, mu_p, logvar_p = self.prior(prior_in)
         # use prior's z by default
         z = z_p
 
@@ -566,20 +574,25 @@ class SVGConvModel(nn.Module):
 
             if cf.model_use_robot_state:
                 r_target = next_robot.repeat(height, width, 1, 1).permute(2,3,0,1)
-                z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
+                post_in = self.posterior_input_conv(cat([r_target, h_target], 1))
+                z_t, mu, logvar = self.posterior(post_in)
             else:
-                z_t, mu, logvar = self.posterior(h_target)
+                post_in = self.posterior_input_conv(h_target)
+                z_t, mu, logvar = self.posterior(post_in)
             if not force_use_prior:
                 z = z_t
 
         # add z to the latent before prediction
         if cf.model_use_robot_state:
             if cf.model_use_future_robot_state:
-                h_pred = self.frame_predictor(cat([a, r, r_next, h, z], 1))
+                frame_in = self.frame_pred_input_conv(cat([a, r, r_next, h, z], 1))
+                h_pred = self.frame_predictor(frame_in)
             else:
-                h_pred = self.frame_predictor(cat([a, r, h, z], 1))
+                frame_in = self.frame_pred_input_conv(cat([a, r, h, z], 1))
+                h_pred = self.frame_predictor(frame_in)
         else:
-            h_pred = self.frame_predictor(cat([a, h, z], 1))
+            frame_in = self.frame_pred_input_conv(cat([a, h, z], 1))
+            h_pred = self.frame_predictor(frame_in)
 
         x_pred = self.decoder([h_pred, skip])
         return x_pred, skip, mu, logvar, mu_p, logvar_p

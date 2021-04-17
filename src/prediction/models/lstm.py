@@ -148,15 +148,66 @@ class ConvLSTMCell(nn.Module):
 
         return hidden, cell
 
+class NormConvLSTMCell(nn.Module):
+    """
+    Convolutional LSTM
+    """
+    def __init__(self, in_ch, hid_ch, kernel_size=3, padding=1, stride=1):
+        super().__init__()
+
+        self.in_ch = in_ch
+        self.hid_ch = hid_ch
+        self.kernel_size = kernel_size
+        self.padding = padding
+
+        self.ih_gates = nn.Sequential(
+            nn.Conv2d(in_ch, 4*hid_ch, kernel_size, padding=padding, stride=stride),
+            nn.GroupNorm(16, 4*hid_ch),
+        )
+
+        self.hh_gates = nn.Sequential(
+            nn.Conv2d(hid_ch, 4*hid_ch, kernel_size, padding=padding, stride=stride),
+            nn.GroupNorm(16, 4*hid_ch),
+        )
+        self.c_norm = nn.GroupNorm(16, hid_ch)
+
+    def forward(self, input_, prev_state):
+        prev_hidden, prev_cell = prev_state
+        # data size is [batch, channel, height, width]
+
+        ih_gates = self.ih_gates(input_)
+        hh_gates = self.hh_gates(prev_hidden)
+        out_gates = ih_gates + hh_gates
+
+        # chunk across channel dimension
+        in_gate, remember_gate, out_gate, cell_gate = out_gates.chunk(4, 1)
+
+        # apply sigmoid non linearity
+        in_gate = torch.sigmoid(in_gate)
+        remember_gate = torch.sigmoid(remember_gate)
+        out_gate = torch.sigmoid(out_gate)
+
+        # apply tanh non linearity
+        cell_gate = torch.tanh(cell_gate)
+
+        # compute current cell and hidden state
+        cell = (remember_gate * prev_cell) + (in_gate * cell_gate)
+        cell = self.c_norm(cell)
+        hidden = out_gate * torch.tanh(cell)
+
+        return hidden, cell
+
+
 class ConvLSTM(nn.Module):
     def __init__(self, config, hid_ch):
         super().__init__()
 
         self.hid_ch = hid_ch
+        Cell = NormConvLSTMCell if config.lstm_group_norm else ConvLSTMCell
         self.lstm = nn.ModuleList(
             [
-                ConvLSTMCell(hid_ch, hid_ch, 5, 2, 1),
-                ConvLSTMCell(hid_ch, hid_ch, 3, 1, 1),
+                Cell(hid_ch, hid_ch, 5, 2, 1),
+                Cell(hid_ch, hid_ch, 3, 1, 1),
             ]
         )
         self.batch_size = config.batch_size
