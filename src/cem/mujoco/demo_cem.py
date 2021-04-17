@@ -3,7 +3,7 @@ import imageio
 import numpy as np
 import torch
 from src.utils.state import State, DemoGoalState
-from src.cem.trajectory_sampler import (
+from src.cem.mujoco.trajectory_sampler import (
     generate_env_rollouts,
     generate_model_rollouts,
 )
