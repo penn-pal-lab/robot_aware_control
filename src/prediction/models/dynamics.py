@@ -452,58 +452,45 @@ class SVGConvModel(nn.Module):
         else:
             raise ValueError
 
-        channels = cf.channels
+        ''' encoder, main lstm'''
+        enc_c = cf.channels
         if cf.model_use_mask:
             # RGB + mask channel
-            channels += 1
+            enc_c += 1
             if cf.model_use_future_mask:
-                channels += 1
-
+                enc_c += 1
         if cf.model_use_heatmap:
-            channels += 1
+            enc_c += 1
             if cf.model_use_future_heatmap:
-                channels += 1
+                enc_c += 1
 
-        self.encoder = enc = ConvEncoder(cf.g_dim, channels)
+        self.encoder = enc = ConvEncoder(cf.g_dim, enc_c)
 
-        # 2 channel spatial map for actions
-        height, width = self._image_height // 8, self._image_width // 8
-        self.action_encoder = ac_enc =  nn.Sequential(
-            nn.Linear(cf.action_dim, height * width * 2)
-        )
-        # 2 channel spatial map for state
+        # tile robot state, action convolution
+        lstm_c = cf.g_dim + cf.action_dim + cf.z_dim
         if cf.model_use_robot_state:
-            self.state_encoder = state_enc = nn.Sequential(
-                nn.Linear(cf.robot_dim, height * width * 2)
-            )
+            lstm_c += cf.robot_dim
         if cf.model_use_future_robot_state:
-            self.future_state_encoder = fut_state_enc = nn.Sequential(
-                nn.Linear(cf.robot_dim, height * width * 2)
-            )
-        post_dim = cf.g_dim
-        prior_dim = cf.g_dim + 2 # ac channels
-        if cf.model_use_robot_state:
-            post_dim += 2
-            prior_dim += 2
-        if cf.model_use_future_robot_state:
-            # posterior doesn't need 2 extra channels for future robot state,
-            # since it only needs the r_i to produce z.
-            prior_dim += 2
-
-        self.posterior = post = GaussianConvLSTM(cf, post_dim, cf.z_dim)
-        self.prior = prior = GaussianConvLSTM(cf, prior_dim, cf.z_dim)
+            lstm_c += cf.robot_dim
 
         # encoder channels, noise channels, ac channels, state channels
-        in_channels = cf.g_dim + cf.z_dim + 2 + (2 * cf.model_use_robot_state) + (2 * cf.model_use_future_robot_state)
-        self.frame_predictor = frame_pred = ConvLSTM(cf, in_channels)
-        self.decoder = dec = ConvDecoder(in_channels, cf.channels + 1) # extra channel for attention
+        self.frame_predictor = frame_pred = ConvLSTM(cf, lstm_c)
 
-        self.all_models = [frame_pred, enc, dec, ac_enc, post, prior]
+        ''' posterior and prior '''
+        post_c = cf.g_dim # takes in future img and future state
+        prior_c = cf.g_dim + cf.action_dim # takes in curr img, curr state, curr ac
         if cf.model_use_robot_state:
-            self.all_models.append(state_enc)
+            post_c += cf.robot_dim
+            prior_c += cf.robot_dim
         if cf.model_use_future_robot_state:
-            self.all_models.append(fut_state_enc)
+            prior_c += cf.robot_dim
 
+        self.posterior = post = GaussianConvLSTM(cf, post_c, cf.z_dim)
+        self.prior = prior = GaussianConvLSTM(cf, prior_c, cf.z_dim)
+
+        self.decoder = dec = ConvDecoder(lstm_c, cf.channels + 1) # extra channel for attention
+
+        self.all_models = [frame_pred, enc, dec, post, prior]
         self.to(self._device)
         for model in self.all_models:
             model.apply(init_weights)
@@ -551,18 +538,17 @@ class SVGConvModel(nn.Module):
 
         # tile the action and states
         height, width = self._image_height // 8, self._image_width // 8
-        a = self.action_encoder(action).view(action.shape[0], 2, height, width)
+        a = action.repeat(height, width, 1, 1).permute(2,3,0,1)
         z_t, mu, logvar, mu_p, logvar_p = None, None, None, None, None
 
         if cf.model_use_robot_state:
             if cf.model_use_future_robot_state:
                 r, r_next = robot
-                r = self.state_encoder(r).view(r.shape[0], 2, height, width)
-                r_next = self.future_state_encoder(r_next).view(r_next.shape[0], 2, height, width)
+                r = r.repeat(height, width, 1, 1).permute(2,3,0,1)
+                r_next = r_next.repeat(height, width, 1, 1).permute(2,3,0,1)
                 z_p, mu_p, logvar_p = self.prior(cat([a, r, r_next, h], 1))
             else:
-                r = self.state_encoder(robot).view(robot.shape[0], 2, height, width)
-                # whether to use posterior or learned prior
+                r = robot.repeat(height, width, 1, 1).permute(2,3,0,1)
                 z_p, mu_p, logvar_p = self.prior(cat([a, r, h], 1))
         else:
             z_p, mu_p, logvar_p = self.prior(cat([a, h], 1))
@@ -579,7 +565,7 @@ class SVGConvModel(nn.Module):
             h_target = self.encoder(img)[0]
 
             if cf.model_use_robot_state:
-                r_target = self.state_encoder(next_robot).view(next_robot.shape[0], 2, height, width)
+                r_target = next_robot.repeat(height, width, 1, 1).permute(2,3,0,1)
                 z_t, mu, logvar = self.posterior(cat([r_target, h_target], 1))
             else:
                 z_t, mu, logvar = self.posterior(h_target)
