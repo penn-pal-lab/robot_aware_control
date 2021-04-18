@@ -1,3 +1,4 @@
+from src.prediction.models.dynamics import SVGConvModel
 import imageio
 import numpy as np
 import torch
@@ -16,7 +17,7 @@ class CEMPolicy(object):
     Either uses ground truth physics or learned physics to do the planning.
     """
 
-    def __init__(self, cfg, env) -> None:
+    def __init__(self, cfg):
         # Hyperparameters
         self.L = cfg.horizon  # Prediction window size
         self.I = cfg.opt_iter  # Number of optimization iterations
@@ -27,11 +28,12 @@ class CEMPolicy(object):
         self.sparse_cost = cfg.sparse_cost  # Use cost function at end of traj
         self.cem_init_std = cfg.cem_init_std
 
-        # Infer action size
         self.A = 5
         self.cfg = cfg
-        
-        # TODO: load vanilla model
+
+        self.model = SVGConvModel(config)
+        ckpt = torch.load(cfg.dynamics_model_ckpt, map_location=cfg.device)
+        self.model.load_state_dict(ckpt["model"])
 
         self.plot_rollouts = cfg.debug_cem
         if self.plot_rollouts:
@@ -88,7 +90,7 @@ class CEMPolicy(object):
         """
         Return the rollouts from learned model
         """
-        
+
         rollouts = generate_model_rollouts(
             self.cfg,
             self.model,
@@ -97,6 +99,7 @@ class CEMPolicy(object):
             goal,
             ret_obs=self.plot_rollouts,
             opt_traj=opt_traj,
+            suppress_print=False,
         )
         # Plot the Top K model rollouts
         if self.plot_rollouts:
@@ -121,3 +124,47 @@ class CEMPolicy(object):
                 gif_path = os.path.join(gif_folder, f"step_{self.step}_top_{n}.gif")
                 imageio.mimwrite(gif_path, gif)
         return rollouts
+
+
+if __name__ == '__main__':
+    """test the cem rollout
+    python -m src.cem.cem --data_root ~/Robonet   --n_future 5 --n_past 1 --n_eval 10 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --checkpoint_interval 10 --eval_interval 5 --reconstruction_loss l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment train_locobot_singleview --preprocess_action raw --random_snippet True --model_use_mask False --model_use_robot_state False --model_use_heatmap False   --seed 4 --dynamics_model_ckpt locobot_689_tile_ckpt_136500.pt --debug_cem True
+    """
+    from src.config import argparser
+    from src.dataset.locobot.locobot_singleview_dataloader import create_transfer_loader
+    import h5py
+
+    config, _ = argparser()
+    config.device = torch.device("cuda") if torch.cuda.is_available else torch.device("cpu")
+    config.batch_size = 1
+
+    traj_path = "/home/ed/Robonet/locobot_views/c0/data_2021-03-12_03:39:16.hdf5"
+    if traj_path is None:
+        loader = create_transfer_loader(config)
+        for data in loader:
+            imgs = data["images"]
+            print(data["file_path"])
+            break
+        # convert to (H,W,3) uint8 numpy array
+        imgs = (255 * imgs).permute(0, 1, 3, 4, 2).cpu().numpy().astype(np.uint8)
+        imgs = imgs[0]
+    else:
+        with h5py.File(traj_path, "r") as hf:
+            IMAGE_KEY = "frames"
+            if "observations" in hf:
+                IMAGE_KEY = "observations"
+            imgs = hf[IMAGE_KEY][:] # already uint8 (H,W,3) numpy array
+
+    # now choose a start and goal img from the video
+    # imageio.mimwrite("full_traj.gif", imgs)
+    start_idx = 15
+    goal_idx = 20
+    # start, goal imgs are numpy arrays of (H, W, 3) uint8
+    curr_img = imgs[start_idx]
+    curr_state = State(curr_img)
+    goal_imgs = [imgs[goal_idx]]
+    imageio.imwrite("start_goal.png", np.concatenate([curr_img, goal_imgs[0]], 1))
+    goal_state = DemoGoalState(goal_imgs)
+
+    policy = CEMPolicy(config)
+    actions = policy.get_action(curr_state, goal_state, 0, 0)
