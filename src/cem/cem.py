@@ -57,14 +57,17 @@ class CEMPolicy(object):
         std = torch.ones(self.L, self.A) * self.cem_init_std
         mean_top_costs = []  # for debugging
         # Optimization loop
-        for _ in range(self.I):  # Use tqdm to track progress
+        for i in range(self.I):  # Use tqdm to track progress
             # Sample J candidate action sequence
             m = Normal(mean, std)
             act_seq = m.sample((self.J,))  # of shape (J, L, A)
-            act_seq[-1] = 0  # always have a "do nothing" action sequence
+            if i == 0:
+                act_seq[-1] = 0  # always have a "do nothing" action sequence in start
+            act_seq[:,:, 2:] = 0 # only x y push
             act_seq.clamp_(-1, 1)  # always between -1 and 1
             # Generate J rollouts
-            rollouts = self._get_rollouts(act_seq, start, goal, opt_traj)
+            plot = i == self.I - 1 and self.plot_rollouts
+            rollouts = self._get_rollouts(act_seq, start, goal, opt_traj, plot)
             # Select top K action sequences based on cumulative cost
             costs = torch.from_numpy(rollouts["sum_cost"])
             top_costs, top_idx = costs.topk(self.K)
@@ -86,6 +89,7 @@ class CEMPolicy(object):
         start: State,
         goal: DemoGoalState,
         opt_traj,
+        plot=False
     ):
         """
         Return the rollouts from learned model
@@ -102,27 +106,27 @@ class CEMPolicy(object):
             suppress_print=False,
         )
         # Plot the Top K model rollouts
-        if self.plot_rollouts:
-            obs = rollouts["obs"]  # N x T x C x H x W
+        if plot:
+            obs = rollouts["obs"]  # K x T x C x H x W
             obs = np.uint8(255 * obs)
-            obs = obs.transpose((0, 1, 3, 4, 2))  # N x T x H x W x C
-            curr_img = start.curr_img.copy()
+            obs = obs.transpose((0, 1, 3, 4, 2))  # K x T x H x W x C
             gif_folder = os.path.join(self.debug_cem_dir, f"ep_{self.ep_num}")
             os.makedirs(gif_folder, exist_ok=True)
-            for n in range(obs.shape[0]):
+            for k in range(obs.shape[0]):
                 goal_img = goal.imgs[0]
+                curr_img = start.img.copy()
                 img = np.concatenate([curr_img, goal_img], axis=1)
                 gif = [img]
                 for t in range(self.cfg.horizon):
-                    curr_img = obs[n, t]
+                    curr_img = obs[k, t]
                     g = t if t < len(goal.imgs) else -1
                     goal_img = goal.imgs[g]
-                    img = np.concatenate([curr_img, goal_img], axis=1)
-                    putText(img, "MODEL", (0, 8))
-                    putText(img, "GOAL", (64, 8))
+                    img = np.concatenate([curr_img, goal_img], axis=1).copy()
+                    putText(img, f"{t}", (0, 8), color=(255,255,255))
+                    putText(img, "GOAL", (64, 8), color=(255,255,255))
                     gif.append(img)
-                gif_path = os.path.join(gif_folder, f"step_{self.step}_top_{n}.gif")
-                imageio.mimwrite(gif_path, gif)
+                gif_path = os.path.join(gif_folder, f"step_{self.step}_top_{k}.gif")
+                imageio.mimwrite(gif_path, gif, fps=2)
         return rollouts
 
 
@@ -133,32 +137,37 @@ if __name__ == '__main__':
     from src.config import argparser
     from src.dataset.locobot.locobot_singleview_dataloader import create_transfer_loader
     import h5py
+    import torchvision.transforms as tf
 
     config, _ = argparser()
     config.device = torch.device("cuda") if torch.cuda.is_available else torch.device("cpu")
     config.batch_size = 1
 
-    traj_path = "/home/ed/Robonet/locobot_views/c0/data_2021-03-12_03:39:16.hdf5"
+    traj_path = None
     if traj_path is None:
         loader = create_transfer_loader(config)
         for data in loader:
             imgs = data["images"]
             print(data["file_path"])
             break
-        # convert to (H,W,3) uint8 numpy array
-        imgs = (255 * imgs).permute(0, 1, 3, 4, 2).cpu().numpy().astype(np.uint8)
-        imgs = imgs[0]
     else:
+        w, h = config.image_width, config.image_height
+        img_transform = tf.Compose([tf.ToTensor(), tf.Resize((h, w))])
         with h5py.File(traj_path, "r") as hf:
             IMAGE_KEY = "frames"
             if "observations" in hf:
                 IMAGE_KEY = "observations"
             imgs = hf[IMAGE_KEY][:] # already uint8 (H,W,3) numpy array
+        imgs = torch.stack([img_transform(i) for i in imgs])
+        imgs.unsqueeze_(0)
+
+    imgs = (255 * imgs).permute(0, 1, 3, 4, 2).cpu().numpy().astype(np.uint8)
+    imgs = imgs[0]
 
     # now choose a start and goal img from the video
-    # imageio.mimwrite("full_traj.gif", imgs)
-    start_idx = 15
-    goal_idx = 20
+    imageio.mimwrite("full_traj.gif", imgs)
+    start_idx = 0
+    goal_idx = 6
     # start, goal imgs are numpy arrays of (H, W, 3) uint8
     curr_img = imgs[start_idx]
     curr_state = State(curr_img)
