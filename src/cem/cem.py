@@ -132,7 +132,7 @@ class CEMPolicy(object):
 
 if __name__ == '__main__':
     """test the cem rollout
-    python -m src.cem.cem --data_root ~/Robonet   --n_future 5 --n_past 1 --n_eval 10 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --checkpoint_interval 10 --eval_interval 5 --reconstruction_loss l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment train_locobot_singleview --preprocess_action raw --random_snippet True --model_use_mask False --model_use_robot_state False --model_use_heatmap False   --seed 4 --dynamics_model_ckpt locobot_689_tile_ckpt_136500.pt --debug_cem True
+    python -m src.cem.cem --data_root ~/Robonet   --n_future 5 --n_past 1 --n_eval 10 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --checkpoint_interval 10 --eval_interval 5 --reconstruction_loss l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment train_locobot_singleview --preprocess_action raw --random_snippet True --model_use_mask False --model_use_robot_state False --model_use_heatmap False    --dynamics_model_ckpt locobot_689_tile_ckpt_136500.pt --debug_cem True  --candidates_batch_size 10 --action_candidates 100  --horizon 4 --opt_iter 5 --cem_init_std 0.025  --sparse_cost False --seed 0
     """
     from src.config import argparser
     from src.dataset.locobot.locobot_singleview_dataloader import create_transfer_loader
