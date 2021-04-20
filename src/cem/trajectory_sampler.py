@@ -38,8 +38,6 @@ class TrajectorySampler(object):
         """
         Executes the action sequences on the learned model.
 
-        cfg: configuration dictionary
-        env: environment instance
         action_sequences: list of action candidates to evaluate
         cost: cost function for comparing observation and goal
         goal: list of goal images for comparison
@@ -113,8 +111,7 @@ class TrajectorySampler(object):
                     mask = torch.cat([mask, masks[t+1, s:e]], 1)
                 if cfg.model_use_future_robot_state:
                     state = (state, states[t+1, s:e])
-                # TODO: use z_mean instead of z_sample
-                x_pred = model.forward(curr_img, mask, state, heatmap, ac, sample_mean=True)[0]
+                x_pred = model.forward(curr_img, mask, state, heatmap, ac, sample_mean=cfg.sample_mean)[0]
                 x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
                 next_img = (1 - x_pred_mask) * curr_img + (x_pred_mask) * x_pred
 

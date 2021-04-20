@@ -24,19 +24,17 @@ class CEMPolicy(object):
         opt_iter=10,
         action_candidates=100,
         topk=5,
-        replan_every=1,
         init_std=1.0,
     ):
         # Hyperparameters
-        self.L = horizon  # Prediction window size
-        self.I = opt_iter  # Number of optimization iterations
-        self.J = action_candidates  # Number of candidate action sequences
+        self.horizon = horizon  # Prediction window size
+        self.optimization_iter = opt_iter  # Number of optimization iterations
+        self.num_actions = action_candidates  # Number of candidate action sequences
         self.K = topk
-        self.R = replan_every  # Number of real world actions to take
         self.init_std = init_std
         self.sparse_cost = cfg.sparse_cost  # Use cost function at end of traj
 
-        self.A = 2
+        self.action_dim = 2
         self.cfg = cfg
 
         self.model = model
@@ -57,23 +55,27 @@ class CEMPolicy(object):
         opt_traj: used for oracle demo cost
         Returns: a list of actions to execute in the environment
         """
+        T = self.horizon
+        A = self.action_dim
+        N = self.num_actions
+
         self.ep_num = ep_num
         self.step = step
-        # Initialize action sequence belief as standard normal, of shape (L, A)
-        mean = torch.zeros(self.L, self.A)
-        std = torch.ones(self.L, self.A) * self.init_std
+        # Initialize action sequence belief as standard normal, of shape (T-1, A)
+        mean = torch.zeros(T-1, A)
+        std = torch.ones(T-1, A) * self.init_std
         mean_top_costs = []  # for debugging
         # Optimization loop
-        for i in range(self.I):  # Use tqdm to track progress
-            # Sample J candidate action sequence
+        for i in range(self.optimization_iter):  # Use tqdm to track progress
+            # Sample N candidate action sequence
             m = Normal(mean, std)
-            act_seq = m.sample((self.J,))  # of shape (J, L, A)
+            act_seq = m.sample((N,))  # of shape (N, T-1, A)
             if i == 0:
                 act_seq[-1] = 0  # always have a "do nothing" action sequence in start
 
             act_seq.clamp_(-1, 1)  # always between -1 and 1
-            padded_act_seq = torch.cat([act_seq, torch.zeros((self.J, self.L, 3))], 2)
-            # Generate J rollouts
+            padded_act_seq = torch.cat([act_seq, torch.zeros((N, T-1, 3))], 2)
+            # Generate N rollouts of the N action trajectories
             plot = i == self.I - 1 and self.plot_rollouts
             rollouts = self._get_rollouts(padded_act_seq, start, goal, opt_traj, plot)
             # Select top K action sequences based on cumulative cost
@@ -118,7 +120,7 @@ class CEMPolicy(object):
                 curr_img = start.img.copy()
                 img = np.concatenate([curr_img, goal_img], axis=1)
                 gif = [img]
-                for t in range(self.L):
+                for t in range(obs.shape[1]):
                     curr_img = obs[k, t]
                     g = t if t < len(goal.imgs) else -1
                     goal_img = goal.imgs[g]

@@ -607,7 +607,7 @@ class SVGConvModel(nn.Module):
             prior_in = self.prior_input_conv(cat([a, h], 1))
             z_p, mu_p, logvar_p = self.prior(prior_in)
         # use prior's z by default
-        z = z_p
+        z = mu_p if sample_mean else z_p
 
         # if future image is supplied, calculate the posterior
         if next_image is not None:

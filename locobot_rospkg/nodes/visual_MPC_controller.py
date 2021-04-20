@@ -316,14 +316,8 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cf, _ = argparser()
     cf.device = device
-    cf.test_without_robot = False
-    # cf.h5py_path = "/home/pallab/locobot_ws/src/eef_control/data/data_2021-04-14_18:54:25.hdf5"
-    CKPT_PATH = (
-        "/home/pallab/locobot_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
-    )
-    # cf.h5py_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-20/data_2021-03-20_19_05_02.hdf5"
-    # CKPT_PATH = "/mnt/ssd1/pallab/pal_ws/src/roboaware/checkpoints/locobot_689_ckpt_213000.pt"
     cf.dynamics_model_ckpt = "locobot_689_tile_ckpt_136500.pt"
+
     cf.debug_cem = True
     cf.cem_init_std = 0.015
     cf.action_candidates = 300
