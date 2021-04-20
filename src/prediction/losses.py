@@ -171,7 +171,7 @@ class RobotL2Cost(Cost):
         return -norm(curr_robot - goal_robot)
 
     def __call__(self, curr: State, goal: State):
-        return self.call(curr.robot, goal.robot)
+        return self.call(curr.state, goal.state)
 
 
 class ImgL2Cost(Cost):
