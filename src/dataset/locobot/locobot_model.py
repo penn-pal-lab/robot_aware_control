@@ -75,17 +75,11 @@ class LocobotAnalyticalModel(object):
         Returns:
             states, masks, heatmaps, etc. of the next K timesteps
         """
-        start_eef = eef_curr
-        start_qpos = qpos_curr
         states = [eef_curr]
         pred_qpos = [qpos_curr]
         for t in range(len(actions)):
-            # >>>>> closed loop prediction
             act = actions[t, :2]
             eef_curr, qpos_curr = self.predict_next_state_qpos(eef_curr, qpos_curr, act)
-            # >>>>> open loop prediction
-            # act = np.sum(actions[0:t+1, :2], 0)
-            # eef_curr, qpos_curr = self.predict_next_state_qpos(start_eef, start_qpos, act)
             # add rotation and gripper state as 0
             eef_curr = np.concatenate([eef_curr, [0,0]])
             states.append(eef_curr)

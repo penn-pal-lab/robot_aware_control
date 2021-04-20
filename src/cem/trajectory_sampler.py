@@ -28,7 +28,7 @@ class TrajectorySampler(object):
     def generate_model_rollouts(
         self,
         action_sequences,
-        start_state: State,
+        start: State,
         goal: DemoGoalState,
         opt_traj=None,
         ret_obs=False,
@@ -75,8 +75,8 @@ class TrajectorySampler(object):
             '''
             states = torch.zeros((T+1, N, 5), dtype=torch.float32) # only need first timestep
             qpos = torch.zeros((T+1, N, 5), dtype=torch.float32) # only need first timestep
-            states[0, :] = start_state.state
-            qpos[0, :] = start_state.qpos
+            states[0, :] = start.state
+            qpos[0, :] = start.qpos
             start_data = {
                 "states": states,
                 "qpos": qpos,
@@ -86,16 +86,15 @@ class TrajectorySampler(object):
                 "masks": torch.zeros((T+1,N,1, 48, 64)), # only shape is used in predict batch
             }
             states, masks = self.robot_model.predict_batch(start_data)
-            import ipdb; ipdb.set_trace()
 
         for b in range(B):
-            start = b * ac_per_batch
-            end = (b + 1) * ac_per_batch if b < B - 1 else N
-            num_batch = end - start
-            action_batch = action_sequences[start:end]
+            s = b * ac_per_batch
+            e = (b + 1) * ac_per_batch if b < B - 1 else N
+            num_batch = e - s
+            action_batch = action_sequences[s:e]
             actions = action_batch.to(dev)
             model.init_hidden(batch_size=num_batch)
-            curr_img = torch.from_numpy(start_state.img.copy()).permute(2, 0, 1).float() / 255
+            curr_img = torch.from_numpy(start.img.copy()).permute(2, 0, 1).float() / 255
             curr_img = curr_img.expand(num_batch, -1, -1, -1).to(dev)  # (N x |I|)
             for t in range(T):
                 ac = actions[:, t]  # (J, |A|)
@@ -115,11 +114,11 @@ class TrajectorySampler(object):
                 # sparse_cost only uses last frame of trajectory for cost
                 if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
                     rew = cost(curr_state, goal_state)
-                sum_cost[start:end] += rew
+                sum_cost[s:e] += rew
                 if ret_obs:
-                    all_obs[start:end, t] = next_img.cpu()  # B x T x Obs
+                    all_obs[s:e, t] = next_img.cpu()  # B x T x Obs
                 if ret_step_cost:
-                    all_step_cost[start:end] = rew  # B x T x 1
+                    all_step_cost[s:e] = rew  # B x T x 1
                 curr_img = next_img
 
         if not suppress_print:
