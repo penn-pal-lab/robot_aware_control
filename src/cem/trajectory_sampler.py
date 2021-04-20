@@ -7,6 +7,7 @@ from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
 from src.prediction.losses import RobotWorldCost
 from src.prediction.models.dynamics import SVGConvModel
 from src.utils.state import DemoGoalState, State
+from src.utils.image import zero_robot_region
 
 
 class TrajectorySampler(object):
@@ -20,8 +21,7 @@ class TrajectorySampler(object):
         self.high = torch.from_numpy(np.array([0.55, 0.3, 0.4, 1, 1], dtype=np.float32))
         self.low.unsqueeze_(0)
         self.high.unsqueeze_(0)
-        # if cfg.model_use_robot_state or cfg.model_use_mask:
-        if True:
+        if cfg.model_use_robot_state or cfg.model_use_mask or cfg.black_robot_input:
             self.robot_model = LocobotAnalyticalModel(cfg)
 
     @torch.no_grad()
@@ -68,8 +68,7 @@ class TrajectorySampler(object):
             print("####### Gathering Samples #######")
 
         # use locobot analytical model to generate masks and states
-        #if cfg.model_use_robot_state or cfg.model_use_mask:
-        if True:
+        if cfg.model_use_robot_state or cfg.model_use_mask or cfg.black_robot_input:
             '''
             states should be normalized, world frame
             '''
@@ -86,6 +85,8 @@ class TrajectorySampler(object):
                 "masks": torch.zeros((T+1,N,1, 48, 64)), # only shape is used in predict batch
             }
             states, masks = self.robot_model.predict_batch(start_data)
+            states = states.to(dev, non_blocking=True)
+            masks = masks.to(dev, non_blocking=True)
 
         for b in range(B):
             s = b * ac_per_batch
@@ -99,9 +100,21 @@ class TrajectorySampler(object):
             for t in range(T):
                 ac = actions[:, t]  # (J, |A|)
                 # compute the next img
-                mask, robot, heatmap, next_image, next_mask, next_robot, next_heatmap  = None, None, None, None, None, None, None
+                mask, state, heatmap  = None, None, None
+                if cfg.model_use_mask:
+                    mask = masks[t, s:e]
+                if cfg.model_use_robot_state:
+                    state = states[t, s:e]
+                # zero out robot pixels in input for norobot cost
+                if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input:
+                    curr_img = zero_robot_region(mask, curr_img)
+
+                if cfg.model_use_future_mask:
+                    mask = torch.cat([mask, masks[t+1, s:e]], 1)
+                if cfg.model_use_future_robot_state:
+                    state = (state, states[t+1, s:e])
                 # TODO: use z_mean instead of z_sample
-                x_pred = model.forward(curr_img, mask, robot, heatmap, ac, next_image, next_mask, next_robot, next_heatmap)[0]
+                x_pred = model.forward(curr_img, mask, state, heatmap, ac, sample_mean=True)[0]
                 x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
                 next_img = (1 - x_pred_mask) * curr_img + (x_pred_mask) * x_pred
 

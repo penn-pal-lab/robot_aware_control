@@ -19,6 +19,7 @@ class CEMPolicy(object):
     def __init__(
         self,
         cfg,
+        model,
         horizon=5,
         opt_iter=10,
         action_candidates=100,
@@ -38,9 +39,7 @@ class CEMPolicy(object):
         self.A = 2
         self.cfg = cfg
 
-        self.model = SVGConvModel(cfg)
-        ckpt = torch.load(cfg.dynamics_model_ckpt, map_location=cfg.device)
-        self.model.load_state_dict(ckpt["model"])
+        self.model = model
 
         self.traj_sampler = TrajectorySampler(cfg, self.model)
 
@@ -195,6 +194,10 @@ if __name__ == "__main__":
     imageio.imwrite("start_goal.png", np.concatenate([curr_img, goal_imgs[0]], 1))
     goal_state = DemoGoalState(goal_imgs, qposes=goal_qposes)
 
+    model = SVGConvModel(config)
+    ckpt = torch.load(config.dynamics_model_ckpt, map_location=config.device)
+    model.load_state_dict(ckpt["model"])
+    model.eval()
 
-    policy = CEMPolicy(config, init_std=0.015)
+    policy = CEMPolicy(config, model, init_std=0.015)
     actions = policy.get_action(curr_state, goal_state, 0, 0)

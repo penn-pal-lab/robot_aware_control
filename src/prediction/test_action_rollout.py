@@ -10,23 +10,13 @@ from src.utils.plot import save_gif
 from tqdm import trange
 import ipdb
 from src.utils.camera_calibration import world_to_camera_dict
+from src.utils.image import zero_robot_region
 
 """
 Apply different actions to the SVG model to see video prediction performance
 """
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-def zero_robot_region(mask, image, inplace=False):
-    """
-    Set the robot region to zero
-    """
-    robot_mask = mask.type(torch.bool)
-    robot_mask = robot_mask.repeat(1, 3, 1, 1)
-    if not inplace:
-        image = image.clone()
-    image[robot_mask] *= 0
-    return image
 
 def convert_world_to_camera_pos(state, w_to_c):
         e_to_w = np.eye(4)
@@ -221,7 +211,7 @@ if __name__ == "__main__":
             else:
                 raise ValueError
             fake_actions[:, :, axis] = STEP_SIZE * direction
-            # check one action trajectory 
+            # check one action trajectory
             true_states = data["states"][:, 0].cpu().clone().numpy()
             true_states[:, :3] = denormalize(true_states[:,  :3], data["low"][0,:3].cpu().numpy(), data["high"][0, :3].cpu().numpy())
             old_actions = fake_actions[:, 0].cpu().numpy().copy()
@@ -235,7 +225,7 @@ if __name__ == "__main__":
                 true_offset_c = next_pos_c - pos_c
                 new_actions.append( true_offset_c)
 
-            
+
             gif_name = f"{ax}_{int(direction * STEP_SIZE * 1000)}mm.gif"
             print(gif_name)
             print(new_actions[0])
