@@ -80,7 +80,6 @@ class TrajectorySampler(object):
                 "actions": action_sequences.permute(1,0,2), # (T, N, 2)
                 "low": self.low.repeat(N,1), # (N, 5)
                 "high": self.high.repeat(N,1), # (N, 5)
-                "masks": torch.zeros((T+1,N,1, 48, 64)), # only shape is used in predict batch
             }
             states, masks = self.robot_model.predict_batch(start_data)
             states = states.to(dev, non_blocking=True)
