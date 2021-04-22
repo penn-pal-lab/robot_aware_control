@@ -163,7 +163,6 @@ include_directories(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
-  # nodes/eef_control_server.py
   nodes/data_collection_client.py
   nodes/visual_MPC_controller.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

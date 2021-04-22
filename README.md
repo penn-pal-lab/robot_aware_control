@@ -110,11 +110,11 @@ CUDA_VISIBLE_DEVICES=0 python -m src.prediction.multirobot_trainer --jobname loc
 ### Using LoCoBot Vanilla Model
 
 ```bash
-python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/locobot_689_tile_ckpt_136500.pt
+python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/locobot_689_tile_ckpt_136500.pt --action_candidates 1000 --candidates_batch_size 500
 ```
 
 ### Using LoCoBot Roboaware Model
 
 ```bash
-python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask True --model_use_robot_state True --model_use_future_mask True --model_use_future_robot_state True --lstm_group_norm True --robot_joint_dim 5 --dynamics_model_ckpt checkpoints/roboaware_ckpt_10200.pt --reconstruction_loss dontcare_l1 --reward_type dontcare
+python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask True --model_use_robot_state True --model_use_future_mask True --model_use_future_robot_state True --lstm_group_norm True --robot_joint_dim 5 --dynamics_model_ckpt checkpoints/roboaware_ckpt_10200.pt --reconstruction_loss dontcare_l1 --reward_type dontcare --action_candidates 1000 --candidates_batch_size 500
 ```

@@ -473,8 +473,13 @@ if __name__ == '__main__':
     rospy.init_node('eef_control_client_py')
 
     dc = Data_Collector()
-    dc.data_collection()
-    # eef_control_client(dc.control_client,
-    #                    target_pose=[0.1, 0.23, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL])
-    # eef_control_client(dc.control_client,
-    #                    target_pose=[0.1, -0.23, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL])
+
+    """[zone locations]
+    0.35, -0.01
+    0.29, -0.14
+    0.26, 0.13
+    0.42, 0.0
+    """
+
+    eef_control_client(dc.control_client,
+                       target_pose=[0.42, 0.0, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL])

@@ -40,7 +40,9 @@ from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
 from src.cem.cem import CEMPolicy
 from src.dataset.robonet.robonet_dataset import normalize
 from src.utils.state import DemoGoalState, State
-from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinematics as AIK
+from src.env.robotics.masks.locobot_analytical_ik import (
+    AnalyticInverseKinematics as AIK,
+)
 from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
 from src.utils.camera_calibration import camera_to_world_dict, world_to_camera_dict
 
@@ -81,6 +83,7 @@ class Visual_MPC(object):
             model,
             init_std=config.cem_init_std,
             action_candidates=config.action_candidates,
+            horizon=config.horizon,
         )
 
         self.ik_solver = AIK()
@@ -140,15 +143,18 @@ class Visual_MPC(object):
         """ set up the scene and collect goal image """
         control_result = eef_control_client(
             self.control_client,
-            target_pose=[*eef_target, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL],
+            target_pose=[0.15, 0.0, 0.55, 0, DEFAULT_ROLL],
         )
+        input("Move the object to the GOAL position. Press Enter to continue...")
         self.target_img = np.copy(self.img)
         self.target_eef = np.array(control_result.end_pose)
 
         qpos_from_eef = np.zeros(5)
-        qpos_from_eef[0:4] = self.ik_solver.ik(self.target_eef,
-                                               alpha=-DEFAULT_PITCH,
-                                               cur_arm_config=np.array(control_result.joint_angles))
+        qpos_from_eef[0:4] = self.ik_solver.ik(
+            self.target_eef,
+            alpha=-DEFAULT_PITCH,
+            cur_arm_config=np.array(control_result.joint_angles),
+        )
         qpos_from_eef[4] = DEFAULT_ROLL
 
         self.target_qpos = qpos_from_eef
@@ -167,109 +173,6 @@ class Visual_MPC(object):
         self.start_img = np.uint8(self.start_img * 255)
         # self.start_img = cv2.cvtColor(self.start_img, cv2.COLOR_BGR2RGB)
 
-    # @torch.no_grad()
-    # def vanilla_rollout(self, a_in):
-    #     """
-    #     Rollout using Vanilla Locobot Model
-    #     a_in: numpy array (5, ), input action
-    #     """
-    #     if self.model is None:
-    #         print("No vanilla model loaded")
-    #         return
-
-    #     image, mask, robot, heatmap, action, next_image, next_mask, next_robot, next_heatmap \
-    #         = None, None, None, None, None, None, None, None, None
-    #     action = torch.from_numpy(a_in).type(torch.float32).to(self.device)
-    #     action = torch.unsqueeze(action, 0)
-
-    #     if self.config.test_without_robot:
-    #         with h5py.File(self.config.h5py_path, "r") as hf:
-    #             IMAGE_KEY = "observations"
-    #             MASK_KEY = "masks"
-
-    #             images = hf[IMAGE_KEY][:]
-    #             states = hf["states"][:].astype(np.float32)
-    #             if states.shape[-1] != self.config.robot_dim:
-    #                 assert self.config.robot_dim > states.shape[-1]
-    #                 pad = self.config.robot_dim - states.shape[-1]
-    #                 states = np.pad(states, [(0, 0), (0, pad)])
-
-    #             low = np.array([0.015, -0.3, 0.1, 0, 0], dtype=np.float32)
-    #             high = np.array([0.55, 0.3, 0.4, 1, 1], dtype=np.float32)
-    #             # normalize the locobot xyz to the 0-1 bounds
-    #             # rotation, gripper are always zero so it doesn't matter
-    #             states = normalize(states, low, high)
-    #             robot = "locobot"
-    #             gt_actions = hf["actions"][:].astype(np.float32)
-
-    #             # masks = hf[MASK_KEY][:].astype(np.float32)
-
-    #             qpos = hf["qpos"][:].astype(np.float32)
-    #             if qpos.shape[-1] != self.config.robot_joint_dim:
-    #                 assert self.config.robot_joint_dim > qpos.shape[-1]
-    #                 pad = self.config.robot_joint_dim - qpos.shape[-1]
-    #                 qpos = np.pad(qpos, [(0, 0), (0, pad)])
-
-    #             # preprocessing
-    #             images = torch.stack([self._img_transform(i)
-    #                                  for i in images]).to(self.device)
-    #             gt_actions = torch.from_numpy(gt_actions).to(self.device)
-    #             states = torch.from_numpy(states).to(self.device)
-
-    #             image = torch.unsqueeze(images[self.t], 0)
-    #             gt_action = torch.unsqueeze(gt_actions[self.t], 0)
-    #     else:
-    #         """ Real robot visual MPC """
-    #         image = torch.unsqueeze(self._img_transform(np.copy(self.img)),
-    #                                 0).to(self.device)
-
-    #     b = min(image.shape[0], 10)
-    #     self.model.init_hidden(b)
-    #     x_pred, curr_skip, _, _, _, _ \
-    #         = self.model.forward(image, mask, robot, heatmap, action,
-    #                              next_image, next_mask, next_robot, next_heatmap)
-    #     x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
-    #     x_pred = (1 - x_pred_mask) * image + (x_pred_mask) * x_pred
-
-    #     img_pred = x_pred.squeeze().cpu().clamp_(0, 1).numpy()
-    #     img_pred = np.transpose(img_pred, axes=(1, 2, 0))
-    #     img_pred = np.uint8(img_pred * 255)
-    #     # img_pred = cv2.cvtColor(img_pred, cv2.COLOR_BGR2RGB)
-    #     return img_pred, x_pred.squeeze()
-
-    # @torch.no_grad()
-    # def rollout(self):
-    #     pass
-
-    # def cem(self):
-    #     self.read_target_image()
-    #     goal_visual = self.target_img.cpu().clamp_(0, 1).numpy()
-    #     goal_visual = np.transpose(goal_visual, axes=(1, 2, 0))
-    #     goal_visual = np.uint8(goal_visual * 255)
-    #     goal_visual = cv2.cvtColor(goal_visual, cv2.COLOR_BGR2RGB)
-    #     cv2.imwrite("figures/goal_visual.png", goal_visual)
-
-    #     goal_state = State(img=self.target_img)
-    #     rew_func = ImgL2Cost(self.config)
-    #     all_rews = []
-
-    #     action_samples = gaussian_push(nactions=100)
-    #     action_samples[:, 2:] = 0
-    #     for i in range(action_samples.shape[0]):
-    #         img_pred, x_pred = self.vanilla_rollout(action_samples[i])
-    #         # cv2.imwrite("figures/img_pred_" + str(i) + ".png", img_pred)
-    #         imageio.mimwrite("figures/img_pred_" + str(i) +
-    #                          ".gif", [self.start_img, img_pred], fps=2)
-    #         pred_state = State(img=x_pred)
-    #         rew = rew_func(pred_state, goal_state)
-    #         all_rews.append(rew)
-    #     all_rews = np.array(all_rews)
-    #     best_action_id = np.argmax(all_rews)
-    #     best_action = action_samples[best_action_id]
-    #     print("best action idx:", best_action_id)
-    #     print("best action:", best_action)
-    #     return best_action
-
     def cem(self):
         self.read_target_image()
         goal_visual = self.target_img.cpu().clamp_(0, 1).numpy()
@@ -281,14 +184,16 @@ class Visual_MPC(object):
             "figures/start_goal.png", np.concatenate([start_visual, goal_visual], 1)
         )
         control_result = eef_control_client(self.control_client, target_pose=[])
-        start = State(img=start_visual, state=[*control_result.end_pose, DEFAULT_PITCH, DEFAULT_ROLL], qpos=control_result.joint_angles)
+        start = State(
+            img=start_visual,
+            state=[*control_result.end_pose, DEFAULT_PITCH, DEFAULT_ROLL],
+            qpos=control_result.joint_angles,
+        )
 
         mask = self.env.generate_masks([self.target_qpos])[0]
-        mask = (
-            torch.stack([self._img_transform(mask)])
-            .type(torch.bool)
-            .type(torch.float32)
-        ).to(self.device)
+        mask = (self._img_transform(mask).type(torch.bool).type(torch.float32)).to(
+            self.device
+        )
 
         goal = DemoGoalState(imgs=[goal_visual], masks=[mask])
         actions = self.policy.get_action(start, goal, 0, 0)
@@ -334,6 +239,7 @@ if __name__ == "__main__":
     cf.debug_cem = True
     cf.cem_init_std = 0.015
     cf.action_candidates = 300
+    cf.goal_img_with_wrong_robot = True
 
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.
@@ -342,9 +248,15 @@ if __name__ == "__main__":
     vmpc = Visual_MPC(config=cf)
     vmpc.get_camera_pose_from_apriltag()
 
-    eef_target_pos = [0.33, 0]
+    if not cf.goal_img_with_wrong_robot:
+        eef_target_pos = [0.33, 0]
+        eef_start_pos = [eef_target_pos[0], eef_target_pos[1] - 0.1]
+    else:
+        eef_start_pos = [0.33, -0.1]
+        eef_target_pos = [0.33, -0.1]
+
     vmpc.collect_target_img(eef_target_pos)
-    vmpc.go_to_start_pose(eef_start=[eef_target_pos[0], eef_target_pos[1] - 0.1])
+    vmpc.go_to_start_pose(eef_start=eef_start_pos)
     actions = vmpc.cem()  # returns action trajectory
     print(actions)
     input("execute actions?")
