@@ -62,8 +62,8 @@ class CEMPolicy(object):
         self.ep_num = ep_num
         self.step = step
         # Initialize action sequence belief as standard normal, of shape (T-1, A)
-        mean = torch.zeros(T-1, A)
-        std = torch.ones(T-1, A) * self.init_std
+        mean = torch.zeros(T - 1, A)
+        std = torch.ones(T - 1, A) * self.init_std
         mean_top_costs = []  # for debugging
         # Optimization loop
         for i in range(self.optimization_iter):  # Use tqdm to track progress
@@ -74,9 +74,9 @@ class CEMPolicy(object):
                 act_seq[-1] = 0  # always have a "do nothing" action sequence in start
 
             act_seq.clamp_(-1, 1)  # always between -1 and 1
-            padded_act_seq = torch.cat([act_seq, torch.zeros((N, T-1, 3))], 2)
+            padded_act_seq = torch.cat([act_seq, torch.zeros((N, T - 1, 3))], 2)
             # Generate N rollouts of the N action trajectories
-            plot = i == self.I - 1 and self.plot_rollouts
+            plot = i == self.optimization_iter - 1 and self.plot_rollouts
             rollouts = self._get_rollouts(padded_act_seq, start, goal, opt_traj, plot)
             # Select top K action sequences based on cumulative cost
             costs = torch.from_numpy(rollouts["sum_cost"])
@@ -140,8 +140,7 @@ if __name__ == "__main__":
     import h5py
     import torchvision.transforms as tf
     from src.config import argparser
-    from src.dataset.locobot.locobot_singleview_dataloader import \
-        create_transfer_loader
+    from src.dataset.locobot.locobot_singleview_dataloader import create_transfer_loader
     from src.dataset.robonet.robonet_dataset import normalize
 
     config, _ = argparser()

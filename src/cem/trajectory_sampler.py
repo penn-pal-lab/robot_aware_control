@@ -1,3 +1,4 @@
+from src.dataset.robonet.robonet_dataset import normalize
 import time as timer
 from collections import defaultdict
 
@@ -43,6 +44,7 @@ class TrajectorySampler(object):
         goal: list of goal images for comparison
         ret_obs: return the observations
         ret_step_cost: return per step cost
+        start: not normalized states
 
         Returns a dictionary containing the cost per trajectory by default.
         """
@@ -72,8 +74,8 @@ class TrajectorySampler(object):
             '''
             states = torch.zeros((T+1, N, 5), dtype=torch.float32) # only need first timestep
             qpos = torch.zeros((T+1, N, 5), dtype=torch.float32) # only need first timestep
-            states[0, :] = start.state
-            qpos[0, :] = start.qpos
+            states[0, :] = normalize(torch.tensor(start.state), self.low, self.high)
+            qpos[0, :] = torch.tensor(start.qpos)
             start_data = {
                 "states": states,
                 "qpos": qpos,
@@ -113,12 +115,17 @@ class TrajectorySampler(object):
                 x_pred = model.forward(curr_img, mask, state, heatmap, ac, sample_mean=cfg.sample_mean)[0]
                 x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
                 next_img = (1 - x_pred_mask) * curr_img + (x_pred_mask) * x_pred
-
+                if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input:
+                    next_img = zero_robot_region(masks[t+1, s:e], next_img)
                 # compute the img costs
                 goal_idx = t if t < len(goal_imgs) else -1
                 goal_img = goal_imgs[goal_idx]
-                goal_state = State(img=goal_img)
-                curr_state = State(img=next_img)
+                if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input:
+                    goal_state = State(img=goal_img, mask=goal.masks[0])
+                    curr_state = State(img=next_img, mask=masks[t+1, s:e])
+                else:
+                    goal_state = State(img=goal_img)
+                    curr_state = State(img=next_img)
                 rew = 0
                 # sparse_cost only uses last frame of trajectory for cost
                 if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):

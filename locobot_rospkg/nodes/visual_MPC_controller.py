@@ -40,6 +40,9 @@ from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
 from src.cem.cem import CEMPolicy
 from src.dataset.robonet.robonet_dataset import normalize
 from src.utils.state import DemoGoalState, State
+from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinematics as AIK
+from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
+from src.utils.camera_calibration import camera_to_world_dict, world_to_camera_dict
 
 
 class Visual_MPC(object):
@@ -79,6 +82,11 @@ class Visual_MPC(object):
             init_std=config.cem_init_std,
             action_candidates=config.action_candidates,
         )
+
+        self.ik_solver = AIK()
+        self.env = LocobotMaskEnv()
+        cam_ext = camera_to_world_dict[f"locobot_c0"]
+        self.env.set_opencv_camera_pose("main_cam", cam_ext)
 
     def img_callback(self, data):
         self.img = self.cv_bridge.imgmsg_to_cv2(data)
@@ -123,22 +131,10 @@ class Visual_MPC(object):
         return pose_t, pose_R
 
     def read_target_image(self):
-        if self.config.test_without_robot:
-            with h5py.File(self.config.h5py_path, "r") as hf:
-                IMAGE_KEY = "observations"
-                images = hf[IMAGE_KEY][:]
-                images = torch.stack([self._img_transform(i) for i in images]).to(
-                    self.device
-                )
-                self.target_img = images[self.t + 1]
-
-                gt_actions = hf["actions"][self.t].astype(np.float32)
-                print("gt action:", gt_actions)
-        else:
-            if self.target_img is None:
-                print("Collect target image before MPC first!")
-                return
-            self.target_img = self._img_transform(self.target_img).to(self.device)
+        if self.target_img is None:
+            print("Collect target image before MPC first!")
+            return
+        self.target_img = self._img_transform(self.target_img).to(self.device)
 
     def collect_target_img(self, eef_target):
         """ set up the scene and collect goal image """
@@ -147,6 +143,15 @@ class Visual_MPC(object):
             target_pose=[*eef_target, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL],
         )
         self.target_img = np.copy(self.img)
+        self.target_eef = np.array(control_result.end_pose)
+
+        qpos_from_eef = np.zeros(5)
+        qpos_from_eef[0:4] = self.ik_solver.ik(self.target_eef,
+                                               alpha=-DEFAULT_PITCH,
+                                               cur_arm_config=np.array(control_result.joint_angles))
+        qpos_from_eef[4] = DEFAULT_ROLL
+
+        self.target_qpos = qpos_from_eef
 
     def go_to_start_pose(self, eef_start):
         """ set up the starting scene """
@@ -275,8 +280,17 @@ class Visual_MPC(object):
         imageio.imwrite(
             "figures/start_goal.png", np.concatenate([start_visual, goal_visual], 1)
         )
-        start = State(img=start_visual)
-        goal = DemoGoalState(imgs=[goal_visual])
+        control_result = eef_control_client(self.control_client, target_pose=[])
+        start = State(img=start_visual, state=[*control_result.end_pose, DEFAULT_PITCH, DEFAULT_ROLL], qpos=control_result.joint_angles)
+
+        mask = self.env.generate_masks([self.target_qpos])[0]
+        mask = (
+            torch.stack([self._img_transform(mask)])
+            .type(torch.bool)
+            .type(torch.float32)
+        ).to(self.device)
+
+        goal = DemoGoalState(imgs=[goal_visual], masks=[mask])
         actions = self.policy.get_action(start, goal, 0, 0)
         return actions
 
@@ -316,7 +330,6 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cf, _ = argparser()
     cf.device = device
-    cf.dynamics_model_ckpt = "locobot_689_tile_ckpt_136500.pt"
 
     cf.debug_cem = True
     cf.cem_init_std = 0.015

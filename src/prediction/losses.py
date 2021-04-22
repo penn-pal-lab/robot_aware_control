@@ -212,6 +212,8 @@ class ImgDontcareCost(Cost):
     def _call_tensor(self, curr_img, goal_img, curr_mask, goal_mask):
         if curr_img is None or goal_img is None:
             return 0
+        curr_mask = curr_mask.type(torch.bool)
+        goal_mask = goal_mask.type(torch.bool)
         img_diff = (255 * (curr_img - goal_img)) ** 2
         total_mask_2d = curr_mask | goal_mask
         total_mask = total_mask_2d.repeat(1,3,1,1)

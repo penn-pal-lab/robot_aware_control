@@ -103,7 +103,7 @@ class LocobotAnalyticalModel(object):
         T, B, S = data["states"].shape
         pred_states = torch.zeros_like(data["states"])
         w,h = self._config.image_width, self._config.image_height
-        pred_masks = torch.zeros((T, B, 1, w, h), dtype=torch.float32, device=device)
+        pred_masks = torch.zeros((T, B, 1, h, w), dtype=torch.float32, device=device)
         assert data["qpos"].shape[-1] == 5, f"locobot qpos {data['qpos'].shape[-1]} != 5"
         for i in range(B):
             start_qpos = data["qpos"][0, i].cpu().numpy()
