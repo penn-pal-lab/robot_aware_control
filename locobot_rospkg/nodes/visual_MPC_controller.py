@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
+from typing import Tuple
 import numpy as np
 import os
 import random
@@ -141,9 +142,14 @@ class Visual_MPC(object):
 
     def collect_target_img(self, eef_target):
         """ set up the scene and collect goal image """
+        if len(eef_target) == 2:
+            eef_target = [*eef_target, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL]
+        else:
+            assert len(eef_target) == 5
+
         control_result = eef_control_client(
             self.control_client,
-            target_pose=[0.15, 0.0, 0.55, 0, DEFAULT_ROLL],
+            target_pose=eef_target,
         )
         input("Move the object to the GOAL position. Press Enter to continue...")
         self.target_img = np.copy(self.img)
@@ -161,7 +167,7 @@ class Visual_MPC(object):
 
     def go_to_start_pose(self, eef_start):
         """ set up the starting scene """
-        control_result = eef_control_client(
+        _ = eef_control_client(
             self.control_client,
             target_pose=[*eef_start, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL],
         )
@@ -171,9 +177,27 @@ class Visual_MPC(object):
         self.start_img = self.start_img.cpu().clamp_(0, 1).numpy()
         self.start_img = np.transpose(self.start_img, axes=(1, 2, 0))
         self.start_img = np.uint8(self.start_img * 255)
-        # self.start_img = cv2.cvtColor(self.start_img, cv2.COLOR_BGR2RGB)
 
-    def cem(self):
+    def get_state(self) -> State:
+        """Get the current State (eef, qpos, img) of the robot
+        Returns:
+            State: A namedtuple of current img, eef, qpos
+        """
+        img = np.copy(self.img)
+        img = self._img_transform(img).to(self.device)
+        img = img.cpu().clamp_(0, 1).numpy()
+        img = np.transpose(img, axes=(1, 2, 0))
+        img = np.uint8(img * 255)
+
+        control_result = eef_control_client(self.control_client, target_pose=[])
+        state = State(
+            img=img,
+            state=[*control_result.end_pose, DEFAULT_PITCH, DEFAULT_ROLL],
+            qpos=control_result.joint_angles,
+        )
+        return state
+
+    def create_start_goal(self) -> Tuple[State, DemoGoalState]:
         self.read_target_image()
         goal_visual = self.target_img.cpu().clamp_(0, 1).numpy()
         goal_visual = np.transpose(goal_visual, axes=(1, 2, 0))
@@ -196,7 +220,10 @@ class Visual_MPC(object):
         )
 
         goal = DemoGoalState(imgs=[goal_visual], masks=[mask])
-        actions = self.policy.get_action(start, goal, 0, 0)
+        return start, goal
+
+    def cem(self, start: State, goal: DemoGoalState, step=0):
+        actions = self.policy.get_action(start, goal, 0, step)
         return actions
 
     def execute_action(self, action):
@@ -239,7 +266,9 @@ if __name__ == "__main__":
     cf.debug_cem = True
     cf.cem_init_std = 0.015
     cf.action_candidates = 300
-    cf.goal_img_with_wrong_robot = True
+    cf.goal_img_with_wrong_robot = False # makes the robot out of img by pointing up
+    cf.cem_open_loop = False
+    cf.max_episode_length = 4 # ep length of closed loop execution
 
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.
@@ -248,16 +277,29 @@ if __name__ == "__main__":
     vmpc = Visual_MPC(config=cf)
     vmpc.get_camera_pose_from_apriltag()
 
-    if not cf.goal_img_with_wrong_robot:
+    if cf.goal_img_with_wrong_robot:
+        eef_start_pos = [0.33, -0.1]
+        eef_target_pos = [0.15, 0.0, 0.55, 0, DEFAULT_ROLL]
+    else:
         eef_target_pos = [0.33, 0]
         eef_start_pos = [eef_target_pos[0], eef_target_pos[1] - 0.1]
-    else:
-        eef_start_pos = [0.33, -0.1]
-        eef_target_pos = [0.33, -0.1]
 
     vmpc.collect_target_img(eef_target_pos)
     vmpc.go_to_start_pose(eef_start=eef_start_pos)
-    actions = vmpc.cem()  # returns action trajectory
-    print(actions)
-    input("execute actions?")
-    vmpc.execute_open_loop(actions)
+    start, goal = vmpc.create_start_goal()
+    if cf.cem_open_loop:
+        actions = vmpc.cem(start, goal)
+        print(actions)
+        input("execute actions?")
+        vmpc.execute_open_loop(actions)
+    else:
+        img_goal = np.concatenate([start.img, vmpc.goal_visual], 1)
+        gif = [img_goal]
+        for t in range(cf.max_episode_length):
+            act = vmpc.cem(start, goal, t)[0]  # get first action
+            print(f"t={t}, executing {act}")
+            vmpc.execute_action(act)
+            start = vmpc.get_state()
+            img_goal = np.concatenate([start.img, vmpc.goal_visual], 1)
+            gif.append(img_goal)
+        imageio.mimwrite("closed_loop.gif", gif, fps=2)
