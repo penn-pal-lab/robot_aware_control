@@ -11,6 +11,8 @@ import imageio
 import pathlib
 import h5py
 from pupil_apriltags import Detector
+from scipy.spatial.transform.rotation import Rotation
+import time
 from time import gmtime, strftime
 from tqdm import trange
 import ipdb
@@ -89,6 +91,7 @@ class Visual_MPC(object):
 
         self.ik_solver = AIK()
         self.env = LocobotMaskEnv()
+        # TODO: use apriltag results to update cam calibration
         cam_ext = camera_to_world_dict[f"locobot_c0"]
         self.env.set_opencv_camera_pose("main_cam", cam_ext)
 
@@ -133,6 +136,60 @@ class Visual_MPC(object):
             pose_R = r.pose_R
         # Tag pose w.r.t. camera
         return pose_t, pose_R
+
+    def get_cam_calibration(self):
+        control_result = eef_control_client(
+            self.control_client,
+            target_pose=[0.35, 0, PUSH_HEIGHT, 0.6, DEFAULT_ROLL],
+        )
+        time.sleep(1)
+        # tag to camera transformation
+        pose_t, pose_R = self.get_camera_pose_from_apriltag()
+        if pose_t is None or pose_R is None:
+            return None
+
+        target_qpos = control_result.joint_angles
+        self.env.sim.data.qpos[self.env._joint_references] = target_qpos
+        self.env.sim.forward()
+
+        # tag to base transformation
+        tagTbase = np.column_stack(
+            (
+                self.env.sim.data.get_geom_xmat("ar_tag_geom"),
+                self.env.sim.data.get_geom_xpos("ar_tag_geom"),
+            )
+        )
+        tagTbase = np.row_stack((tagTbase, [0, 0, 0, 1]))
+
+        tagTcam = np.column_stack((pose_R, pose_t))
+        tagTcam = np.row_stack((tagTcam, [0, 0, 0, 1]))
+
+        # tag in camera to tag in robot transformation
+        # For explanation, refer to Kun's hand drawing
+        tagcTtagw = np.array(
+            [[0, 0, -1, 0], [0, -1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1]]
+        )
+
+        camTbase = tagTbase @ tagcTtagw @ np.linalg.inv(tagTcam)
+
+        rot_matrix = camTbase[:3, :3]
+        cam_pos = camTbase[:3, 3]
+        rel_rot = Rotation.from_quat([0, 1, 0, 0])  # calculated
+        cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
+
+        cam_id = 0
+        offset = [0, -0.007, 0.02]
+        self.env.sim.model.cam_pos[cam_id] = cam_pos + offset
+        cam_quat = cam_rot.as_quat()
+        self.env.sim.model.cam_quat[cam_id] = [
+            cam_quat[3],
+            cam_quat[0],
+            cam_quat[1],
+            cam_quat[2],
+        ]
+        print("camera pose:")
+        print(self.env.sim.model.cam_pos[cam_id])
+        print(self.env.sim.model.cam_quat[cam_id])
 
     def read_target_image(self):
         if self.target_img is None:
@@ -255,7 +312,7 @@ class Visual_MPC(object):
             img = np.uint8(img * 255)
             img_goal = np.concatenate([img, self.goal_visual], 1)
             gif.append(img_goal)
-        imageio.mimwrite("open_loop.gif", gif, fps=2)
+        imageio.mimwrite("figures/open_loop.gif", gif, fps=2)
 
 
 if __name__ == "__main__":
@@ -266,16 +323,16 @@ if __name__ == "__main__":
     cf.debug_cem = True
     cf.cem_init_std = 0.015
     cf.action_candidates = 300
-    cf.goal_img_with_wrong_robot = False # makes the robot out of img by pointing up
+    cf.goal_img_with_wrong_robot = True  # makes the robot out of img by pointing up
     cf.cem_open_loop = False
-    cf.max_episode_length = 4 # ep length of closed loop execution
+    cf.max_episode_length = 4  # ep length of closed loop execution
 
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.
     rospy.init_node("visual_mpc_client")
 
     vmpc = Visual_MPC(config=cf)
-    vmpc.get_camera_pose_from_apriltag()
+    vmpc.get_cam_calibration()
 
     if cf.goal_img_with_wrong_robot:
         eef_start_pos = [0.33, -0.1]
@@ -302,4 +359,4 @@ if __name__ == "__main__":
             start = vmpc.get_state()
             img_goal = np.concatenate([start.img, vmpc.goal_visual], 1)
             gif.append(img_goal)
-        imageio.mimwrite("closed_loop.gif", gif, fps=2)
+        imageio.mimwrite("figures/closed_loop.gif", gif, fps=2)
