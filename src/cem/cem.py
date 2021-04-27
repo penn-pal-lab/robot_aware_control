@@ -73,7 +73,7 @@ class CEMPolicy(object):
             if i == 0:
                 act_seq[-1] = 0  # always have a "do nothing" action sequence in start
 
-            act_seq.clamp_(-1, 1)  # always between -1 and 1
+            act_seq.clamp_(-0.04, 0.04)  # always between -1 and 1
             padded_act_seq = torch.cat([act_seq, torch.zeros((N, T - 1, 3))], 2)
             # Generate N rollouts of the N action trajectories
             plot = i == self.optimization_iter - 1 and self.plot_rollouts
@@ -86,6 +86,8 @@ class CEMPolicy(object):
 
             # Update parameters for normal distribution
             std, mean = torch.std_mean(top_act_seq, dim=0)
+            # clamp std to positive
+            std = torch.max(0.001 * torch.ones_like(std), std)
 
         # Print means of top costs, for debugging
         print(

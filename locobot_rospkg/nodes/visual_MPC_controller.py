@@ -3,18 +3,12 @@
 from __future__ import print_function
 from typing import Tuple
 import numpy as np
-import os
-import random
 import cv2
 from cv_bridge import CvBridge
 import imageio
-import pathlib
-import h5py
 from pupil_apriltags import Detector
 from scipy.spatial.transform.rotation import Rotation
 import time
-from time import gmtime, strftime
-from tqdm import trange
 import ipdb
 
 # ROS
@@ -38,8 +32,6 @@ from locobot_rospkg.nodes.data_collection_client import (
 
 from src.config import argparser
 from src.prediction.models.dynamics import SVGConvModel
-from src.prediction.losses import ImgL2Cost
-from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
 from src.cem.cem import CEMPolicy
 from src.dataset.robonet.robonet_dataset import normalize
 from src.utils.state import DemoGoalState, State
@@ -178,7 +170,8 @@ class Visual_MPC(object):
         cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
 
         cam_id = 0
-        offset = [0, -0.007, 0.02]
+        # offset = [0, -0.007, 0.02]
+        offset = [0, 0, 0.0]
         self.env.sim.model.cam_pos[cam_id] = cam_pos + offset
         cam_quat = cam_rot.as_quat()
         self.env.sim.model.cam_quat[cam_id] = [
@@ -321,8 +314,8 @@ if __name__ == "__main__":
     cf.device = device
 
     cf.debug_cem = True
-    cf.cem_init_std = 0.015
-    cf.action_candidates = 300
+    # cf.cem_init_std = 0.015
+    # cf.action_candidates = 300
     cf.goal_img_with_wrong_robot = True  # makes the robot out of img by pointing up
     cf.cem_open_loop = False
     cf.max_episode_length = 4  # ep length of closed loop execution
@@ -334,12 +327,15 @@ if __name__ == "__main__":
     vmpc = Visual_MPC(config=cf)
     vmpc.get_cam_calibration()
 
+    start_offset = 0.15
     if cf.goal_img_with_wrong_robot:
-        eef_start_pos = [0.33, -0.1]
+        # eef_start_pos = [0.33, -start_offset]
+        # eef_target_pos = [0.15, 0.0, 0.55, 0, DEFAULT_ROLL]
+        eef_start_pos = [0.2, 0]
         eef_target_pos = [0.15, 0.0, 0.55, 0, DEFAULT_ROLL]
     else:
         eef_target_pos = [0.33, 0]
-        eef_start_pos = [eef_target_pos[0], eef_target_pos[1] - 0.1]
+        eef_start_pos = [eef_target_pos[0], eef_target_pos[1] - start_offset]
 
     vmpc.collect_target_img(eef_target_pos)
     vmpc.go_to_start_pose(eef_start=eef_start_pos)

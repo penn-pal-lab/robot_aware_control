@@ -69,19 +69,33 @@ class LocobotMaskEnv(MaskEnv):
             mask_dim = [height, width]
         mask = np.zeros(mask_dim, dtype=np.bool)
         # TODO: change these to include the robot base
-        ignore_parts = {"finger_r_geom", "finger_l_geom"}
+        # ignore_parts = {"finger_r_geom", "finger_l_geom"}
+        ignore_parts = {}
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
-            if name is not None:
-                if name in ignore_parts:
-                    continue
-                mask[ids == i] = True
+            # if name is not None:
+            #     if name in ignore_parts:
+            #         continue
+            mask[ids == i] = True
         return mask
 
     def get_gripper_pos(self, qpos):
         self.sim.data.qpos[self._joint_references] = qpos
         self.sim.forward()
         return self.sim.data.get_body_xpos("gripper_link").copy()
+
+    def generate_masks(self,  qpos_data, width=None, height=None):
+        joint_references = [self.sim.model.get_joint_qpos_addr(x) for x in self._joints]
+        finger_references = [self.sim.model.get_joint_qpos_addr(x) for x in ["joint_6", "joint_7"]]
+        masks = []
+        for qpos in qpos_data:
+            self.sim.data.qpos[joint_references] = qpos
+            self.sim.data.qpos[finger_references] = [-0.025, 0.025]
+            self.sim.forward()
+            mask = self.get_robot_mask(width, height)
+            masks.append(mask)
+        masks = np.asarray(masks, dtype=np.bool)
+        return masks
 
 def load_data(filename):
     with h5py.File(filename, "r") as f:

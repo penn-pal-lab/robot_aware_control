@@ -6,13 +6,13 @@
         <mesh name="plate_top" file="plate_top.STL" scale="0.001 0.001 0.001" />
         <mesh name="battery" file="battery.STL" scale="0.001 0.001 0.001" />
         <mesh name="mobile_base" file="mobile_base.STL" scale="0.001 0.001 0.001" />
-        <mesh name="shoulder_link" file="shoulder_link.STL" />
-        <mesh name="elbow_link" file="elbow_link.STL" />
-        <mesh name="forearm_link" file="forearm_link.STL" />
-        <mesh name="wrist_link" file="wrist_link.STL" />
-        <mesh name="gripper_link" file="gripper_link.STL" />
-        <mesh name="finger_r" file="finger_r.STL" />
-        <mesh name="finger_l" file="finger_l.STL" />
+        <mesh name="shoulder_link" file="shoulder_link.STL" scale="1 1 1"/>
+        <mesh name="elbow_link" file="elbow_link.STL" scale="1.4 1.4 1.4"/>
+        <mesh name="forearm_link" file="forearm_link.STL" scale="1.4 1.4 1.4"/>
+        <mesh name="wrist_link" file="wrist_link.STL" scale="1.4 1.4 1.4"/>
+        <mesh name="gripper_link" file="gripper_link.STL" scale="1.2 1.2 1.4" />
+        <mesh name="finger_r" file="finger_r.STL" scale="1.2 1.2 1.2" />
+        <mesh name="finger_l" file="finger_l.STL" scale="1.2 1.2 1.2"/>
         <mesh name="ar_tag" file="ar_tag.STL" />
     </asset>
     <worldbody>
