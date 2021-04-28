@@ -22,12 +22,13 @@ class LocobotAnalyticalModel(object):
     Analytical model of the eef state and qpos of locobot.
     """
 
-    def __init__(self, config) -> None:
+    def __init__(self, config, cam_ext=None) -> None:
         super().__init__()
         self._config = config
         self.ik_solver = AIK()
         self.env = LocobotMaskEnv()
-        cam_ext = camera_to_world_dict[f"locobot_c0"]
+        if cam_ext is None:
+            cam_ext = camera_to_world_dict[f"locobot_c0"]
         self.env.set_opencv_camera_pose("main_cam", cam_ext)
         w, h = config.image_width, config.image_height
         self._img_transform = tf.Compose([tf.ToTensor(), tf.Resize((h, w))])

@@ -12,7 +12,7 @@ from src.utils.image import zero_robot_region
 
 
 class TrajectorySampler(object):
-    def __init__(self, cfg, model) -> None:
+    def __init__(self, cfg, model, cam_ext=None) -> None:
         super().__init__()
         self.cfg = cfg
         self.model: SVGConvModel = model
@@ -23,7 +23,8 @@ class TrajectorySampler(object):
         self.low.unsqueeze_(0)
         self.high.unsqueeze_(0)
         if cfg.model_use_robot_state or cfg.model_use_mask or cfg.black_robot_input:
-            self.robot_model = LocobotAnalyticalModel(cfg)
+            self.robot_model = LocobotAnalyticalModel(cfg, cam_ext=cam_ext)
+            # update camera pose
 
     @torch.no_grad()
     def generate_model_rollouts(

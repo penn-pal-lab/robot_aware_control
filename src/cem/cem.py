@@ -25,6 +25,7 @@ class CEMPolicy(object):
         action_candidates=100,
         topk=5,
         init_std=1.0,
+        cam_ext=None,
     ):
         # Hyperparameters
         self.horizon = horizon  # Prediction window size
@@ -39,11 +40,11 @@ class CEMPolicy(object):
 
         self.model = model
 
-        self.traj_sampler = TrajectorySampler(cfg, self.model)
+        self.traj_sampler = TrajectorySampler(cfg, self.model, cam_ext=cam_ext)
 
         self.plot_rollouts = cfg.debug_cem
         if self.plot_rollouts:
-            self.debug_cem_dir = os.path.join(cfg.log_dir, "debug_cem")
+            self.debug_cem_dir = cfg.log_dir
             os.makedirs(self.debug_cem_dir, exist_ok=True)
 
     def get_action(self, start, goal, ep_num, step, opt_traj=None):
@@ -122,7 +123,7 @@ class CEMPolicy(object):
             obs = np.uint8(255 * obs)
             obs = obs.transpose((0, 1, 3, 4, 2))  # K x T x H x W x C
             topk_act = act_seq[rollouts["topk_idx"]]
-            gif_folder = os.path.join(self.debug_cem_dir, f"ep_{self.ep_num}")
+            gif_folder = self.debug_cem_dir
             os.makedirs(gif_folder, exist_ok=True)
 
             goal_img = goal.imgs[0]

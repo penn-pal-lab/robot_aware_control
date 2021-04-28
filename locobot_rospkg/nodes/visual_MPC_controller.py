@@ -4,6 +4,9 @@ from __future__ import print_function
 
 import sys
 import time
+from time import gmtime, strftime
+import os
+
 from typing import Tuple
 
 import actionlib
@@ -35,6 +38,13 @@ from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
 from src.prediction.models.dynamics import SVGConvModel
 from src.utils.camera_calibration import camera_to_world_dict
 from src.utils.state import DemoGoalState, State
+
+start_offset = 0.15
+START_POS = {
+    "left": [0.33, -start_offset],
+    "right": [0.33, start_offset],
+    "forward": [0.2, 0],
+}
 
 
 class Visual_MPC(object):
@@ -68,19 +78,19 @@ class Visual_MPC(object):
         model.load_state_dict(ckpt["model"])
         model.eval()
 
+        self.ik_solver = AIK()
+        self.env = LocobotMaskEnv()
+
+        camTbase = self.get_cam_calibration()
+
         self.policy = CEMPolicy(
             config,
             model,
             init_std=config.cem_init_std,
             action_candidates=config.action_candidates,
             horizon=config.horizon,
+            cam_ext=camTbase,
         )
-
-        self.ik_solver = AIK()
-        self.env = LocobotMaskEnv()
-        # TODO: use apriltag results to update cam calibration
-        cam_ext = camera_to_world_dict[f"locobot_c0"]
-        self.env.set_opencv_camera_pose("main_cam", cam_ext)
 
     def img_callback(self, data):
         self.img = self.cv_bridge.imgmsg_to_cv2(data)
@@ -178,6 +188,7 @@ class Visual_MPC(object):
         print("camera pose:")
         print(self.env.sim.model.cam_pos[cam_id])
         print(self.env.sim.model.cam_quat[cam_id])
+        return camTbase
 
     def read_target_image(self):
         if self.target_img is None:
@@ -318,19 +329,18 @@ if __name__ == "__main__":
     cf.goal_img_with_wrong_robot = True  # makes the robot out of img by pointing up
     cf.cem_open_loop = False
     cf.max_episode_length = 4  # ep length of closed loop execution
+    curr_time = strftime("%Y-%m-%d_%H:%M:%S", gmtime())
+    cf.log_dir = os.path.join(cf.log_dir, "debug_cem_" + curr_time)
 
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.
     rospy.init_node("visual_mpc_client")
 
     vmpc = Visual_MPC(config=cf)
-    vmpc.get_cam_calibration()
 
-    start_offset = 0.15
+    push_type = "left"
     if cf.goal_img_with_wrong_robot:
-        # eef_start_pos = [0.33, -start_offset]
-        # eef_target_pos = [0.15, 0.0, 0.55, 0, DEFAULT_ROLL]
-        eef_start_pos = [0.2, 0]
+        eef_start_pos = START_POS[push_type]
         eef_target_pos = [0.15, 0.0, 0.55, 0, DEFAULT_ROLL]
     else:
         eef_target_pos = [0.33, 0]
@@ -362,4 +372,4 @@ if __name__ == "__main__":
             start = vmpc.get_state()
             img_goal = np.concatenate([start.img, vmpc.goal_visual], 1)
             gif.append(img_goal)
-        imageio.mimwrite("figures/closed_loop.gif", gif, fps=2)
+        imageio.mimwrite(cf.log_dir + "/closed_loop.gif", gif, fps=2)
