@@ -137,9 +137,9 @@ class Visual_MPC(object):
     def get_cam_calibration(self):
         control_result = eef_control_client(
             self.control_client,
-            target_pose=[0.35, 0, PUSH_HEIGHT, 0.6, DEFAULT_ROLL],
+            target_pose=[0.35, 0, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL],
         )
-        time.sleep(1)
+        time.sleep(5)
         # tag to camera transformation
         pose_t, pose_R = self.get_camera_pose_from_apriltag()
         if pose_t is None or pose_R is None:
@@ -175,8 +175,8 @@ class Visual_MPC(object):
         cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
 
         cam_id = 0
-        # offset = [0, -0.007, 0.02]
-        offset = [0, 0, 0.0]
+        offset = [0, -0.007, 0.02]
+        # offset = [0, 0, 0.0]
         self.env.sim.model.cam_pos[cam_id] = cam_pos + offset
         cam_quat = cam_rot.as_quat()
         self.env.sim.model.cam_quat[cam_id] = [
@@ -338,7 +338,7 @@ if __name__ == "__main__":
 
     vmpc = Visual_MPC(config=cf)
 
-    push_type = "left"
+    push_type = "forward"
     if cf.goal_img_with_wrong_robot:
         eef_start_pos = START_POS[push_type]
         eef_target_pos = [0.15, 0.0, 0.55, 0, DEFAULT_ROLL]

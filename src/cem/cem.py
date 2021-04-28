@@ -74,7 +74,7 @@ class CEMPolicy(object):
             if i == 0:
                 act_seq[-1] = 0  # always have a "do nothing" action sequence in start
 
-            act_seq.clamp_(-0.1, 0.1)  # clamp actions
+            act_seq.clamp_(-0.05, 0.05)  # clamp actions
             padded_act_seq = torch.cat([act_seq, torch.zeros((N, T - 1, 3))], 2)
             # Generate N rollouts of the N action trajectories
             if i == self.optimization_iter - 1:
