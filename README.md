@@ -126,3 +126,8 @@ python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --mo
 ```bash
 python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask True --model_use_robot_state True --model_use_future_mask True --model_use_future_robot_state True --lstm_group_norm True --robot_joint_dim 5 --dynamics_model_ckpt checkpoints/roboaware_ckpt_10200.pt --reconstruction_loss dontcare_l1 --reward_type dontcare --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.015 --sparse_cost True
 ```
+
+Thick mask version
+```bash
+python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask True --model_use_robot_state True --model_use_future_mask True --model_use_future_robot_state True --lstm_group_norm True --robot_joint_dim 5 --dynamics_model_ckpt checkpoints/roboaware_thickmask_ckpt_10200.pt --reconstruction_loss dontcare_l1 --reward_type dontcare --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.015 --sparse_cost True
+```

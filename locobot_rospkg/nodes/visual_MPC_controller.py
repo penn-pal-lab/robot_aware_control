@@ -1,45 +1,40 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
-from typing import Tuple
-import numpy as np
-import cv2
-from cv_bridge import CvBridge
-import imageio
-from pupil_apriltags import Detector
-from scipy.spatial.transform.rotation import Rotation
+
+import sys
 import time
-import ipdb
+from typing import Tuple
 
-# ROS
-import rospy
 import actionlib
-from sensor_msgs.msg import Image
-
-# Learning
+import cv2
+import imageio
+import ipdb
+import numpy as np
+import rospy
 import torch
 import torchvision.transforms as tf
+from cv_bridge import CvBridge
 
-# Defined by us
 from eef_control.msg import *
 from locobot_rospkg.nodes.data_collection_client import (
-    eef_control_client,
-    gaussian_push,
-    PUSH_HEIGHT,
     DEFAULT_PITCH,
     DEFAULT_ROLL,
+    PUSH_HEIGHT,
+    eef_control_client,
 )
-
-from src.config import argparser
-from src.prediction.models.dynamics import SVGConvModel
+from pupil_apriltags import Detector
+from scipy.spatial.transform.rotation import Rotation
+from sensor_msgs.msg import Image
 from src.cem.cem import CEMPolicy
-from src.dataset.robonet.robonet_dataset import normalize
-from src.utils.state import DemoGoalState, State
+from src.config import create_parser, str2bool
 from src.env.robotics.masks.locobot_analytical_ik import (
     AnalyticInverseKinematics as AIK,
 )
 from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
-from src.utils.camera_calibration import camera_to_world_dict, world_to_camera_dict
+from src.prediction.models.dynamics import SVGConvModel
+from src.utils.camera_calibration import camera_to_world_dict
+from src.utils.state import DemoGoalState, State
 
 
 class Visual_MPC(object):
@@ -272,8 +267,8 @@ class Visual_MPC(object):
         goal = DemoGoalState(imgs=[goal_visual], masks=[mask])
         return start, goal
 
-    def cem(self, start: State, goal: DemoGoalState, step=0):
-        actions = self.policy.get_action(start, goal, 0, step)
+    def cem(self, start: State, goal: DemoGoalState, step=0, opt_traj=None):
+        actions = self.policy.get_action(start, goal, 0, step, opt_traj)
         return actions
 
     def execute_action(self, action):
@@ -310,7 +305,11 @@ class Visual_MPC(object):
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    cf, _ = argparser()
+    parser = create_parser()
+    parser.add_argument("--execute_optimal_traj", type=str2bool, default=False)
+
+    cf, unparsed = parser.parse_known_args()
+    assert len(unparsed) == 0, unparsed
     cf.device = device
 
     cf.debug_cem = True
@@ -340,16 +339,24 @@ if __name__ == "__main__":
     vmpc.collect_target_img(eef_target_pos)
     vmpc.go_to_start_pose(eef_start=eef_start_pos)
     start, goal = vmpc.create_start_goal()
+    if cf.execute_optimal_traj:
+        # push towards camera
+        print("executing optimal trajectory")
+        actions = [[0.05, 0], [0.05, 0], [0.05, 0], [0.05, 0]]
+        vmpc.execute_open_loop(actions)
+        sys.exit()
     if cf.cem_open_loop:
         actions = vmpc.cem(start, goal)
         print(actions)
         input("execute actions?")
         vmpc.execute_open_loop(actions)
     else:
+        dist = 0.04
+        opt_traj = torch.tensor([[dist, 0]] * (cf.horizon - 1))
         img_goal = np.concatenate([start.img, vmpc.goal_visual], 1)
         gif = [img_goal]
         for t in range(cf.max_episode_length):
-            act = vmpc.cem(start, goal, t)[0]  # get first action
+            act = vmpc.cem(start, goal, t, opt_traj)[0]  # get first action
             print(f"t={t}, executing {act}")
             vmpc.execute_action(act)
             start = vmpc.get_state()

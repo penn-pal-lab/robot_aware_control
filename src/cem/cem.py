@@ -52,7 +52,7 @@ class CEMPolicy(object):
         goal: data class containing goal imgs, goal robot, etc.
         ep_num: used for plotting rollouts
         step: used for plotting rollouts
-        opt_traj: used for oracle demo cost
+        opt_traj: list of expert actions to execute for debug
         Returns: a list of actions to execute in the environment
         """
         T = self.horizon
@@ -73,11 +73,14 @@ class CEMPolicy(object):
             if i == 0:
                 act_seq[-1] = 0  # always have a "do nothing" action sequence in start
 
-            act_seq.clamp_(-0.04, 0.04)  # always between -1 and 1
+            act_seq.clamp_(-0.1, 0.1)  # clamp actions
             padded_act_seq = torch.cat([act_seq, torch.zeros((N, T - 1, 3))], 2)
             # Generate N rollouts of the N action trajectories
-            plot = i == self.optimization_iter - 1 and self.plot_rollouts
-            rollouts = self._get_rollouts(padded_act_seq, start, goal, opt_traj, plot)
+            if i == self.optimization_iter - 1:
+                rollouts = self._get_rollouts(padded_act_seq, start, goal, opt_traj, self.plot_rollouts)
+            else:
+                rollouts = self._get_rollouts(padded_act_seq, start, goal)
+
             # Select top K action sequences based on cumulative cost
             costs = torch.from_numpy(rollouts["sum_cost"])
             top_costs, top_idx = costs.topk(self.K)
@@ -96,7 +99,7 @@ class CEMPolicy(object):
         return mean.numpy()
 
     def _get_rollouts(
-        self, act_seq, start: State, goal: DemoGoalState, opt_traj, plot=False
+        self, act_seq, start: State, goal: DemoGoalState, opt_traj=None, plot=False
     ):
         """
         Return the rollouts from learned model
@@ -113,25 +116,50 @@ class CEMPolicy(object):
         # Plot the Top K model rollouts
         if plot:
             obs = rollouts["obs"]  # K x T x C x H x W
+            if opt_traj is not None:
+                opt_obs = np.expand_dims(rollouts["optimal_obs"], 0)
+                obs = np.concatenate([opt_obs, obs])
             obs = np.uint8(255 * obs)
             obs = obs.transpose((0, 1, 3, 4, 2))  # K x T x H x W x C
+            topk_act = act_seq[rollouts["topk_idx"]]
             gif_folder = os.path.join(self.debug_cem_dir, f"ep_{self.ep_num}")
             os.makedirs(gif_folder, exist_ok=True)
-            for k in range(obs.shape[0]):
-                goal_img = goal.imgs[0]
-                curr_img = start.img.copy()
-                img = np.concatenate([curr_img, goal_img], axis=1)
-                gif = [img]
-                for t in range(obs.shape[1]):
+
+            goal_img = goal.imgs[0]
+            curr_img = start.img.copy()
+            info_img = np.zeros_like(goal_img)
+            img = np.concatenate([info_img, curr_img, goal_img], axis=1)
+            putText(img, f"Start", (0, 8), color=(255, 255, 255))
+            gif = [np.concatenate([img] * obs.shape[0])]
+            for t in range(obs.shape[1]):
+                all_k_img = []
+                for k in range(obs.shape[0]):
                     curr_img = obs[k, t]
                     g = t if t < len(goal.imgs) else -1
                     goal_img = goal.imgs[g]
-                    img = np.concatenate([curr_img, goal_img], axis=1).copy()
-                    putText(img, f"{t}", (0, 8), color=(255, 255, 255))
-                    putText(img, "GOAL", (64, 8), color=(255, 255, 255))
-                    gif.append(img)
-                gif_path = os.path.join(gif_folder, f"step_{self.step}_top_{k}.gif")
-                imageio.mimwrite(gif_path, gif, fps=2)
+                    info_img = np.zeros_like(goal_img)
+                    img = np.concatenate([info_img, curr_img, goal_img], axis=1).copy()
+                    if opt_traj is not None:
+                        if k == 0:
+                            putText(img, f"Opt", (0, 8), color=(255, 255, 255))
+                            ac = opt_traj[t]
+                        else:
+                            putText(img, f"Rank {k-1}", (0, 8), color=(255, 255, 255))
+                            ac = topk_act[k-1, t]
+                    else:
+                        putText(img, f"Rank {k}", (0, 8), color=(255, 255, 255))
+                        ac = topk_act[k, t]
+
+                    putText(img, f"X:{ac[0] * 100:.1f}cm", (0, 16), color=(255, 255, 255))
+                    putText(img, f"Y:{ac[1] * 100:.1f}cm", (0, 24), color=(255, 255, 255))
+                    putText(img, f"{t}", (64, 8), color=(255, 255, 255))
+                    putText(img, "GOAL", (128, 8), color=(255, 255, 255))
+                    all_k_img.append(img)
+                all_k_img = np.concatenate(all_k_img)
+                gif.append(all_k_img)
+
+            gif_path = os.path.join(gif_folder, f"step_{self.step}_top_k.gif")
+            imageio.mimwrite(gif_path, gif, fps=2)
         return rollouts
 
 

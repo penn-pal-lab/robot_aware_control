@@ -52,6 +52,14 @@ class TrajectorySampler(object):
         model = self.model
         cost = self.cost
         dev = cfg.device
+        if opt_traj is not None:
+            # (N, T, 1), (T,1)
+            # pad 0s, add batch dimension to opt traj
+            opt_traj = torch.cat([opt_traj, torch.zeros((len(opt_traj),3))], 1)
+            opt_traj.unsqueeze_(0)
+            # add optimal trajectory to end of action sequence list
+            action_sequences = torch.cat([action_sequences, opt_traj])
+
         N = len(action_sequences)  # Number of candidate action sequences
         ac_per_batch = cfg.candidates_batch_size
         B = max(N // ac_per_batch, 1)  # number of candidate batches per GPU pass
@@ -62,7 +70,6 @@ class TrajectorySampler(object):
         goal_imgs = torch.stack(
             [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in goal.imgs]
         ).to(dev)
-        optimal_sum_cost = 0
         if not suppress_print:
             start_time = timer.time()
             print("####### Gathering Samples #######")
@@ -144,13 +151,18 @@ class TrajectorySampler(object):
             )
 
         rollouts = defaultdict(float)
+        if opt_traj is not None:
+            rollouts["optimal_sum_cost"] = sum_cost[-1]
+            rollouts["optimal_obs"] = all_obs[-1].cpu().numpy()
+            # ignore the optimal trajectory cost
+            sum_cost = sum_cost[:-1]
+
         rollouts["sum_cost"] = sum_cost
-        if cfg.demo_cost:
-            rollouts["optimal_sum_cost"] = optimal_sum_cost
         # just return the top K trajectories
         if ret_obs:
             topk_idx = np.argsort(sum_cost)[: cfg.topk]
             topk_obs = all_obs[topk_idx]
+            rollouts["topk_idx"] = topk_idx
             rollouts["obs"] = topk_obs.cpu().numpy()
         if ret_step_cost:
             rollouts["step_cost"] = torch.stack(all_step_cost).transpose(0, 1).cpu().numpy()
