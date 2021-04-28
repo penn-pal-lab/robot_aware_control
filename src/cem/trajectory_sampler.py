@@ -92,8 +92,11 @@ class TrajectorySampler(object):
                 "high": self.high.repeat(N,1), # (N, 5)
             }
             states, masks = self.robot_model.predict_batch(start_data)
+            _, masks_thick = self.robot_model.predict_batch(start_data, thick=True)
             states = states.to(dev, non_blocking=True)
             masks = masks.to(dev, non_blocking=True)
+            masks_thick = masks_thick.to(dev, non_blocking=True)
+
 
         for b in range(B):
             s = b * ac_per_batch
@@ -130,7 +133,7 @@ class TrajectorySampler(object):
                 goal_img = goal_imgs[goal_idx]
                 if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input:
                     goal_state = State(img=goal_img, mask=goal.masks[0])
-                    curr_state = State(img=next_img, mask=masks[t+1, s:e])
+                    curr_state = State(img=next_img, mask=masks_thick[t+1, s:e])
                 else:
                     goal_state = State(img=goal_img)
                     curr_state = State(img=next_img)

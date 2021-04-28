@@ -27,9 +27,11 @@ class LocobotAnalyticalModel(object):
         self._config = config
         self.ik_solver = AIK()
         self.env = LocobotMaskEnv()
+        self.env_thick = LocobotMaskEnv(thick=True)
         if cam_ext is None:
             cam_ext = camera_to_world_dict[f"locobot_c0"]
         self.env.set_opencv_camera_pose("main_cam", cam_ext)
+        self.env_thick.set_opencv_camera_pose("main_cam", cam_ext)
         w, h = config.image_width, config.image_height
         self._img_transform = tf.Compose([tf.ToTensor(), tf.Resize((h, w))])
 
@@ -63,7 +65,7 @@ class LocobotAnalyticalModel(object):
         qpos_next[4] = DEFAULT_ROLL
         return eef_next, qpos_next
 
-    def predict_trajectory(self, eef_curr, qpos_curr, actions):
+    def predict_trajectory(self, eef_curr, qpos_curr, actions, thick=False):
         """
         Given the current pose of the robot and a list of K actions,
         predict the next K poses.
@@ -87,7 +89,10 @@ class LocobotAnalyticalModel(object):
             pred_qpos.append(qpos_curr)
 
         pred_qpos = np.stack(pred_qpos)
-        masks = self.env.generate_masks(pred_qpos)
+        if thick:
+            masks = self.env_thick.generate_masks(pred_qpos)
+        else:
+            masks = self.env.generate_masks(pred_qpos)
         masks = (
             torch.stack([self._img_transform(i) for i in masks])
             .type(torch.bool)
@@ -96,7 +101,7 @@ class LocobotAnalyticalModel(object):
         states = torch.from_numpy(np.stack(states).astype(np.float32))
         return states, masks
 
-    def predict_batch(self, data):
+    def predict_batch(self, data, thick=False):
         """
         Get the next timestep's states, masks, and heatmaps.
         """
@@ -125,7 +130,7 @@ class LocobotAnalyticalModel(object):
                 start_state = denormalize(start_state, low.numpy(), high.numpy())
 
             raw_p_states, p_masks = self.predict_trajectory(
-                start_state, start_qpos, actions
+                start_state, start_qpos, actions, thick=thick
             )
             # normalize the states again
             p_states = normalize(raw_p_states, low, high)

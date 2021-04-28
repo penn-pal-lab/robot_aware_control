@@ -11,8 +11,10 @@ from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinemati
 
 
 class LocobotMaskEnv(MaskEnv):
-    def __init__(self):
-        model_path = os.path.join("locobot", "locobot.xml")
+    def __init__(self, thick=False):
+        model_path = os.path.join("locobot", "locobot_thick.xml")
+        if not thick:
+            model_path = os.path.join("locobot", "locobot.xml")
         initial_qpos = None
         n_actions = 1
         n_substeps = 1
@@ -73,10 +75,10 @@ class LocobotMaskEnv(MaskEnv):
         ignore_parts = {}
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
-            # if name is not None:
-            #     if name in ignore_parts:
-            #         continue
-            mask[ids == i] = True
+            if name is not None:
+                if name in ignore_parts:
+                    continue
+                mask[ids == i] = True
         return mask
 
     def get_gripper_pos(self, qpos):
