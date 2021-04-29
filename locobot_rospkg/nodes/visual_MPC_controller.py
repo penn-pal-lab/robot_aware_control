@@ -43,7 +43,7 @@ start_offset = 0.15
 START_POS = {
     "left": [0.33, -start_offset],
     "right": [0.33, start_offset],
-    "forward": [0.2, 0],
+    "forward": [0.2 + 0.02, 0],
 }
 
 
@@ -140,11 +140,17 @@ class Visual_MPC(object):
             target_pose=[0.35, 0, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL],
         )
         time.sleep(5)
+        control_result = eef_control_client(
+            self.control_client,
+            target_pose=[],
+        )
+        print(control_result.end_pose)
         # tag to camera transformation
         pose_t, pose_R = self.get_camera_pose_from_apriltag()
         if pose_t is None or pose_R is None:
             return None
-
+        # TODO: figure out qpos / end effector accuracy
+        # currently qpos is better than using end effector
         target_qpos = control_result.joint_angles
         self.env.sim.data.qpos[self.env._joint_references] = target_qpos
         self.env.sim.forward()
@@ -261,7 +267,7 @@ class Visual_MPC(object):
 
         start_visual = self.start_img
         imageio.imwrite(
-            "figures/start_goal.png", np.concatenate([start_visual, goal_visual], 1)
+            os.path.join(self.config.log_dir,"start_goal.png"), np.concatenate([start_visual, goal_visual], 1)
         )
         control_result = eef_control_client(self.control_client, target_pose=[])
         start = State(
