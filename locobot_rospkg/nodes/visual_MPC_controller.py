@@ -6,6 +6,7 @@ import sys
 import time
 from time import gmtime, strftime
 import os
+import pickle
 
 from typing import Tuple
 
@@ -351,7 +352,8 @@ if __name__ == "__main__":
     parser = create_parser()
     parser.add_argument("--execute_optimal_traj", type=str2bool, default=False)
     parser.add_argument("--new_camera_calibration", type=str2bool, default=False)
-
+    parser.add_argument("--save_start_goal", type=str2bool, default=False)
+    parser.add_argument("--load_start_goal", type=str, default=None)
     cf, unparsed = parser.parse_known_args()
     assert len(unparsed) == 0, unparsed
     cf.device = device
@@ -379,9 +381,21 @@ if __name__ == "__main__":
         eef_target_pos = [0.33, 0]
         eef_start_pos = [eef_target_pos[0], eef_target_pos[1] - start_offset]
 
-    vmpc.collect_target_img(eef_target_pos)
-    vmpc.go_to_start_pose(eef_start=eef_start_pos)
-    start, goal = vmpc.create_start_goal()
+    if cf.load_start_goal is not None:
+        vmpc.go_to_start_pose(eef_start=eef_start_pos)
+        with open(cf.load_start_goal, "rb") as f:
+            start, goal = pickle.load(f)
+        input("is the start scene ready?")
+        vmpc.goal_visual = goal.imgs[0]
+    else:
+        vmpc.collect_target_img(eef_target_pos)
+        vmpc.go_to_start_pose(eef_start=eef_start_pos)
+        start, goal = vmpc.create_start_goal()
+        if cf.save_start_goal:
+            start_goal_file = input("name of start goal pkl file:")
+            with open(start_goal_file, "wb") as f:
+                pickle.dump([start, goal], f)
+
     if cf.execute_optimal_traj:
         # push towards camera
         print("executing optimal trajectory")
