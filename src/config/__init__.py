@@ -319,6 +319,7 @@ def add_cem_arguments(parser):
     parser.add_argument("--cem_init_std", type=float, default=1)
     parser.add_argument("--sparse_cost", type=str2bool, default=False)
     parser.add_argument("--cem_open_loop", type=str2bool, default=False)
+    parser.add_argument("--cem_prediction_use_thick_mask", type=str2bool, default=False)
 
 
 # Cost Fn Hyperparameters

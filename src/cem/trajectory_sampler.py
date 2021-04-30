@@ -24,7 +24,6 @@ class TrajectorySampler(object):
         self.high.unsqueeze_(0)
         if cfg.model_use_robot_state or cfg.model_use_mask or cfg.black_robot_input:
             self.robot_model = LocobotAnalyticalModel(cfg, cam_ext=cam_ext)
-            # update camera pose
 
     @torch.no_grad()
     def generate_model_rollouts(
@@ -91,11 +90,21 @@ class TrajectorySampler(object):
                 "low": self.low.repeat(N,1), # (N, 5)
                 "high": self.high.repeat(N,1), # (N, 5)
             }
-            states, masks = self.robot_model.predict_batch(start_data)
-            _, masks_thick = self.robot_model.predict_batch(start_data, thick=True)
+            """
+            Either use thick mask for prediction, thick mask for planning or:
+            normal mask for prediction, thick mask for planning
+            """
+            if cfg.cem_prediction_use_thick_mask:
+                states, _ = self.robot_model.predict_batch(start_data)
+                _, masks_thick = self.robot_model.predict_batch(start_data, thick=True)
+                masks = masks_thick = masks_thick.to(dev, non_blocking=True)
+            else:
+                states, masks = self.robot_model.predict_batch(start_data)
+                masks_thick = self.robot_model.predict_batch(start_data, thick=True)[1]
+                masks = masks.to(dev, non_blocking=True)
+                masks_thick = masks_thick.to(dev, non_blocking=True)
+
             states = states.to(dev, non_blocking=True)
-            masks = masks.to(dev, non_blocking=True)
-            masks_thick = masks_thick.to(dev, non_blocking=True)
 
 
         for b in range(B):

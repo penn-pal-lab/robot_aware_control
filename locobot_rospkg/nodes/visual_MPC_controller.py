@@ -55,6 +55,7 @@ CAMERA_CALIB = np.array(
     ]
 )
 
+
 class Visual_MPC(object):
     def __init__(self, config, device="cuda"):
         # Creates the SimpleActionClient, passing the type of the action
@@ -296,11 +297,17 @@ class Visual_MPC(object):
         )
 
         mask = self.env_thick.generate_masks([self.target_qpos])[0]
+
+        imageio.imwrite(
+            os.path.join(self.config.log_dir, "goal_mask.png"), np.uint8(mask) * 255
+        )
+
         mask = (self._img_transform(mask).type(torch.bool).type(torch.float32)).to(
             self.device
         )
 
         goal = DemoGoalState(imgs=[goal_visual], masks=[mask])
+
         return start, goal
 
     def cem(self, start: State, goal: DemoGoalState, step=0, opt_traj=None):
