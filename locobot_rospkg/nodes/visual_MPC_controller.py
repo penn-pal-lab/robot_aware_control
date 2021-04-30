@@ -6,6 +6,7 @@ import sys
 import time
 from time import gmtime, strftime
 import os
+import pickle
 
 from typing import Tuple
 
@@ -297,6 +298,9 @@ class Visual_MPC(object):
         )
 
         goal = DemoGoalState(imgs=[goal_visual], masks=[mask])
+        with open(os.path.join(self.config.log_dir, "start_goal.pkl"), "wb") as f:
+            pickle.dump([start, goal], f)
+
         return start, goal
 
     def cem(self, start: State, goal: DemoGoalState, step=0, opt_traj=None):
@@ -340,6 +344,7 @@ if __name__ == "__main__":
     parser = create_parser()
     parser.add_argument("--execute_optimal_traj", type=str2bool, default=False)
     parser.add_argument("--new_camera_calibration", type=str2bool, default=False)
+    parser.add_argument("--save_start_goal", type=str2bool, default=False)
 
     cf, unparsed = parser.parse_known_args()
     assert len(unparsed) == 0, unparsed
