@@ -12,6 +12,7 @@ from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinemati
 
 class LocobotMaskEnv(MaskEnv):
     def __init__(self, thick=False):
+        self.thick = thick
         model_path = os.path.join("locobot", "locobot_thick.xml")
         if not thick:
             model_path = os.path.join("locobot", "locobot.xml")
@@ -74,6 +75,10 @@ class LocobotMaskEnv(MaskEnv):
         # ignore_parts = {"finger_r_geom", "finger_l_geom"}
         ignore_parts = {}
         for i in geoms_ids:
+            if self.thick:
+                mask[ids == i] = True
+                continue
+
             name = self.sim.model.geom_id2name(i)
             if name is not None:
                 if name in ignore_parts:
