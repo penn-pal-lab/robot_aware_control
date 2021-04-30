@@ -87,7 +87,8 @@ class Visual_MPC(object):
         model.eval()
 
         self.ik_solver = AIK()
-        self.env = LocobotMaskEnv()
+        # self.env = LocobotMaskEnv(thick=False)
+        self.env_thick = LocobotMaskEnv(thick=True)
 
         camTbase = CAMERA_CALIB
         if config.new_camera_calibration:
@@ -163,14 +164,16 @@ class Visual_MPC(object):
         # TODO: figure out qpos / end effector accuracy
         # currently qpos is better than using end effector
         target_qpos = control_result.joint_angles
-        self.env.sim.data.qpos[self.env._joint_references] = target_qpos
-        self.env.sim.forward()
+        # self.env.sim.data.qpos[self.env._joint_references] = target_qpos
+        # self.env.sim.forward()
+        self.env_thick.sim.data.qpos[self.env_thick._joint_references] = target_qpos
+        self.env_thick.sim.forward()
 
         # tag to base transformation
         tagTbase = np.column_stack(
             (
-                self.env.sim.data.get_geom_xmat("ar_tag_geom"),
-                self.env.sim.data.get_geom_xpos("ar_tag_geom"),
+                self.env_thick.sim.data.get_geom_xmat("ar_tag_geom"),
+                self.env_thick.sim.data.get_geom_xpos("ar_tag_geom"),
             )
         )
         tagTbase = np.row_stack((tagTbase, [0, 0, 0, 1]))
@@ -198,17 +201,18 @@ class Visual_MPC(object):
         cam_id = 0
         offset = [0, -0.007, 0.02]
         # offset = [0, 0, 0.0]
-        self.env.sim.model.cam_pos[cam_id] = cam_pos + offset
+        self.env_thick.sim.model.cam_pos[cam_id] = cam_pos + offset
         cam_quat = cam_rot.as_quat()
-        self.env.sim.model.cam_quat[cam_id] = [
+        self.env_thick.sim.model.cam_quat[cam_id] = [
             cam_quat[3],
             cam_quat[0],
             cam_quat[1],
             cam_quat[2],
         ]
         print("camera pose:")
-        print(self.env.sim.model.cam_pos[cam_id])
-        print(self.env.sim.model.cam_quat[cam_id])
+        print(self.env_thick.sim.model.cam_pos[cam_id])
+        print(self.env_thick.sim.model.cam_quat[cam_id])
+        return camTbase
 
     def read_target_image(self):
         if self.target_img is None:
@@ -291,7 +295,7 @@ class Visual_MPC(object):
             qpos=control_result.joint_angles,
         )
 
-        mask = self.env.generate_masks([self.target_qpos])[0]
+        mask = self.env_thick.generate_masks([self.target_qpos])[0]
         mask = (self._img_transform(mask).type(torch.bool).type(torch.float32)).to(
             self.device
         )
