@@ -8,6 +8,7 @@ from src.prediction.models.dynamics import SVGConvModel
 from src.utils.plot import putText
 from src.utils.state import DemoGoalState, State
 from torch.distributions.normal import Normal
+from tqdm import trange
 
 
 class CEMPolicy(object):
@@ -67,7 +68,9 @@ class CEMPolicy(object):
         std = torch.ones(T - 1, A) * self.init_std
         mean_top_costs = []  # for debugging
         # Optimization loop
-        for i in range(self.optimization_iter):  # Use tqdm to track progress
+        for i in trange(
+            self.optimization_iter, desc="CEM: Optimizing Actions"
+        ):  # Use tqdm to track progress
             # Sample N candidate action sequence
             m = Normal(mean, std)
             act_seq = m.sample((N,))  # of shape (N, T-1, A)
@@ -78,7 +81,9 @@ class CEMPolicy(object):
             padded_act_seq = torch.cat([act_seq, torch.zeros((N, T - 1, 3))], 2)
             # Generate N rollouts of the N action trajectories
             if i == self.optimization_iter - 1:
-                rollouts = self._get_rollouts(padded_act_seq, start, goal, opt_traj, self.plot_rollouts)
+                rollouts = self._get_rollouts(
+                    padded_act_seq, start, goal, opt_traj, self.plot_rollouts
+                )
             else:
                 rollouts = self._get_rollouts(padded_act_seq, start, goal)
 
@@ -112,7 +117,7 @@ class CEMPolicy(object):
             goal,
             ret_obs=self.plot_rollouts,
             opt_traj=opt_traj,
-            suppress_print=False,
+            suppress_print=True,
         )
         # Plot the Top K model rollouts
         if plot:
@@ -146,13 +151,17 @@ class CEMPolicy(object):
                             ac = opt_traj[t]
                         else:
                             putText(img, f"Rank {k-1}", (0, 8), color=(255, 255, 255))
-                            ac = topk_act[k-1, t]
+                            ac = topk_act[k - 1, t]
                     else:
                         putText(img, f"Rank {k}", (0, 8), color=(255, 255, 255))
                         ac = topk_act[k, t]
 
-                    putText(img, f"X:{ac[0] * 100:.1f}cm", (0, 16), color=(255, 255, 255))
-                    putText(img, f"Y:{ac[1] * 100:.1f}cm", (0, 24), color=(255, 255, 255))
+                    putText(
+                        img, f"X:{ac[0] * 100:.1f}cm", (0, 16), color=(255, 255, 255)
+                    )
+                    putText(
+                        img, f"Y:{ac[1] * 100:.1f}cm", (0, 24), color=(255, 255, 255)
+                    )
                     putText(img, f"{t}", (64, 8), color=(255, 255, 255))
                     putText(img, "GOAL", (128, 8), color=(255, 255, 255))
                     all_k_img.append(img)

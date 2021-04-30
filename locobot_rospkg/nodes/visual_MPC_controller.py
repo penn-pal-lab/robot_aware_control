@@ -46,6 +46,14 @@ START_POS = {
     "forward": [0.2 + 0.02, 0],
 }
 
+CAMERA_CALIB = np.array(
+    [
+        [0.06807147, 0.7287672, -0.68136968, 0.79059375],
+        [0.9975921, -0.04063041, 0.05620657, -0.02174283],
+        [0.01327718, -0.68355507, -0.72977817, 0.62857296],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+)
 
 class Visual_MPC(object):
     def __init__(self, config, device="cuda"):
@@ -81,7 +89,10 @@ class Visual_MPC(object):
         self.ik_solver = AIK()
         self.env = LocobotMaskEnv()
 
-        camTbase = self.get_cam_calibration()
+        camTbase = CAMERA_CALIB
+        if config.new_camera_calibration:
+            camTbase = self.get_cam_calibration()
+        self.set_camera_calibration(camTbase)
 
         self.policy = CEMPolicy(
             config,
@@ -174,7 +185,11 @@ class Visual_MPC(object):
         )
 
         camTbase = tagTbase @ tagcTtagw @ np.linalg.inv(tagTcam)
+        print("camera2world:")
+        print(camTbase)
+        return camTbase
 
+    def set_camera_calibration(self, camTbase):
         rot_matrix = camTbase[:3, :3]
         cam_pos = camTbase[:3, 3]
         rel_rot = Rotation.from_quat([0, 1, 0, 0])  # calculated
@@ -194,7 +209,6 @@ class Visual_MPC(object):
         print("camera pose:")
         print(self.env.sim.model.cam_pos[cam_id])
         print(self.env.sim.model.cam_quat[cam_id])
-        return camTbase
 
     def read_target_image(self):
         if self.target_img is None:
@@ -267,7 +281,8 @@ class Visual_MPC(object):
 
         start_visual = self.start_img
         imageio.imwrite(
-            os.path.join(self.config.log_dir,"start_goal.png"), np.concatenate([start_visual, goal_visual], 1)
+            os.path.join(self.config.log_dir, "start_goal.png"),
+            np.concatenate([start_visual, goal_visual], 1),
         )
         control_result = eef_control_client(self.control_client, target_pose=[])
         start = State(
@@ -324,6 +339,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     parser = create_parser()
     parser.add_argument("--execute_optimal_traj", type=str2bool, default=False)
+    parser.add_argument("--new_camera_calibration", type=str2bool, default=False)
 
     cf, unparsed = parser.parse_known_args()
     assert len(unparsed) == 0, unparsed
