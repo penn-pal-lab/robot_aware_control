@@ -695,10 +695,13 @@ class PredictionTrainer(object):
 
                 # k-step rollouts.
                 if autoregressive:
-                    for k in range(i, cf.n_eval - 1):
-                        k_losses[f"{k}_step_psnr"] += p
-                        k_losses[f"{k}_step_ssim"] += s
-                        k_losses[f"{k}_step_world_loss"] += world_mse_value
+                    k_losses[f"{i}_step_psnr"] = p
+                    k_losses[f"{i}_step_ssim"] = s
+                    k_losses[f"{i}_step_world_loss"] = world_mse_value
+                    # for k in range(i, cf.n_eval - 1):
+                    #     k_losses[f"{k}_step_psnr"] += p
+                    #     k_losses[f"{k}_step_ssim"] += s
+                    #     k_losses[f"{k}_step_world_loss"] += world_mse_value
 
                 # robot specific metrics
                 for r in all_robots:
