@@ -94,16 +94,18 @@ class TrajectorySampler(object):
             Either use thick mask for prediction, thick mask for planning or:
             normal mask for prediction, thick mask for planning
             """
-            if cfg.cem_prediction_use_thick_mask:
-                states, masks_thick = self.robot_model.predict_batch(start_data, thick=True)
-                masks = masks_thick = masks_thick.to(dev, non_blocking=True)
-            else:
-                states, masks = self.robot_model.predict_batch(start_data)
-                masks_thick = self.robot_model.predict_batch(start_data, thick=True)[1]
-                masks = masks.to(dev, non_blocking=True)
-                masks_thick = masks_thick.to(dev, non_blocking=True)
+            # if cfg.cem_prediction_use_thick_mask:
+            #     states, masks_thick = self.robot_model.predict_batch(start_data, thick=True)
+            #     masks = masks_thick = masks_thick.to(dev, non_blocking=True)
+            # else:
+            #     states, masks = self.robot_model.predict_batch(start_data)
+            #     masks_thick = self.robot_model.predict_batch(start_data, thick=True)[1]
+            #     masks = masks.to(dev, non_blocking=True)
+            #     masks_thick = masks_thick.to(dev, non_blocking=True)
 
+            states, masks = self.robot_model.predict_batch(start_data)
             states = states.to(dev, non_blocking=True)
+            masks = masks_thick = masks.to(dev, non_blocking=True)
 
 
         for b in range(B):

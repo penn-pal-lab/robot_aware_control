@@ -49,9 +49,9 @@ START_POS = {
 
 CAMERA_CALIB = np.array(
     [
-        [0.06807147, 0.7287672, -0.68136968, 0.79059375],
-        [0.9975921, -0.04063041, 0.05620657, -0.02174283],
-        [0.01327718, -0.68355507, -0.72977817, 0.62857296],
+        [0.008716, 0.75080825, -0.66046272, 0.77440888],
+        [0.99985879, 0.00294645, 0.01654445, 0.02565873],
+        [0.01436773, -0.66051366, -0.75067655, 0.64211797],
         [0.0, 0.0, 0.0, 1.0],
     ]
 )
@@ -90,7 +90,7 @@ class Visual_MPC(object):
 
         self.ik_solver = AIK()
         # self.env = LocobotMaskEnv(thick=False)
-        self.env_thick = LocobotMaskEnv(thick=True)
+        self.env_thick = LocobotMaskEnv(thick=False)
 
         camTbase = CAMERA_CALIB
         if config.new_camera_calibration:
@@ -201,8 +201,9 @@ class Visual_MPC(object):
         cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
 
         cam_id = 0
-        offset = [0, -0.007, 0.02]
-        # offset = [0, 0, 0.0]
+        offset = [0, -0.015, 0.0125]
+        # offset = [0, -0.007, 0.02]
+        print("applying offset", offset)
         self.env_thick.sim.model.cam_pos[cam_id] = cam_pos + offset
         cam_quat = cam_rot.as_quat()
         self.env_thick.sim.model.cam_quat[cam_id] = [

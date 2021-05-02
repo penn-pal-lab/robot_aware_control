@@ -61,7 +61,7 @@ class LocobotMaskEnv(MaskEnv):
         robot_mask_with_obj means the robot mask is computed with object occlusions.
         """
         # returns a binary mask where robot pixels are True
-        seg = self.render("rgb_array", segmentation=True)  # flip the camera
+        seg = self.render("rgb_array", segmentation=True, width=width, height=height)  # flip the camera
         types = seg[:, :, 0]
         ids = seg[:, :, 1]
         geoms = types == self.mj_const.OBJ_GEOM
@@ -75,6 +75,7 @@ class LocobotMaskEnv(MaskEnv):
         # ignore_parts = {"finger_r_geom", "finger_l_geom"}
         ignore_parts = {}
         for i in geoms_ids:
+            mask[ids == i] = True
             if self.thick:
                 mask[ids == i] = True
                 continue

@@ -22,14 +22,16 @@ class MaskEnv(RobotEnv):
         ]
         self.sim.forward()
 
-    def render(self, mode, segmentation=False):
+    def render(self, mode, segmentation=False, width=None, height=None):
+        if width is None or height is None:
+            width, height = self._img_width, self._img_height
         if not hasattr(self, "_render_device"):
             # TODO: assumes we always pass in gpu 0. need to read in gpu from config dict in the future.
             self._render_device = get_mjrender_device(0)
         if mode == "rgb_array":
             out = self.sim.render(
-                self._img_width,
-                self._img_height,
+                width,
+                height,
                 camera_name=self._camera_name,
                 segmentation=segmentation,
                 device_id=self._render_device,

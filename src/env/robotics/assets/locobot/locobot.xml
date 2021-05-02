@@ -10,9 +10,9 @@
         <mesh name="elbow_link" file="elbow_link.STL"/>
         <mesh name="forearm_link" file="forearm_link.STL"/>
         <mesh name="wrist_link" file="wrist_link.STL"/>
-        <mesh name="gripper_link" file="gripper_link.STL"/>
-        <mesh name="finger_r" file="finger_r.STL"/>
-        <mesh name="finger_l" file="finger_l.STL"/>
+        <mesh name="gripper_link" file="gripper_link.STL" scale="1.0 1.2 1.2"/>
+        <mesh name="finger_r" file="finger_r.STL" scale="1.2 1.2 1.2"/>
+        <mesh name="finger_l" file="finger_l.STL" scale="1.2 1.2 1.2"/>
         <mesh name="ar_tag" file="ar_tag.STL"/>
     </asset>
     <worldbody>
