@@ -42,8 +42,8 @@ from src.utils.state import DemoGoalState, State
 
 start_offset = 0.15
 START_POS = {
-    "left": [0.33, -start_offset],
-    "right": [0.33, start_offset],
+    "left": [0.29, -0.14],
+    "right": [0.26, 0.13],
     "forward": [0.2 + 0.02, 0],
 }
 
@@ -355,9 +355,22 @@ if __name__ == "__main__":
     parser.add_argument("--new_camera_calibration", type=str2bool, default=False)
     parser.add_argument("--save_start_goal", type=str2bool, default=False)
     parser.add_argument("--load_start_goal", type=str, default=None)
+    parser.add_argument("--push_type", type=str, default="forward")
+    parser.add_argument("--object", type=str, default=" ")
+
     cf, unparsed = parser.parse_known_args()
     assert len(unparsed) == 0, unparsed
     cf.device = device
+    push_type = cf.push_type
+    dynamics_model = "vanilla"
+    if "roboaware" in cf.dynamics_model_ckpt:
+        dynamics_model = "roboaware"
+    curr_time = strftime("%Y-%m-%d_%H:%M:%S", gmtime())
+    cf.log_dir = os.path.join(
+        cf.log_dir,
+        push_type + "_" + cf.object + "_" + dynamics_model,
+        "debug_cem_" + curr_time,
+    )
 
     cf.debug_cem = True
     # cf.cem_init_std = 0.015
@@ -365,8 +378,6 @@ if __name__ == "__main__":
     cf.goal_img_with_wrong_robot = True  # makes the robot out of img by pointing up
     cf.cem_open_loop = False
     cf.max_episode_length = 4  # ep length of closed loop execution
-    curr_time = strftime("%Y-%m-%d_%H:%M:%S", gmtime())
-    cf.log_dir = os.path.join(cf.log_dir, "debug_cem_" + curr_time)
 
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.
@@ -374,7 +385,6 @@ if __name__ == "__main__":
 
     vmpc = Visual_MPC(config=cf)
 
-    push_type = "forward"
     if cf.goal_img_with_wrong_robot:
         eef_start_pos = START_POS[push_type]
         eef_target_pos = [0.15, 0.0, 0.55, 0, DEFAULT_ROLL]
@@ -409,8 +419,12 @@ if __name__ == "__main__":
         input("execute actions?")
         vmpc.execute_open_loop(actions)
     else:
-        dist = 0.04
+        dist = 0.03
         opt_traj = torch.tensor([[dist, 0]] * (cf.horizon - 1))
+        if push_type == "left":
+            opt_traj = torch.tensor([[0, dist]] * (cf.horizon - 1))
+        elif push_type == "right":
+            opt_traj = torch.tensor([[0, -dist]] * (cf.horizon - 1))
         img_goal = np.concatenate([start.img, vmpc.goal_visual], 1)
         gif = [img_goal]
         for t in range(cf.max_episode_length):
