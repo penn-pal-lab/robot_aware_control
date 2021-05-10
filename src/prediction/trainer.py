@@ -723,11 +723,11 @@ class PredictionTrainer(object):
         for k, v in losses.items():
             losses[k] = v / (cf.n_eval - 1)  # don't count the first step
 
-        temp_k_losses = {}
-        for k, v in k_losses.items():
-            num_steps = float(k[0])
-            temp_k_losses[k] = v / num_steps
-        losses.update(temp_k_losses)
+        # temp_k_losses = {}
+        # for k, v in k_losses.items():
+        #     num_steps = float(k[0])
+        #     temp_k_losses[k] = v / num_steps
+        losses.update(k_losses)
         return losses
 
     def train(self):
