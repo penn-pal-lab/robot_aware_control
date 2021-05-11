@@ -96,22 +96,21 @@ def collect_svg_data():
     """
     Generate video dataset for SVG model training
     """
-    num_workers = 1
-    num_push = 10 // num_workers
-    num_rand = 10000 // num_workers
-    record = True
+    num_workers = 5
+    num_push = 10000 // num_workers
+    record = False
 
     config, _ = argparser()
+    config.gpu = 0
     init_mjrender_device(config)
 
-    config.demo_dir = "/scratch/edward/Robonet/locobot_table_views"
+    config.demo_dir = "/scratch/edward/Robonet/locobot_table_views/c0"
     config.img_dim = 64
     config.camera_ids = [0]
     config.temporal_beta = 0.2  # control random policy's temporal correlation
     config.action_noise = 0.05
     config.demo_length = 30 # actually 31
     create_demo_dataset(config, num_push, num_workers, record, "temporal_random_robot")
-    # create_demo_dataset(config, num_rand, num_workers, record, "random_robot", ep_len)
 
 
 if __name__ == "__main__":
