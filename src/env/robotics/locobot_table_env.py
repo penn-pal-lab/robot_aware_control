@@ -23,8 +23,9 @@ CAMERA_CALIB = np.array(
 
 
 class LocobotTableEnv(MaskEnv):
-    def __init__(self, config, modified=False):
+    def __init__(self, config):
         self._config = config
+        modified =  config.modified
         model_path = f"locobot_table{'_modified' if modified else ''}.xml"
         model_path = os.path.join("locobot", model_path)
 
@@ -355,18 +356,19 @@ class LocobotTableEnv(MaskEnv):
         spawn_xpos = self.sim.data.get_site_xpos("spawn").copy()
         goal_dir = (block_xpos - spawn_xpos) / np.linalg.norm(block_xpos - spawn_xpos)
         gripper_target = block_xpos - 0.05 * goal_dir
+        # move robot near an object, record the actions
         self._move(gripper_target, history, speed=100, max_time=3)
         past_acs = len(history["ac"])
-        # generate temporally corellated noise
-        u = np.zeros((ep_len, *self.action_space.shape))
+        # generate temporally correlated noise
+        u = np.zeros((ep_len - 1, *self.action_space.shape))
         actions = np.zeros_like(u)
         actions[:past_acs] = history["ac"]
-        for i in range(past_acs, ep_len):
+        for i in range(past_acs, ep_len - 1):
             u[i] = self.action_space.sample()
             actions[i] = beta * u[i] + (1 - beta) * actions[i - 1]
         history["ac"] = actions
 
-        for i in range(past_acs, ep_len):
+        for i in range(past_acs, ep_len - 1):
             obs, _, _, info = self.step(actions[i])
             history["obs"].append(obs)
             for k, v in info.items():
@@ -382,6 +384,7 @@ if __name__ == "__main__":
     config, _ = argparser()
     init_mjrender_device(config)
     config.gpu = 0
+    config.modified = True
 
 
     env = LocobotTableEnv(config)
