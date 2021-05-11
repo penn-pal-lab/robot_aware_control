@@ -269,6 +269,7 @@ def add_dataset_arguments(parser):
             "finetune_sawyer_view",
             "finetune_widowx",
             "train_locobot_singleview",
+            "train_locobot_table",
             "finetune_locobot",
         ],
         default="train_robonet",

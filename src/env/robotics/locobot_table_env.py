@@ -333,7 +333,6 @@ class LocobotTableEnv(MaskEnv):
         history = defaultdict(list)
         history["obs"].append(obs)
         ep_len = self._config.demo_length
-        noise = self._config.action_noise
         beta = self._config.temporal_beta
         if behavior == "temporal_random_robot":
             self.temporal_random_robot(history, ep_len, beta)
