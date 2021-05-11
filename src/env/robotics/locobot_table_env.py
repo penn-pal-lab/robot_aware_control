@@ -23,9 +23,11 @@ CAMERA_CALIB = np.array(
 
 
 class LocobotTableEnv(MaskEnv):
-    def __init__(self, config):
+    def __init__(self, config, modified=False):
         self._config = config
-        model_path = os.path.join("locobot", "locobot_table.xml")
+        model_path = f"locobot_table{'_modified' if modified else ''}.xml"
+        model_path = os.path.join("locobot", model_path)
+
         initial_qpos = None
         n_actions = 3
         n_substeps = 20
