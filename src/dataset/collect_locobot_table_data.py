@@ -46,7 +46,8 @@ def generate_demos(rank, config, behavior, record, num_trajectories):
             states.append(ob["states"])
             qpos.append(ob["qpos"])
 
-        actions = history["ac"]
+        # make 3d action 5d for video prediction
+        actions = [np.concatenate([ac, [0,0]]) for ac in history["ac"]]
         # now render the object only demonstration
         if record:
             imageio.mimwrite(record_path, imgs)
