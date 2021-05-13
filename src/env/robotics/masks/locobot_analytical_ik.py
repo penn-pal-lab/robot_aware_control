@@ -271,6 +271,7 @@ class ModifiedAnalyticInverseKinematics(AnalyticInverseKinematics):
     def __init__(self, base_frame="/base_link", tool_frame="/gripper_link"):
         super().__init__(base_frame, tool_frame)
         self.l3 = 0.3002
+        self.l4 = 0.063 * 1.5
 
 if __name__ == "__main__":
     ik = AnalyticInverseKinematics()

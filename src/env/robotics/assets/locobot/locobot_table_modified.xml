@@ -14,7 +14,7 @@
         <mesh name="shoulder_link" file="shoulder_link.STL"/>
         <mesh name="elbow_link" file="elbow_link.STL"/>
         <mesh name="forearm_link" file="forearm_link.STL" scale="1.5 1 1"/>
-        <mesh name="wrist_link" file="wrist_link.STL" scale="1.0 1.0 1.0"/>
+        <mesh name="wrist_link" file="wrist_link.STL" scale="1.5 1.0 1.0"/>
         <mesh name="gripper_link" file="gripper_link.STL" scale="1.0 1.0 1.0"/>
         <mesh name="finger_r" file="finger_r.STL" scale="1.0 1.0 1.0"/>
         <mesh name="finger_l" file="finger_l.STL" scale="1.0 1.0 1.0"/>
