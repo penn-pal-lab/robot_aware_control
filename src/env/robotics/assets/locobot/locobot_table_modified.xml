@@ -104,11 +104,11 @@
                 <body name="forearm_link" pos="0.05 0 0.2">
                     <inertial pos="0.11783 0 -1.26219e-08" quat="0 0.707107 0 0.707107" mass="0.187464" diaginertia="0.000737166 0.00072521 3.94143e-05" />
                     <joint name="joint_3" pos="0 0 0" axis="0 1 0" limited="true" range="-1.57 1.57" />
-                    <geom name="forearm_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="forearm_link" />
+                    <geom name="forearm_link_geom" type="mesh" rgba="0.3 0.4 0.4 1" mesh="forearm_link" />
                     <body name="wrist_link" pos="0.3002 0 0">
                         <inertial pos="0.042941 4.98645e-05 0.0114267" quat="0.0526331 0.462852 0.0284284 0.884415" mass="0.0605922" diaginertia="2.0979e-05 2.08943e-05 1.73078e-05" />
                         <joint name="joint_4" pos="0 0 0" axis="0 1 0" limited="true" range="-1.57 1.57" />
-                        <geom name="wrist_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="wrist_link" />
+                        <geom name="wrist_link_geom" type="mesh" rgba="0.4 0.4 0.4 1" mesh="wrist_link" />
                         <geom conaffinity="0" contype="0" pos="0.02 0 0" size="0.02 0.02 0.005" type="box" name="wrist_hole_geom" rgba="0.792157 0.819608 0.933333 1"/>
 
                         <body name="gripper_link" pos="0.063 0.0001 0">
