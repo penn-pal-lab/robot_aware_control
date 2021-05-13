@@ -1,5 +1,5 @@
 from collections import defaultdict
-from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinematics
+from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinematics, ModifiedAnalyticInverseKinematics
 from src.env.robotics.utils import (
     mocap_set_action,
     reset_mocap2body_xpos,
@@ -68,7 +68,10 @@ class LocobotTableEnv(MaskEnv):
             "finger_l_geom",
         }
         self.action_space = spaces.Box(-1.0, 1.0, shape=(n_actions,), dtype="float32")
-        self.locobot_ik = AnalyticInverseKinematics()
+        if modified:
+            self.locobot_ik = ModifiedAnalyticInverseKinematics()
+        else:
+            self.locobot_ik = AnalyticInverseKinematics()
 
         self._objects = ["object0", "object1", "object2"]
 
@@ -390,25 +393,25 @@ if __name__ == "__main__":
 
 
     env = LocobotTableEnv(config)
-    history = env.generate_demo("temporal_random_robot")
-    gif = []
-    for o in history["obs"]:
-        img = o["observation"]
-        mask = o["masks"]
-        img[mask] = (0, 255, 255)
-        gif.append(img)
-    imageio.mimwrite("test.gif", gif)
+    # history = env.generate_demo("temporal_random_robot")
+    # gif = []
+    # for o in history["obs"]:
+    #     img = o["observation"]
+    #     mask = o["masks"]
+    #     img[mask] = (0, 255, 255)
+    #     gif.append(img)
+    # imageio.mimwrite("test.gif", gif)
+    # sys.exit(0)
 
-    sys.exit(0)
     # env.get_robot_mask()
     # try locobot analytical ik
-    # env.reset()
-    # while True:
+    env.reset()
+    while True:
     #     x, y, z = np.random.uniform(low=-1, high=1, size=3)
     #     # x, y = 0, 0
     #     # print(x,y,z)
     #     obs = env.step([x, y, 0])
-    #     env.render("human")
+        env.render("human")
     # env.render("human")
     while True:
         env.reset()
