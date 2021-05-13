@@ -220,6 +220,8 @@ class LocobotTableEnv(MaskEnv):
 
         img = self.render("rgb_array")
         masks = self.get_robot_mask()
+        # img = np.zeros((48,64,3))
+        # masks = np.zeros((48,64,1))
         gripper_xpos = self.sim.data.get_body_xpos("finger_r").copy()
         # assume 0 for rotation, gripper force
         states = np.array([*gripper_xpos, 0, 0])
@@ -400,12 +402,13 @@ if __name__ == "__main__":
     sys.exit(0)
     # env.get_robot_mask()
     # try locobot analytical ik
+    # env.reset()
     # while True:
-        # x, y, z = np.random.uniform(low=-1, high=1, size=3)
-        # x, y = 0, 0
-        # print(x,y,z)
-        # env.render("human")
-        # obs = env.step([x, y, 0])
+    #     x, y, z = np.random.uniform(low=-1, high=1, size=3)
+    #     # x, y = 0, 0
+    #     # print(x,y,z)
+    #     obs = env.step([x, y, 0])
+    #     env.render("human")
     # env.render("human")
     while True:
         env.reset()
