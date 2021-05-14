@@ -26,7 +26,7 @@ class LocobotTableEnv(MaskEnv):
     def __init__(self, config):
         self._config = config
         modified =  config.modified
-        model_path = f"locobot_table{'_modified' if modified else ''}.xml"
+        model_path = f"locobot_table{'_fetch_modified' if modified else ''}.xml"
         model_path = os.path.join("locobot", model_path)
 
         initial_qpos = None
@@ -36,7 +36,12 @@ class LocobotTableEnv(MaskEnv):
         self._img_width = 64
         self._img_height = 48
         self._render_device = config.render_device
-        self._joints = [f"joint_{i}" for i in range(1, 6)]
+        if modified:
+            self._gripper_body_name = "robot0:grip"
+            self._joints = [f"joint_{i}" for i in range(1, 8)]
+        else:
+            self._gripper_body_name = "finger_r"
+            self._joints = [f"joint_{i}" for i in range(1, 6)]
 
         super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
 
@@ -109,14 +114,9 @@ class LocobotTableEnv(MaskEnv):
             if name is not None:
                 if name in ignore_parts:
                     continue
-                if name in self._geoms:
+                if name in self._geoms or "robot0" in name:
                     mask[ids == i] = True
         return mask
-
-    def get_gripper_pos(self, qpos):
-        self.sim.data.qpos[self._joint_references] = qpos
-        self.sim.forward()
-        return self.sim.data.get_body_xpos("gripper_link").copy()
 
     def generate_masks(self, qpos_data, width=None, height=None):
         joint_references = [self.sim.model.get_joint_qpos_addr(x) for x in self._joints]
@@ -136,34 +136,49 @@ class LocobotTableEnv(MaskEnv):
     def reset(self):
         reset_mocap2body_xpos(self.sim)
         reset_mocap_welds(self.sim)
-        # first move the arm above to avoid object collision
-        robot_above_qpos = [0.0, 0.43050715, 0.2393125, 0.63018035, 0.0]
-        self.sim.data.qpos[self._joint_references] = robot_above_qpos
-        self.sim.forward()
+        if self._config.modified:
+            eef_target_pos = [0.27, 0.0, 0.55]
+            self._move(eef_target_pos)
+        else:
+            # first move the arm above to avoid object collision
+            robot_above_qpos = [0.0, 0.43050715, 0.2393125, 0.63018035, 0.0]
+            self.sim.data.qpos[self._joint_references] = robot_above_qpos
+            self.sim.forward()
         # then sample object initialization
         self._sample_objects()
-        # then bring robot gripper down
-        curr_qpos = self.sim.data.qpos[self._joint_references][:4].copy()
-        eef_target_pos = [0.27, 0.0, 0.18]
+
+        eef_target_pos = [0.21, 0.0, 0.07]
         # some noise to the x/y of the eef initial pos
         noise = np.random.uniform(-0.03, 0.03, size = 2)
         eef_target_pos[:2] += noise
-        qpos_from_eef = np.zeros(5)
-        qpos_from_eef[0:4] = self.locobot_ik.ik(
-            eef_target_pos, alpha=-DEFAULT_PITCH, cur_arm_config=curr_qpos
-        )
-        qpos_from_eef[4] = DEFAULT_ROLL
-        # qpos_from_eef = [0, 0.43050715, 0.2393125, 0.63018035, 0]
-        # move robot to start pos
-        self.sim.data.qpos[self._joint_references] = qpos_from_eef
-        self.sim.forward()
-        # print("qpos", qpos_from_eef)
+        if self._config.modified:
+            self._move(eef_target_pos, threshold=0.005, max_time=500)
+        else:
+            self._move(eef_target_pos, threshold=0.005, max_time=500)
+
+            # eef_target_pos = [0.27, 0.0, 0.1]
+            # # some noise to the x/y of the eef initial pos
+            # # noise = np.random.uniform(-0.03, 0.03, size = 2)
+            # # eef_target_pos[:2] += noise
+            # # then bring robot gripper down
+            # curr_qpos = self.sim.data.qpos[self._joint_references][:4].copy()
+            # qpos_from_eef = np.zeros(5)
+            # qpos_from_eef[0:4] = self.locobot_ik.ik(
+            #     eef_target_pos, alpha=-DEFAULT_PITCH, cur_arm_config=curr_qpos
+            # )
+            # qpos_from_eef[4] = DEFAULT_ROLL
+            # # qpos_from_eef = [0, 0.43050715, 0.2393125, 0.63018035, 0]
+            # # move robot to start pos
+            # self.sim.data.qpos[self._joint_references] = qpos_from_eef
+            # self.sim.forward()
+        # print(self.sim.data.get_site_xpos("robot0:grip").copy())
+        # import ipdb; ipdb.set_trace()
         return self._get_obs()
 
     def step(self, action):
         action = np.clip(action, self.action_space.low, self.action_space.high)
         # check if applying action will violate the workspace boundary, if so, clip it.
-        curr_eef_state = self.sim.data.get_body_xpos("finger_r").copy()
+        curr_eef_state = self.get_gripper_world_pos()
         next_eef_state = curr_eef_state + (action[:3] * 0.05)
 
         next_eef_state = np.clip(next_eef_state, self._ws_low, self._ws_high)
@@ -225,7 +240,7 @@ class LocobotTableEnv(MaskEnv):
         masks = self.get_robot_mask()
         # img = np.zeros((48,64,3))
         # masks = np.zeros((48,64,1))
-        gripper_xpos = self.sim.data.get_body_xpos("finger_r").copy()
+        gripper_xpos = self.get_gripper_world_pos()
         # assume 0 for rotation, gripper force
         states = np.array([*gripper_xpos, 0, 0])
         qpos = self.sim.data.qpos[self._joint_references].copy()
@@ -297,7 +312,7 @@ class LocobotTableEnv(MaskEnv):
     def _move(
         self,
         target,
-        history,
+        history=None,
         target_type="gripper",
         max_time=100,
         threshold=0.01,
@@ -305,7 +320,7 @@ class LocobotTableEnv(MaskEnv):
         noise=0,
     ):
         if target_type == "gripper":
-            gripper_xpos = self.sim.data.get_body_xpos("finger_r").copy()
+            gripper_xpos = self.get_gripper_world_pos()
             d = target - gripper_xpos
         elif "object" in target_type:
             object_xpos = self.sim.data.get_site_xpos(target_type).copy()
@@ -314,16 +329,19 @@ class LocobotTableEnv(MaskEnv):
         while np.linalg.norm(d) > threshold and step < max_time:
             # add some random noise to ac
             if noise > 0:
-                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
-            ac = np.clip(d[:2] * speed, -1, 1)
-            pad_ac = [*ac, 0]
-            history["ac"].append(pad_ac)
+                d[:3] = d[:3] + np.random.uniform(-noise, noise, size=2)
+            ac = np.clip(d[:3] * speed, -1, 1)
+            pad_ac = [*ac]
+            if history is not None:
+                history["ac"].append(pad_ac)
+
             obs, _, _, info = self.step(pad_ac)
-            history["obs"].append(obs)
-            for k, v in info.items():
-                history[k].append(v)
+            if history is not None:
+                history["obs"].append(obs)
+                for k, v in info.items():
+                    history[k].append(v)
             if target_type == "gripper":
-                gripper_xpos = self.sim.data.get_body_xpos("finger_r").copy()
+                gripper_xpos = self.get_gripper_world_pos()
                 d = target - gripper_xpos
             elif "object" in target_type:
                 object_xpos = self.sim.data.get_site_xpos(target_type).copy()
@@ -379,6 +397,8 @@ class LocobotTableEnv(MaskEnv):
             for k, v in info.items():
                 history[k].append(v)
 
+    def get_gripper_world_pos(self):
+        return self.sim.data.get_site_xpos("robot0:grip").copy()
 
 if __name__ == "__main__":
     import sys
@@ -389,19 +409,19 @@ if __name__ == "__main__":
     config, _ = argparser()
     init_mjrender_device(config)
     config.gpu = 0
-    config.modified = True
+    # config.modified = False
 
 
     env = LocobotTableEnv(config)
-    # history = env.generate_demo("temporal_random_robot")
-    # gif = []
-    # for o in history["obs"]:
-    #     img = o["observation"]
-    #     mask = o["masks"]
-    #     img[mask] = (0, 255, 255)
-    #     gif.append(img)
-    # imageio.mimwrite("test.gif", gif)
-    # sys.exit(0)
+    history = env.generate_demo("temporal_random_robot")
+    gif = []
+    for o in history["obs"]:
+        img = o["observation"]
+        mask = o["masks"]
+        # img[mask] = (0, 255, 255)
+        gif.append(img)
+    imageio.mimwrite("test2.gif", gif)
+    sys.exit(0)
 
     # env.get_robot_mask()
     # try locobot analytical ik

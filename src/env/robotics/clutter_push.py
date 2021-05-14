@@ -1059,7 +1059,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             history["obs"].append(obs)
             for k, v in info.items():
                 history[k].append(v)
-        
+
         # reenable robot collision
         for geom_id, _ in enumerate(self.sim.model.geom_bodyid):
             geom_name = self.sim.model.geom_id2name(geom_id)
