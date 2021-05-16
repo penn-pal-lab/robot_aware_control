@@ -98,9 +98,9 @@ def collect_svg_data():
     Generate video dataset for SVG model training
     """
     num_workers = 5
-    num_push = 1000 // num_workers
+    num_push = 10000 // num_workers
     record = False
-    MODIFIED = True
+    MODIFIED = False
 
     config, _ = argparser()
     config.gpu = 0

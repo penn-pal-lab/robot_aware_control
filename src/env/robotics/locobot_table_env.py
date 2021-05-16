@@ -104,7 +104,7 @@ class LocobotTableEnv(MaskEnv):
             mask_dim = [self._img_height, self._img_width]
         else:
             mask_dim = [height, width]
-        mask = np.zeros(mask_dim, dtype=np.bool)
+        mask = np.zeros(mask_dim, dtype=bool)
         # TODO: change these to include the robot base
         # ignore_parts = {"finger_r_geom", "finger_l_geom"}
 
@@ -246,14 +246,16 @@ class LocobotTableEnv(MaskEnv):
         qpos = self.sim.data.qpos[self._joint_references].copy()
         return {"observation": img, "masks": masks, "states": states, "qpos": qpos}
 
-    def render(self, mode="rgb_array", segmentation=False, width=None, height=None):
+    def render(self, mode="rgb_array", camera_name=None, segmentation=False, width=None, height=None):
         if width is None or height is None:
             width, height = self._img_width, self._img_height
+        if camera_name is None:
+            camera_name = "main_cam"
         if mode == "rgb_array":
             data = self.sim.render(
                 width,
                 height,
-                camera_name="main_cam",
+                camera_name=camera_name,
                 segmentation=segmentation,
                 device_id=self._render_device,
             )
@@ -413,31 +415,34 @@ if __name__ == "__main__":
 
 
     env = LocobotTableEnv(config)
-    history = env.generate_demo("temporal_random_robot")
-    gif = []
-    for o in history["obs"]:
-        img = o["observation"]
-        mask = o["masks"]
-        # img[mask] = (0, 255, 255)
-        gif.append(img)
-    imageio.mimwrite("test2.gif", gif)
-    sys.exit(0)
+    # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)[::-1]
+    # imageio.imwrite("side.png", img)
+    # history = env.generate_demo("temporal_random_robot")
+    # gif = []
+    # for o in history["obs"]:
+    #     img = o["observation"]
+    #     mask = o["masks"]
+    #     # img[mask] = (0, 255, 255)
+    #     gif.append(img)
+    # imageio.mimwrite("test2.gif", gif)
+    # sys.exit(0)
 
     # env.get_robot_mask()
     # try locobot analytical ik
     env.reset()
-    while True:
-    #     x, y, z = np.random.uniform(low=-1, high=1, size=3)
-    #     # x, y = 0, 0
-    #     # print(x,y,z)
-    #     obs = env.step([x, y, 0])
-        env.render("human")
+    # while True:
+    # #     x, y, z = np.random.uniform(low=-1, high=1, size=3)
+    # #     # x, y = 0, 0
+    # #     # print(x,y,z)
+    # #     obs = env.step([x, y, 0])
+    #     env.render("human")
     # env.render("human")
-    while True:
-        env.reset()
-        env.render("human")
-        for i in range(10):
-            x,y,z = [1,0,0]
-            obs = env.step([x, y, z])
-            # print(env.sim.data.get_body_xpos("finger_r").copy()[0])
-            env.render("human")
+    gif = []
+    obs = env.reset()
+    gif.append(obs["observation"])
+    for i in range(10):
+        x,y,z = [0,1,0]
+        obs, _, _, _ = env.step([x, y, z])
+        gif.append(obs["observation"])
+    imageio.mimwrite("test2.gif", gif)
+
