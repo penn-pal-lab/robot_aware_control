@@ -348,8 +348,6 @@ class PredictionTrainer(object):
         self.model.init_hidden(bs)  # initialize the recurrent states
 
         # background mask
-        if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-            zero_robot_region(mask[0], x[0], inplace=True)
         for i in range(1, cf.n_past + cf.n_future):
             if i > 1:
                 x_j = x[i - 1] if self._use_true_token() else x_pred.clone()
@@ -591,8 +589,6 @@ class PredictionTrainer(object):
         x_pred = skip = None
         prefix = "autoreg" if autoregressive else "1step"
 
-        if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-            zero_robot_region(masks[0], x[0], inplace=True)
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 x_j = x_pred.clone()
@@ -932,6 +928,8 @@ class PredictionTrainer(object):
             from src.dataset.locobot.locobot_singleview_dataloader import (
                 create_finetune_loaders as create_loaders,
             )
+        elif self._config.experiment == "train_locobot_table":
+            from src.dataset.locobot.locobot_table_dataloaders import create_loaders
         else:
             raise NotImplementedError(self._config.experiment)
         self.train_loader, self.test_loader = create_loaders(self._config)
@@ -1080,13 +1078,14 @@ class PredictionTrainer(object):
                         # store the most recent conditioning frame's skip
                         skip = curr_skip
 
-                    if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-                        zero_robot_region(m_i, x_pred, inplace=True)
                 if i < cf.n_past:
                     x_j = x_i
                 else:
                     x_j = x_pred
-                gen_seq[s].append(x_j)
+                if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
+                    gen_seq[s].append(zero_robot_region(m_i, x_pred))
+                else:
+                    gen_seq[s].append(x_j)
                 gen_mask[s].append(x_pred_mask)
 
         to_plot = []
@@ -1243,8 +1242,6 @@ class PredictionTrainer(object):
         x_pred = skip = None
         prefix = "autoreg" if autoregressive else "1step"
 
-        if "dontcare" in cf.reconstruction_loss or cf.black_robot_input:
-            zero_robot_region(mask[0], x[0], inplace=True)
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 x_j = x_pred.clone()

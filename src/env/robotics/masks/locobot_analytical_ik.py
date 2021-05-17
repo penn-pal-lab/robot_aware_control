@@ -47,7 +47,7 @@ class AnalyticInverseKinematics:
         """
         /forearm_link -> /wrist_link
         """
-        self.l3 = 0.2002
+        self.l3 = 0.3002
 
         """
         /wrist_link -> /gripper_link
@@ -198,7 +198,7 @@ class AnalyticInverseKinematics:
         """
 
         :param trans: cartesian param in m [x,y,z]
-        :param quat: quaternion [x,y,z,w] 
+        :param quat: quaternion [x,y,z,w]
         :param current_config: [list of len 5] current config of robot
         :return: [joint angles in radians]
         """
@@ -267,6 +267,10 @@ class AnalyticInverseKinematics:
         solution = self.ik_quat(trans, quat, qinit)
         return solution
 
+class ModifiedAnalyticInverseKinematics(AnalyticInverseKinematics):
+    def __init__(self, base_frame="/base_link", tool_frame="/gripper_link"):
+        super().__init__(base_frame, tool_frame)
+        self.l3 = 0.3002
 
 if __name__ == "__main__":
     ik = AnalyticInverseKinematics()
