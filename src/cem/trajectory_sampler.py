@@ -103,7 +103,7 @@ class TrajectorySampler(object):
             #     masks = masks.to(dev, non_blocking=True)
             #     masks_thick = masks_thick.to(dev, non_blocking=True)
 
-            states, masks = self.robot_model.predict_batch(start_data)
+            states, masks = self.robot_model.predict_batch(start_data, thick=True)
             states = states.to(dev, non_blocking=True)
             masks = masks_thick = masks.to(dev, non_blocking=True)
 
