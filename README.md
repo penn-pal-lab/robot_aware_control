@@ -112,7 +112,13 @@ CUDA_VISIBLE_DEVICES=0 python -m src.prediction.multirobot_trainer --jobname loc
 Finetuned vanilla model
 
 ```bash
-python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --lstm_group_norm True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/vanilla_ckpt_10200.pt --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.03 --sparse_cost False --horizon 5 --object box --push_type left
+python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --lstm_group_norm True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/vanilla_ckpt_10200.pt --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.03 --sparse_cost False --horizon 5 --object shark --push_type right
+```
+
+Finetuned vanilla model with Roboaware cost
+
+```bash
+python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --lstm_group_norm True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/vanilla_ckpt_10200.pt --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.03 --sparse_cost False --horizon 5 --reward_type dontcare --object watermelon --push_type right
 ```
 
 Full vanilla model
@@ -121,8 +127,14 @@ Full vanilla model
 python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/locobot_689_tile_ckpt_136500.pt --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.015 --sparse_cost True
 ```
 
+Full vanilla model with Roboaware cost
+
+```bash
+python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/locobot_689_tile_ckpt_136500.pt --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.03 --sparse_cost False --horizon 5 --reward_type dontcare --object shark --push_type right
+```
+
 ### Using LoCoBot Roboaware Model
 
 ```bash
-python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask True --model_use_robot_state True --model_use_future_mask True --model_use_future_robot_state True --lstm_group_norm True --robot_joint_dim 5 --dynamics_model_ckpt checkpoints/roboaware_ckpt_10200.pt --reconstruction_loss dontcare_l1 --reward_type dontcare --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.03 --sparse_cost False --horizon 5 --object bear --push_type left
+python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask True --model_use_robot_state True --model_use_future_mask True --model_use_future_robot_state True --lstm_group_norm True --robot_joint_dim 5 --dynamics_model_ckpt checkpoints/roboaware_ckpt_10200.pt --reconstruction_loss dontcare_l1 --reward_type dontcare --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.03 --sparse_cost False --horizon 5 --object shark --push_type right
 ```

@@ -368,7 +368,7 @@ if __name__ == "__main__":
     curr_time = strftime("%Y-%m-%d_%H:%M:%S", gmtime())
     cf.log_dir = os.path.join(
         cf.log_dir,
-        push_type + "_" + cf.object + "_" + dynamics_model,
+        push_type + "_" + cf.object + "_" + dynamics_model + "_" + cf.reward_type,
         "debug_cem_" + curr_time,
     )
 
