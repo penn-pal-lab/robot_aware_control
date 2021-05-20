@@ -83,7 +83,7 @@ def add_method_arguments(parser: ArgumentParser):
     parser.add_argument("--record_video_interval", type=int, default=1)
 
     # environment
-    parser.add_argument("--env", type=str, default="FetchPush")
+    parser.add_argument("--env", type=str, default="FetchPush", choices=["FetchPush", "LocobotTable"])
     args, unparsed = parser.parse_known_args()
 
     add_prediction_arguments(parser)
@@ -96,6 +96,8 @@ def add_method_arguments(parser: ArgumentParser):
     # env specific args
     if args.env == "FetchPush":
         add_fetch_push_arguments(parser)
+    elif args.env == "LocobotTable":
+        add_locobot_table_arguments(parser)
 
     return parser
 
@@ -133,6 +135,9 @@ def add_fetch_push_arguments(parser: ArgumentParser):
     parser.add_argument("--invisible_demo", type=str2bool, default=False)
     parser.add_argument("--demo_dir", type=str, default="demos/fetch_push")
 
+def add_locobot_table_arguments(parser: ArgumentParser):
+    parser.add_argument("--modified", type=str2bool, default=False)
+    parser.add_argument("--demo_dir", type=str, default="demos/locobot_table")
 
 # Video Prediction arguments from SVG
 def add_prediction_arguments(parser):
@@ -269,6 +274,7 @@ def add_dataset_arguments(parser):
             "finetune_sawyer_view",
             "finetune_widowx",
             "train_locobot_singleview",
+            "train_locobot_table",
             "finetune_locobot",
         ],
         default="train_robonet",

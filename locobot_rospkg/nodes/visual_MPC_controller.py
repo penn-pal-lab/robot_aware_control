@@ -90,7 +90,7 @@ class Visual_MPC(object):
 
         self.ik_solver = AIK()
         # self.env = LocobotMaskEnv(thick=False)
-        self.env_thick = LocobotMaskEnv(thick=False)
+        self.env_thick = LocobotMaskEnv(thick=True)
 
         camTbase = CAMERA_CALIB
         if config.new_camera_calibration:
