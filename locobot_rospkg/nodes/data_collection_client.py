@@ -482,4 +482,4 @@ if __name__ == '__main__':
     """
 
     eef_control_client(dc.control_client,
-                       target_pose=[0.42, 0.0, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL])
+                       target_pose=[0.27, -0.18, PUSH_HEIGHT, 1.3, DEFAULT_ROLL])

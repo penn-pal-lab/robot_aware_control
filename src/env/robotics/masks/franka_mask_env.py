@@ -16,8 +16,8 @@ class FrankaMaskEnv(RobotEnv):
         n_substeps = 1
         seed = None
         super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
-        self._img_width = 160
-        self._img_height = 120
+        self._img_width = 64
+        self._img_height = 48
         self._camera_name = "main_cam"
         self._joints = [f"joint{i}" for i in range(7)]
         # self._r_gripper_joints = [
