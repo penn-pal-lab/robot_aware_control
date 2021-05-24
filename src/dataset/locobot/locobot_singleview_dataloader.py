@@ -143,6 +143,40 @@ def create_loaders(config):
 
     return train_loader, test_loader
 
+def create_locobot_modified_loader(config):
+    file_type = "hdf5"
+    files = []
+    file_labels = []
+
+    data_path = os.path.join(config.data_root, "locobot_modified_views", "c0")
+    for d in os.scandir(data_path):
+        if d.is_file() and has_file_allowed_extension(d.path, file_type):
+            files.append(d.path)
+            file_labels.append("locobot_c0")
+
+    files = sorted(files)
+    random.seed(config.seed)
+    random.shuffle(files)
+
+    n_train = 100
+    X_train = files[:n_train]
+    y_train = file_labels[: n_train]
+    print("loaded locobot modified data", len(X_train))
+
+    augment_img = config.img_augmentation
+    train_data = RoboNetDataset(X_train, y_train, config, augment_img=augment_img)
+
+    train_loader = DataLoader(
+        train_data,
+        num_workers=config.data_threads,
+        batch_size=config.batch_size,
+        shuffle=False,
+        drop_last=False,
+        pin_memory=True,
+        generator=torch.Generator().manual_seed(config.seed),
+    )
+    return train_loader
+
 
 if __name__ == "__main__":
     from src.config import argparser

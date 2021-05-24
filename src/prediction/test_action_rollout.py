@@ -1,8 +1,7 @@
 import numpy as np
 import torch
 from src.config import argparser
-from src.dataset.locobot.locobot_singleview_dataloader import \
-    create_transfer_loader
+from src.dataset.locobot.locobot_singleview_dataloader import create_locobot_modified_loader
 from src.dataset.robonet.robonet_dataset import denormalize, get_batch
 from src.prediction.models.dynamics import SVGConvModel
 from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
@@ -178,7 +177,8 @@ if __name__ == "__main__":
     cf, _ = argparser()
     cf.device = device
     cf.batch_size = 3  # number of videos
-    CKPT_PATH = "logs/ft389locobot_norobot_raw_144k_analytical_scheduledsampling/ckpt_10200.pt"
+    cf.lstm_group_norm = True
+    CKPT_PATH = "checkpoints/0shotlb_vanilla_136500.pt"
     video_len = 5
     nsample = 3  # number of stochastic samples per video
 
@@ -187,7 +187,7 @@ if __name__ == "__main__":
         robot_model = LocobotAnalyticalModel(cf)
     model.eval()
     ''' load data '''
-    loader = create_transfer_loader(cf)
+    loader = create_locobot_modified_loader(cf)
     data_gen = get_batch(loader, device)
     data = next(data_gen)
 
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     ALL_DIRECTIONS = [-1, 1]
     ALL_AXES = ["x", "y"]
     STEP_SIZE = 0.02
-    world2cam = world_to_camera_dict["locobot_c0"]
+    world2cam = world_to_camera_dict["locobot_modified_c0"]
 
     for direction in ALL_DIRECTIONS:
         for ax in ALL_AXES:
@@ -214,22 +214,22 @@ if __name__ == "__main__":
             # check one action trajectory
             true_states = data["states"][:, 0].cpu().clone().numpy()
             true_states[:, :3] = denormalize(true_states[:,  :3], data["low"][0,:3].cpu().numpy(), data["high"][0, :3].cpu().numpy())
-            old_actions = fake_actions[:, 0].cpu().numpy().copy()
-            new_actions = []
-            for t in range(len(fake_actions)):
-                state = true_states[t]
-                pos_c = convert_world_to_camera_pos(state, world2cam)
-                next_state = true_states[t].copy()
-                next_state[:4] += old_actions[t][:4]
-                next_pos_c = convert_world_to_camera_pos(next_state, world2cam)
-                true_offset_c = next_pos_c - pos_c
-                new_actions.append( true_offset_c)
+            # old_actions = fake_actions[:, 0].cpu().numpy().copy()
+            # new_actions = []
+            # for t in range(len(fake_actions)):
+            #     state = true_states[t]
+            #     pos_c = convert_world_to_camera_pos(state, world2cam)
+            #     next_state = true_states[t].copy()
+            #     next_state[:4] += old_actions[t][:4]
+            #     next_pos_c = convert_world_to_camera_pos(next_state, world2cam)
+            #     true_offset_c = next_pos_c - pos_c
+            #     new_actions.append( true_offset_c)
 
 
             gif_name = f"{ax}_{int(direction * STEP_SIZE * 1000)}mm.gif"
             print(gif_name)
-            print(new_actions[0])
-            # plot_rollout(model, data, fake_actions, gif_name)
+            # print(new_actions[0])
+            plot_rollout(model, data, fake_actions, gif_name)
 
     ''' diagonal pushing'''
     # ALL_AXES = np.asarray([[1,1], [1, -1], [-1, 1], [-1, -1]]).astype(np.float32)

@@ -3,7 +3,8 @@ from src.prediction.trainer import (
     PredictionTrainer,
     make_log_folder,
 )
-from src.dataset.locobot.locobot_table_dataloaders import create_locobot_modified_loader
+# from src.dataset.locobot.locobot_table_dataloaders import create_locobot_modified_loader
+from src.dataset.locobot.locobot_singleview_dataloader import create_locobot_modified_loader
 import ipdb
 import numpy as np
 from time import time
@@ -20,18 +21,20 @@ def compute_metrics(cf):
     print("PSNR:", info["test/autoreg_psnr"])
     print("SSIM:", info["test/autoreg_ssim"])
     testing_batch_generator = get_batch(test_loader, trainer._device)
-    for i in range(10):
-       test_data = next(testing_batch_generator)
-       trainer.plot(test_data, 0, "test", instance=i)
+    # for i in range(10):
+    #    test_data = next(testing_batch_generator)
+    #    trainer.plot(test_data, 0, "test", instance=i)
 
 
 if __name__ == "__main__":
     """
     Evaluate the checkpoints.
 
-    python -m src.prediction.evaluation.evaluate_checkpoint --jobname lbtable_roboaware_rawstateac_tile_norm --wandb False --data_root /scratch/edward/Robonet --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --eval_interval 15 --checkpoint_interval 5 --reconstruction_loss dontcare_l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment train_locobot_table --preprocess_action raw --train_val_split 0.95 --model_use_robot_state True --model_use_mask True --model_use_future_mask True --model_use_future_robot_state True --random_snippet True --lstm_group_norm True --dynamics_model_ckpt /scratch/edward/roboaware/logs/lbtable_roboaware_rawstateac_tile_norm/ckpt_136500.pt
+     python -m src.prediction.evaluation.evaluate_checkpoint --jobname 0shotlb_vanilla_modified --wandb False --data_root /home/pallab/locobot_ws/src/eef_control/data --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --eval_interval 15 --checkpoint_interval 5 --reconstruction_loss l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment finetune_locobot --preprocess_action raw --train_val_split 0.95 --model_use_robot_state False --model_use_mask False --model_uVse_future_mask False --model_use_future_robot_state False --random_snippet True --lstm_group_norm True --dynamics_model_ckpt checkpoints/vanilla_ckpt_10200.pt --robot_joint_dim 5
 
-    python -m src.prediction.evaluation.evaluate_checkpoint --jobname lbtable_vanilla_rawac_tile_norm --wandb False --data_root /scratch/edward/Robonet --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --eval_interval 15 --checkpoint_interval 5 --reconstruction_loss l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment train_locobot_table --preprocess_action raw --train_val_split 0.95 --model_use_robot_state False --model_use_mask False --model_use_future_mask False --model_use_future_robot_state False --random_snippet True --lstm_group_norm True --dynamics_model_ckpt /scratch/edward/roboaware/logs/lbtable_vanilla_rawac_tile_norm/ckpt_136500.pt
+     python -m src.prediction.evaluation.evaluate_checkpoint --jobname 0shotlb_roboaware_modified --wandb False --data_root /home/pallab/locobot_ws/src/eef_control/data --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --eval_interval 15 --checkpoint_interval 5 --reconstruction_loss dontcare_l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment finetune_locobot --preprocess_action raw --train_val_split 0.95 --model_use_robot_state True --model_use_mask True --model_use_future_mask True --model_use_future_robot_state True --random_snippet True --lstm_group_norm True --dynamics_model_ckpt checkpoints/roboaware_ckpt_10200.pt --robot_joint_dim 5
+
+
     """
     from src.config import create_parser
 

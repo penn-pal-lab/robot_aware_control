@@ -29,7 +29,7 @@ class LocobotAnalyticalModel(object):
         self.env = LocobotMaskEnv()
         self.env_thick = LocobotMaskEnv(thick=True)
         if cam_ext is None:
-            cam_ext = camera_to_world_dict[f"locobot_c0"]
+            cam_ext = camera_to_world_dict[f"locobot_modified_c0"]
         self.env.set_opencv_camera_pose("main_cam", cam_ext)
         self.env_thick.set_opencv_camera_pose("main_cam", cam_ext)
         w, h = config.image_width, config.image_height

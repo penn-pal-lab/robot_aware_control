@@ -15,7 +15,7 @@ from src.env.robotics.masks.locobot_mask_env import (LocobotMaskEnv,
                                                      predict_next_qpos,
                                                      load_data)
 
-total_files = 10000
+total_files = 1000
 
 
 if __name__ == "__main__":
@@ -24,7 +24,8 @@ if __name__ == "__main__":
     """
     ik_solver = AIK()
     # data_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12/"
-    data_path = "/scratch/edward/Robonet/locobot_views/c0"
+    # data_path = "/scratch/edward/Robonet/locobot_views/c0"
+    data_path = "/home/pallab/locobot_ws/src/eef_control/data/locobot_modified_views/c0/"
 
     detector = Detector(families='tag36h11',
                         nthreads=1,
@@ -36,31 +37,40 @@ if __name__ == "__main__":
 
     n_files = 0
     skipped_files = []
+    """
+    Init Mujoco env:
+    """
+    env = LocobotMaskEnv()
+
+    env._joints = [f"joint_{i}" for i in range(1, 6)]
+    env._joint_references = [
+        env.sim.model.get_joint_qpos_addr(x) for x in env._joints
+    ]
     for filename in tqdm(os.listdir(data_path)):
         if filename.endswith(".hdf5"):
             overwrite = False
-            with h5py.File(os.path.join(data_path, filename), "r") as f:
-                if 'masks' in f.keys():
-                    # TODO: overwrite for now, change to continue in the future
-                    overwrite = True
+            # with h5py.File(os.path.join(data_path, filename), "r") as f:
+            #     if 'masks' in f.keys():
+            #         # TODO: overwrite for now, change to continue in the future
+            #         overwrite = True
 
             # print(os.path.join(data_path, filename))
 
-            # qposes, imgs, eef_states, actions = load_data(os.path.join(data_path, filename))
-            eef_states = load_states(os.path.join(data_path, filename))
+            qposes, imgs, eef_states, actions = load_data(os.path.join(data_path, filename))
+            # eef_states = load_states(os.path.join(data_path, filename))
             # if qposes is None or imgs is None or eef_states is None or actions is None:
             #     skipped_files.append(filename)
             #     continue
 
             K = 0
-            # predicted_Kstep_qpos = []
-            # for t in range(actions.shape[0] - K + 1):
-            #     action_Kstep = np.sum(actions[t:t + K, 0:2], axis=0)
-            #     qpos_next = predict_next_qpos(eef_states[t], qposes[t], action_Kstep)
-            #     predicted_Kstep_qpos.append(qpos_next)
-            # predicted_Kstep_qpos = np.stack(predicted_Kstep_qpos)
+            predicted_Kstep_qpos = []
+            for t in range(actions.shape[0] - K + 1):
+                action_Kstep = np.sum(actions[t:t + K, 0:2], axis=0)
+                qpos_next = predict_next_qpos(eef_states[t], qposes[t], action_Kstep)
+                predicted_Kstep_qpos.append(qpos_next)
+            predicted_Kstep_qpos = np.stack(predicted_Kstep_qpos)
 
-            # generate qpos using AIK
+            # generate qpos from eef pos using AIK
             qposes = []
             qpos_curr = [0] * 4
             for pos in eef_states:
@@ -76,19 +86,10 @@ if __name__ == "__main__":
                 qposes.append(qpos_next)
             qposes = np.asarray(qposes)
 
-            """
-            Init Mujoco env:
-            """
-            # env = LocobotMaskEnv()
-
-            # env._joints = [f"joint_{i}" for i in range(1, 6)]
-            # env._joint_references = [
-            #     env.sim.model.get_joint_qpos_addr(x) for x in env._joints
-            # ]
             # Use mujoco to get eef states
-            # for i, qpos in enumerate(qposes):
-            #     pos = env.get_gripper_pos(qpos)
-            #     eef_states[i] = pos
+            for i, qpos in enumerate(qposes):
+                pos = env.get_gripper_pos(qpos)
+                eef_states[i] = pos
 
             # >>>>>>>>>>> K step rollout for analytical masks!
 
@@ -160,25 +161,35 @@ if __name__ == "__main__":
 
             # if not tag_detected:
             #     continue
+            camTbase = np.array([[ 0.0452768,   0.73303716 ,-0.67868 ,    0.79116035],
+                                [ 0.99869241 ,-0.01707084 , 0.04818772, -0.00249282],
+                                [ 0.02373775 ,-0.67997435 ,-0.73285156 , 0.64026054],
+                                [ 0.      ,    0.  ,        0.    ,      1.        ]])
+
+            offset = [0, -0.015, 0.0125]
+            env.set_opencv_camera_pose("main_cam", camTbase, offset)
+
 
             """
             compute masks
             """
-            # masks = []
-            # for i, qpos in enumerate(predicted_Kstep_qpos):
-            #     env.sim.data.qpos[env._joint_references] = qpos
-            #     env.sim.forward()
-            #     mask = env.get_robot_mask()
-            #     masks.append(mask)
+            masks = []
+            for i, qpos in enumerate(predicted_Kstep_qpos):
+                env.sim.data.qpos[env._joint_references] = qpos
+                env.sim.forward()
+                mask = env.get_robot_mask()
+                masks.append(mask)
+                # imgs[i][mask] = (0, 255, 0)
 
-            # masks = np.stack(masks)
-            # # imageio.mimwrite(f"{data_path}masks.gif", masks.astype(np.float32))
+            masks = np.stack(masks)
+            # imageio.mimwrite(f"{filename}_masks.gif", imgs)
             # env.compare_traj(filename, qposes, eef_states, imgs)
 
             with h5py.File(os.path.join(data_path, filename), "a") as f:
-                # if overwrite:
-                #     del f['masks']
-                # f.create_dataset('masks', data=masks)
+                if overwrite:
+                    f['masks'][:] = masks
+                else:
+                    f.create_dataset('masks', data=masks)
                 # replace recorded qpos with AIK derived qpos
                 f["qpos"][...] = qposes
 
