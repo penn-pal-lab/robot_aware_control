@@ -1,14 +1,14 @@
 import os
-
+import h5py
 from scipy.spatial.transform.rotation import Rotation
-from src.env.robotics.rotations import euler2quat, mat2quat, quat2euler
-from src.env.robotics.robot_env import RobotEnv
+from src.env.robotics.masks.base_mask_env import MaskEnv
+from tqdm import tqdm
 import numpy as np
 import time
 import imageio
 
 
-class FrankaMaskEnv(RobotEnv):
+class FrankaMaskEnv(MaskEnv):
     def __init__(self):
         model_path = os.path.join("franka", "robot.xml")
         initial_qpos = None
@@ -19,7 +19,7 @@ class FrankaMaskEnv(RobotEnv):
         self._img_width = 64
         self._img_height = 48
         self._camera_name = "main_cam"
-        self._joints = [f"joint{i}" for i in range(7)]
+        self._joints = [f"joint{i}" for i in range(1,8)]
         # self._r_gripper_joints = [
         #     "r_gripper_l_finger_joint",
         #     "r_gripper_r_finger_joint",
@@ -28,19 +28,6 @@ class FrankaMaskEnv(RobotEnv):
         #     "l_gripper_l_finger_joint",
         #     "l_gripper_r_finger_joint",
         # ]
-
-    def render(self, mode, segmentation=False):
-        if mode == "rgb_array":
-            out = super().render(
-                mode,
-                width=self._img_width,
-                height=self._img_height,
-                camera_name=self._camera_name,
-                segmentation=segmentation,
-            )
-            return out[::-1, ::-1]
-        elif mode == "human":
-            super().render(mode)
 
     def compare_traj(self, traj_name, qpos_data, gripper_data, real_imgs):
         # load the joint configuration and eef position
@@ -102,24 +89,21 @@ class FrankaMaskEnv(RobotEnv):
             gif.append(comparison)
         imageio.mimwrite(f"{traj_name}_mask.gif", gif)
 
-    def _sample_goal(self):
-        pass
-
-    def _get_obs(self):
-        return {"observation": np.array([0])}
-
-    def get_robot_mask(self):
+    def get_robot_mask(self, width=None, height=None):
         """
         Return binary img mask where 1 = robot and 0 = world pixel.
         robot_mask_with_obj means the robot mask is computed with object occlusions.
         """
+        if width is None or height is None:
+            mask_dim = [self._img_height, self._img_width]
+        else:
+            mask_dim = [height, width]
         # returns a binary mask where robot pixels are True
-        seg = self.render("rgb_array", segmentation=True)  # flip the camera
+        seg = self.render("rgb_array", segmentation=True, width=width, height=height)  # flip the camera
         types = seg[:, :, 0]
         ids = seg[:, :, 1]
         geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
-        mask_dim = [self._img_height, self._img_width]
         mask = np.zeros(mask_dim, dtype=np.bool)
         ignore_parts = {"base_link_vis", "base_link_col", "head_vis"}
         for i in geoms_ids:
@@ -137,89 +121,52 @@ class FrankaMaskEnv(RobotEnv):
 
 
 if __name__ == "__main__":
-
-    """
-    Input: Camera Extrinsics Matrix
-    Given the openCV camera extrinsics, we would like to replicate the camera pose in mujoco.
-    To do so, we have to flip the camera's x axis orientation
-
-    I have calculated the relative orientation shift, so we can automatically do this conversion in the future. The relative orientation quat is [0 1 0 0]
-    """
-
-    """
-    calibrated camera intrinsic:
-    [[320.75   0.   160.  ]
-    [  0.   320.75 120.  ]
-    [  0.     0.     1.  ]]
-    calibrated camera extrinsic:
-    [[-0.00938149  0.99966125  0.02427719 -0.34766725]
-    [ 0.65135595  0.02453023 -0.7583757  -0.53490458]
-    [-0.75871432  0.0086984  -0.65136543  1.08981838]
-    [ 0.          0.          0.          1.        ]]
-    calibrated projection matrix:
-    [[-1.24403405e+02  3.22033088e+02 -9.64315591e+01  6.28566718e+01]
-    [ 1.17876702e+02  8.91188007e+00 -3.21412856e+02 -4.07924397e+01]
-    [-7.58714318e-01  8.69839730e-03 -6.51365428e-01  1.08981838e+00]]
-    calibrated camera to world transformation:
-    [[-0.00938149  0.65135595 -0.75871432  1.17201246]
-    [ 0.99966125  0.02453023  0.0086984   0.35119113]
-    [ 0.02427719 -0.7583757  -0.65136543  0.31265177]
-    [ 0.          0.          0.          1.        ]]
-    camera 3d position:
-    [1.17201246 0.35119113 0.31265177]
-    camera orientation (quarternion):
-    [ 0.63589577  0.64909113 -0.28874116 -0.30157226]
-    """
-    traj_id = 5214
-    traj_name = f"berkeley_sawyer_traj{traj_id}"
+    VISUALIZE = False
+    DATA_ROOT = "/home/pallab/locobot_ws/src/eef_control/data/franka_views/c0"
     camera_extrinsics = np.array(
-        [
-            [-0.00715332, 0.65439626, -0.75611796, 1.13910297],
-            [0.9996319, 0.02446862, 0.01171972, 0.34967541],
-            [0.0261705, -0.7557558, -0.65433041, 0.28774818],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
+        [[-0.00589602,  0.76599739, -0.64281664,  1.11131074],
+        [ 0.9983059,  -0.03270131, -0.04812437,  0.07869842],
+        [-0.05788409, -0.64201138, -0.76450691,  0.59455265],
+        [ 0.,          0.,          0.,          1.        ]]
     )
-
+    # offset = [0.01, -0.02, 0.02]
+    offset = [0.0, -0.01, 0.02]
     rot_matrix = camera_extrinsics[:3, :3]
     cam_pos = camera_extrinsics[:3, 3]
     rel_rot = Rotation.from_quat([0, 1, 0, 0])  # calculated
     cam_rot = Rotation.from_matrix(rot_matrix)
 
     env = FrankaMaskEnv()
-    cam_id = env.sim.model.camera_name2id("main_cam")
-    env.sim.model.cam_pos[cam_id] = cam_pos
-    cam_quat = cam_rot.as_quat()
-    cam_quat = [
-        cam_quat[3],
-        cam_quat[0],
-        cam_quat[1],
-        cam_quat[2],
-    ]
-    env.sim.model.cam_quat[cam_id] = cam_quat
+    env.set_opencv_camera_pose("main_cam", camera_extrinsics, offset)
 
-    site_id = env.sim.model.site_name2id("main_cam_site")
-    env.sim.model.site_pos[site_id] = cam_pos
-    env.sim.model.site_quat[site_id] = cam_quat
-    env.sim.forward()
+    # load the franka qpos data and generate mask
+    files = []
+    for d in os.scandir(DATA_ROOT):
+        if d.is_file() and d.path.endswith("hdf5"):
+            files.append(d.path)
 
-    # env.compare_traj(traj_name)
+    for fp in tqdm(files):
+        with h5py.File(fp, "r") as hf:
+            qpos = hf["qpos"][:]
+            states = hf["states"][:]
+            imgs = hf["observations"][:]
 
-    """
-    Scene Visualization
-    press tab to cycle through cameras. There is the default camera, and the main_cam which we set the pose of in baxter/robot.xml
-    """
-    # get openCV camera geom pose
-    # rot_matrix = camera_extrinsics[:3, :3]
-    # cam_pos = camera_extrinsics[:3, 3]
-    # print("openCV cam pos", cam_pos)
-    # cam_rot = Rotation.from_matrix(rot_matrix)
-    # q = cam_rot.as_quat()
-    # cam_quat = [q[3], q[0], q[1], q[2]]  # wxyz order
-    # print("openCV cam quat", cam_quat)
+        if VISUALIZE:
+            masks = env.generate_masks(qpos, 640, 480)
+            gif = []
+            for i in range(len(imgs)):
+                img = imgs[i]
+                mask = masks[i]
+                img[mask] = (0, 255, 0)
+                gif.append(img)
+            imageio.mimwrite(f"{fp}.gif", gif)
 
-    # get mujoco camera geom pose
-    # print("mj cam pos", env.sim.model.cam_pos[cam_id])
-    # print("mj cam quat", env.sim.model.cam_quat[cam_id])
-    while True:
-        env.render("human")
+            # while True:
+            #     env.render("human")
+        else:
+            masks = env.generate_masks(qpos, 64, 48)
+            with h5py.File(fp, "a") as hf:
+                if "masks" in hf.keys():
+                    hf["masks"][:] = masks
+                else:
+                    hf.create_dataset("masks", data=masks)
