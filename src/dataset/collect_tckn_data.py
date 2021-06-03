@@ -116,8 +116,8 @@ def create_demo_dataset(config, num_demo, num_workers, record, behavior, ep_len)
 
 def collect_push_data():
     num_workers = 1
-    num_push = 100
-    record = True
+    num_push = 10
+    record = False
     ep_len = 12  # gonna be off by 1 because of reset but whatever
 
     config, _ = argparser()
@@ -128,7 +128,7 @@ def collect_push_data():
     config.most_recent_background = False
     config.multiview = True
     config.img_dim = 128
-    config.camera_ids = [0, 5]
+    config.camera_ids = [0, 1]
     config.temporal_beta = 0.3  # control random policy's temporal correlation
     config.action_noise = 0.5
     # create_demo_dataset(config, num_push, num_workers, record, "straight_push", ep_len)

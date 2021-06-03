@@ -354,7 +354,7 @@ def collect_multiview_trajectories():
     config.norobot_pixels_ob = False
     config.reward_type = "dense"
     config.img_dim = 128
-    config.camera_ids = [0, 2]
+    config.camera_ids = [0, 1]
     config.depth_ob = True
     os.makedirs(config.demo_dir, exist_ok=True)
 
