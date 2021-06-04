@@ -34,8 +34,8 @@ class LocobotTableEnv(MaskEnv):
         n_actions = 3
         n_substeps = 20
         seed = None
-        self._img_width = 64
-        self._img_height = 48
+        self._img_width = 640
+        self._img_height = 480
         self._render_device = config.render_device
         if modified:
             self._gripper_body_name = "robot0:grip"
@@ -85,7 +85,8 @@ class LocobotTableEnv(MaskEnv):
         self._ws_low = [0.2, -0.17, -float('inf')]
         self._ws_high = [0.47, 0.17, float('inf')]
 
-        self.set_opencv_camera_pose("main_cam", CAMERA_CALIB)
+        offset = [0.05, -0.03, 0]
+        self.set_opencv_camera_pose("main_cam", CAMERA_CALIB, offset)
         self.initial_sim_state = None
 
 
@@ -109,12 +110,11 @@ class LocobotTableEnv(MaskEnv):
         mask = np.zeros(mask_dim, dtype=bool)
         # TODO: change these to include the robot base
         # ignore_parts = {"finger_r_geom", "finger_l_geom"}
-
         ignore_parts = {}
         for i in geoms_ids:
             name = self.sim.model.geom_id2name(i)
             if name is not None:
-                if name in ignore_parts:
+                if name in ignore_parts or not hasattr(self, "_geoms"):
                     continue
                 if name in self._geoms or "robot0" in name:
                     mask[ids == i] = True
@@ -154,12 +154,12 @@ class LocobotTableEnv(MaskEnv):
         reset_mocap_welds(self.sim)
         reset_mocap2body_xpos(self.sim)
         # then sample object initialization
-        self._sample_objects()
+        # self._sample_objects()
 
-        eef_target_pos = [0.3, 0.0, 0.07]
+        eef_target_pos = [0.4, 0.0, 0.07]
         # some noise to the x/y of the eef initial pos
-        noise = np.random.uniform(-0.03, 0.03, size = 2)
-        eef_target_pos[:2] += noise
+        # noise = np.random.uniform(-0.03, 0.03, size = 2)
+        # eef_target_pos[:2] += noise
         if self._config.modified:
             self._move(eef_target_pos, threshold=0.01, max_time=100)
         else:
@@ -181,6 +181,10 @@ class LocobotTableEnv(MaskEnv):
             # self.sim.data.qpos[self._joint_references] = qpos_from_eef
             # self.sim.forward()
         # import ipdb; ipdb.set_trace()
+        obj_quat = [1,0,0,0]
+        obj_pose = [0.45, 0, 0.075, *obj_quat]
+        self.sim.data.set_joint_qpos("object1:joint", obj_pose)
+        self.sim.forward()
         return self._get_obs()
 
     def step(self, action):
@@ -426,27 +430,39 @@ if __name__ == "__main__":
     env = LocobotTableEnv(config)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
-    for i in range(5):
-        # obs = env.reset()
-        history = env.generate_demo("temporal_random_robot")
-        gif = []
-        for o in history["obs"]:
-            img = o["observation"]
-            mask = o["masks"]
-            # img[mask] = (0, 255, 255)
-            gif.append(img)
-        imageio.mimwrite(f"test{i}.gif", gif)
-    sys.exit(0)
+
+    # for i in range(5):
+    #     # obs = env.reset()
+    #     history = env.generate_demo("temporal_random_robot")
+    #     gif = []
+    #     for o in history["obs"]:
+    #         img = o["observation"]
+    #         mask = o["masks"]
+    #         # img[mask] = (0, 255, 255)
+    #         gif.append(img)
+    #     imageio.mimwrite(f"test{i}.gif", gif)
+    # sys.exit(0)
 
     # env.get_robot_mask()
     # try locobot analytical ik
-    env.reset()
-    # while True:
-    # #     x, y, z = np.random.uniform(low=-1, high=1, size=3)
-    # #     # x, y = 0, 0
-    # #     # print(x,y,z)
-    # #     obs = env.step([x, y, 0])
-    #     env.render("human")
+    obs = env.reset()
+    img = obs["observation"]
+    mask = obs["masks"]
+    prefix = "fetch" if config.modified else "loco"
+    # imageio.imwrite(prefix + "_end.png", img)
+    # imageio.imwrite(prefix + "_end_mask.png", 1.0 * mask)
+
+    img[~mask] = (255, 255, 255)
+    imageio.imwrite(prefix + "_end_only_robot.png", img)
+    sys.exit(0)
+
+    env.render("human")
+    while True:
+        # x, y, z = np.random.uniform(low=-1, high=1, size=3)
+        # x, y = 0, 0
+        # print(x,y,z)
+        # obs = env.step([x, y, 0])
+        env.render("human")
     # env.render("human")
     # gif = []
     # obs = env.reset()
@@ -460,7 +476,6 @@ if __name__ == "__main__":
     # #     x,y,z = [0,0,1]
     # #     obs, _, _, _ = env.step([x, y, z])
     # #     gif.append(obs["observation"])
-    
+
     # print(env.get_gripper_world_pos())
     # imageio.mimwrite("test2.gif", gif)
-
