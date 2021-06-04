@@ -15,6 +15,8 @@ The codebase is structured as follows:
     * `mbrl` contains the policy evaluation code.
     * `prediction` contains all predictive model training code. The model is a SVG video prediction model.
     * `utils` contains some plotting and visualization code.
+* `locobot_rospkg` contains the ROS node for running the WidowX robot.
+* `robonet` contains the RoboNet codebase, which we use for extracting the subset of RoboNet robots for pre-training.
 
 ## Installation
 
