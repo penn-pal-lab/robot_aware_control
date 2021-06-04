@@ -2,8 +2,8 @@
 #SBATCH --cpus-per-task 8
 #SBATCH --gpus=1
 #SBATCH --time=20:00:00
-#SBATCH --partition=dinesh-compute
-#SBATCH --qos=dinesh-high
+#SBATCH --partition=anonymous-compute
+#SBATCH --qos=anonymous-high
 #SBATCH --job-name=dontcare_mask_table_test
 
 # Test the effect of robot mask w/ obj occlusion

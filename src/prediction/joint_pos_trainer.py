@@ -53,7 +53,7 @@ class RobotPredictionTrainer(object):
         # init WandB
         if not config.wandb:
             os.environ["WANDB_MODE"] = "dryrun"
-        os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
+        os.environ["WANDB_API_KEY"] = None
         wandb.init(
             resume=config.jobname,
             project="robot-prediction",

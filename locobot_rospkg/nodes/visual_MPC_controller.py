@@ -184,7 +184,7 @@ class Visual_MPC(object):
         tagTcam = np.row_stack((tagTcam, [0, 0, 0, 1]))
 
         # tag in camera to tag in robot transformation
-        # For explanation, refer to Kun's hand drawing
+        # For explanation, refer to anonymous's hand drawing
         tagcTtagw = np.array(
             [[0, 0, -1, 0], [0, -1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1]]
         )

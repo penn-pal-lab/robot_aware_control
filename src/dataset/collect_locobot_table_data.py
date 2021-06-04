@@ -107,7 +107,7 @@ def collect_svg_data():
     init_mjrender_device(config)
 
     config.modified = MODIFIED
-    config.demo_dir = f"/scratch/edward/Robonet/locobot_table{'_modified' if MODIFIED else ''}_views/c0"
+    config.demo_dir = f"/scratch/anonymous/Robonet/locobot_table{'_modified' if MODIFIED else ''}_views/c0"
     config.temporal_beta = 0.2  # control random policy's temporal correlation
     config.action_noise = 0.05
     config.demo_length = 31

@@ -14,7 +14,7 @@ from tqdm import tqdm
 from src.utils.camera_calibration import camera_to_world_dict
 
 
-robonet_root = "/scratch/edward/Robonet/hdf5"
+robonet_root = "/scratch/anonymous/Robonet/hdf5"
 metadata_path = os.path.join(robonet_root, "meta_data.pkl")
 
 def generate_baxter_data():
@@ -46,7 +46,7 @@ def generate_baxter_data():
     # env.arm = arm
     # env.set_opencv_camera_pose("main_cam", camera_extrinsics)
     # hdf5_list = baxter_subset.index
-    # new_robonet_root = f"/scratch/edward/Robonet/baxter_views_qpos/{arm}_c{hparams.cams_to_load[0]}"
+    # new_robonet_root = f"/scratch/anonymous/Robonet/baxter_views_qpos/{arm}_c{hparams.cams_to_load[0]}"
     # generate_robot_masks(env, baxter_df, hdf5_list, hparams, new_robonet_root)
 
     # hdf5_list = baxter_subset.sample(5).index
@@ -69,7 +69,7 @@ def generate_baxter_data():
     env.arm = arm
     env.set_opencv_camera_pose("main_cam", camera_extrinsics)
     hdf5_list = baxter_subset.index
-    new_robonet_root = f"/scratch/edward/Robonet/baxter_views/{arm}_c{hparams.cams_to_load[0]}"
+    new_robonet_root = f"/scratch/anonymous/Robonet/baxter_views/{arm}_c{hparams.cams_to_load[0]}"
     os.makedirs(new_robonet_root, exist_ok=True)
     generate_robot_masks(env, baxter_df, hdf5_list, hparams, new_robonet_root)
 
@@ -81,7 +81,7 @@ def generate_sawyer_data(cam_config, cam_idx):
     hparams.img_size = [64, 85]
     hparams.cams_to_load = [cam_idx]
 
-    new_robonet_root = f"/scratch/edward/Robonet/sawyer_views_qpos/{cam_config}_c{hparams.cams_to_load[0]}"
+    new_robonet_root = f"/scratch/anonymous/Robonet/sawyer_views_qpos/{cam_config}_c{hparams.cams_to_load[0]}"
     os.makedirs(new_robonet_root, exist_ok=True)
 
     df = pd.read_pickle(metadata_path, compression="gzip")
@@ -115,7 +115,7 @@ def generate_widowx_data():
     widowx_df = df.loc["widowx" == df["robot"]]
     widowx_subset = widowx_df[widowx_df["camera_configuration"] == "widowx1"]
 
-    new_robonet_root = f"/scratch/edward/Robonet/widowx_views/widowx1_c{hparams.cams_to_load[0]}"
+    new_robonet_root = f"/scratch/anonymous/Robonet/widowx_views/widowx1_c{hparams.cams_to_load[0]}"
     os.makedirs(new_robonet_root, exist_ok=True)
 
     camera_extrinsics = np.array(

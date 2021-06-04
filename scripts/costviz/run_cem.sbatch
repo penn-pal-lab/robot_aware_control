@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #SBATCH --cpus-per-task=2
 #SBATCH --time=10:00:00
-#SBATCH --partition=dinesh-compute
-#SBATCH --qos=dinesh-high
+#SBATCH --partition=anonymous-compute
+#SBATCH --qos=anonymous-high
 #SBATCH --job-name=weighted128_randrobot
 #SBATCH -o ./weighted128_randrobot.out
 #SBATCH -e ./weighted128_randrobot.out

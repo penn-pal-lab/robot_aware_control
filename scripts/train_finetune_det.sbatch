@@ -2,12 +2,12 @@
 #SBATCH --cpus-per-gpu=6
 #SBATCH --gpus=1
 #SBATCH --time=40:00:00
-#SBATCH --partition=dinesh-compute
-#SBATCH --qos=dinesh-high
+#SBATCH --partition=anonymous-compute
+#SBATCH --qos=anonymous-high
 #SBATCH -w node-2080ti-5
 #SBATCH --job-name=9vp_sawyer
 
-DATA_ROOT="/scratch/edward/Robonet"
+DATA_ROOT="/scratch/anonymous/Robonet"
 
 # Train on sawyer robot for finetuning to baxter later
 
@@ -20,7 +20,7 @@ DATA_ROOT="/scratch/edward/Robonet"
 
 
 # Train norobot model
-DATA_ROOT="/scratch/edward/Robonet"
+DATA_ROOT="/scratch/anonymous/Robonet"
 COST="mse"
 ACTION="raw"
 NAME="sawyerallvp_vanilla_${ACTION}_copy16"

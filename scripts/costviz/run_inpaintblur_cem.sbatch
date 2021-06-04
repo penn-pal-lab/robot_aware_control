@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #SBATCH --cpus-per-task=2
 #SBATCH --time=20:00:00
-#SBATCH --partition=dinesh-compute
-#SBATCH --qos=dinesh-high
+#SBATCH --partition=anonymous-compute
+#SBATCH --qos=anonymous-high
 #SBATCH --job-name=inpaintblur_large
 #SBATCH -o ./inpaintblur_large.out
 #SBATCH -e ./inpaintblur_large.out

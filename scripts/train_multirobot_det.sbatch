@@ -2,11 +2,11 @@
 #SBATCH --cpus-per-gpu=13
 #SBATCH --gpus=1
 #SBATCH --time=40:00:00
-#SBATCH --partition=dinesh-compute
-#SBATCH --qos=dinesh-high
+#SBATCH --partition=anonymous-compute
+#SBATCH --qos=anonymous-high
 #SBATCH --job-name=multirobot_det
 # NAME="norobot_det_16batch_ss"
-DATA_ROOT="/scratch/edward/Robonet"
+DATA_ROOT="/scratch/anonymous/Robonet"
 
 # COST="dontcare_mse"
 # ACTION="raw"

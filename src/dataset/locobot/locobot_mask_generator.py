@@ -24,7 +24,7 @@ if __name__ == "__main__":
     """
     ik_solver = AIK()
     # data_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12/"
-    # data_path = "/scratch/edward/Robonet/locobot_views/c0"
+    # data_path = "/scratch/anonymous/Robonet/locobot_views/c0"
     data_path = "/home/pallab/locobot_ws/src/eef_control/data/locobot_modified_views/c0/"
 
     detector = Detector(families='tag36h11',
@@ -129,7 +129,7 @@ if __name__ == "__main__":
             #     tagTcam = np.row_stack((tagTcam, [0, 0, 0, 1]))
 
             #     # tag in camera to tag in robot transformation
-            #     # For explanation, refer to Kun's hand drawing
+            #     # For explanation, refer to anonymous's hand drawing
             #     tagcTtagw = np.array([[0, 0, -1, 0],
             #                           [0, -1, 0, 0],
             #                           [-1, 0, 0, 0],

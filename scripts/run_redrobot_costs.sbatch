@@ -2,8 +2,8 @@
 #SBATCH --cpus-per-task 4
 #SBATCH --gpus=1
 #SBATCH --time=20:00:00
-#SBATCH --partition=dinesh-compute
-#SBATCH --qos=dinesh-high
+#SBATCH --partition=anonymous-compute
+#SBATCH --qos=anonymous-high
 #SBATCH --job-name=redrobotobject_costs
 
 # Inpaint only

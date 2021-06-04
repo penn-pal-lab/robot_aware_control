@@ -273,7 +273,7 @@ if __name__ == "__main__":
     print("tagTcam:\n", tagTcam)
 
     # tag in camera to tag in robot transformation
-    # For explanation, refer to Kun's hand drawing
+    # For explanation, refer to anonymous's hand drawing
     tagcTtagw = np.array([[0, 0, -1, 0],
                           [0, -1, 0, 0],
                           [-1, 0, 0, 0],

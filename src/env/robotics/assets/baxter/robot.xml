@@ -49,7 +49,7 @@
       <body name="eef_body">
 				<site rgba="1 1 0 1" pos="0 0 0" size="0.01"  name="eef_pos"></site>
 			</body>
-      <!-- Camera with Kun's openCV poses old quat="-0.35759175 0.63418852  0.60459815 -0.32310082" old pos = "1.59074811 0.2689595  0.4451598"-->
+      <!-- Camera with anonymous's openCV poses old quat="-0.35759175 0.63418852  0.60459815 -0.32310082" old pos = "1.59074811 0.2689595  0.4451598"-->
       <camera fovy="43.3" name="main_cam" pos="1.59074811 0.2689595 0.507" xyaxes="-0.06013387 -0.99793479 -0.02258496  0.53578203 -0.01317843 -0.84425348" ></camera>
 
 

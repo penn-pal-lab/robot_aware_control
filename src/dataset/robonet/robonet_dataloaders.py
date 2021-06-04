@@ -362,7 +362,7 @@ if __name__ == "__main__":
 
     set_start_method("spawn")
     config, _ = argparser()
-    config.data_root = "/scratch/edward/Robonet"
+    config.data_root = "/scratch/anonymous/Robonet"
     config.batch_size = 64  # needs to be multiple of the # of robots
     config.video_length = 31
     config.image_width = 64

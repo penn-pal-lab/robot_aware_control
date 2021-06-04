@@ -123,7 +123,7 @@ if __name__ == "__main__":
             tagTcam = np.row_stack((tagTcam, [0, 0, 0, 1]))
 
             # tag in camera to tag in robot transformation
-            # For explanation, refer to Kun's hand drawing
+            # For explanation, refer to anonymous's hand drawing
             tagcTtagw = np.array([[0, 0, -1, 0],
                                   [0, -1, 0, 0],
                                   [-1, 0, 0, 0],
@@ -156,7 +156,7 @@ if __name__ == "__main__":
 
             """
             Compute interaction rate
-            apply mask, then compute # of changed pixels 
+            apply mask, then compute # of changed pixels
             """
             pixel_changes = world_change_rate(env,
                                               os.path.join(data_path, filename),

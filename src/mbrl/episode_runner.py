@@ -355,7 +355,7 @@ class EpisodeRunner(object):
         # wandb stuff
         if not config.wandb:
             os.environ["WANDB_MODE"] = "dryrun"
-        os.environ["WANDB_API_KEY"] = "24e6ba2cb3e7bced52962413c58277801d14bba0"
+        os.environ["WANDB_API_KEY"] = None
         exclude = ["device"]
         wandb.init(
             resume=config.jobname,

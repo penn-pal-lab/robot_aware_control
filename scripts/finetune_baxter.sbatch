@@ -2,13 +2,13 @@
 #SBATCH --cpus-per-gpu=6
 #SBATCH --gpus=1
 #SBATCH --time=40:00:00
-#SBATCH --partition=dinesh-compute
-#SBATCH --qos=dinesh-high
+#SBATCH --partition=anonymous-compute
+#SBATCH --qos=anonymous-high
 #SBATCH --job-name=finetune
 #SBATCH -w node-2080ti-5
 
 
-DATA_ROOT="/scratch/edward/Robonet"
+DATA_ROOT="/scratch/anonymous/Robonet"
 # finetune from vanilla model
 # COST="mse"
 # ACTION="raw"

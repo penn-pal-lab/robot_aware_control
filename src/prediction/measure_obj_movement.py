@@ -164,7 +164,7 @@ def measure_obj_movement(ROBOT, VIEWPOINT_FOLDER, config):
 
 if __name__ == "__main__":
     config, _ = argparser()
-    config.data_root = "/scratch/edward/Robonet"
+    config.data_root = "/scratch/anonymous/Robonet"
     config.batch_size = 1
     config.video_length = 31
     config.image_width = 64

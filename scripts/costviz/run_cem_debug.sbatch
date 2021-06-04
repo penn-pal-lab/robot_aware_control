@@ -3,8 +3,8 @@
 #SBATCH --gpus=1
 #SBATCH --mem-per-gpu=10G
 #SBATCH --time=10:00:00
-#SBATCH --partition=dinesh-compute
-#SBATCH --qos=dinesh-high
+#SBATCH --partition=anonymous-compute
+#SBATCH --qos=anonymous-high
 #SBATCH -o ./cem_test_30ac.txt
 #SBATCH -e ./cem_test_30ac.txt
 

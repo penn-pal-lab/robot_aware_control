@@ -2,8 +2,8 @@
 #SBATCH --cpus-per-task 12
 #SBATCH --gpus=1
 #SBATCH --time=20:00:00
-#SBATCH --partition=dinesh-compute
-#SBATCH --qos=dinesh-high
+#SBATCH --partition=anonymous-compute
+#SBATCH --qos=anonymous-high
 #SBATCH --job-name=gen_data
 
 python -um src.dataset.collect_clutter_data --gpu 0 >svg_data.out 2>&1 &

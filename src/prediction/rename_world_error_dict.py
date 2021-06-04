@@ -4,8 +4,8 @@ import os
 with open("baxter_left_world_error.pkl.backup", "rb") as f:
     d = pickle.load(f)
 
-old_root = "/scratch/edward/Robonet/new_hdf5"
-new_root = "/scratch/edward/Robonet/baxter_views/left_c0"
+old_root = "/scratch/anonymous/Robonet/new_hdf5"
+new_root = "/scratch/anonymous/Robonet/baxter_views/left_c0"
 new_dict = {}
 for k, v in d.items():
     file_name = k.split("/")[-1]

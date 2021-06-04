@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #SBATCH --cpus-per-task=2
 #SBATCH --time=10:00:00
-#SBATCH --partition=dinesh-compute
-#SBATCH --qos=dinesh-high
+#SBATCH --partition=anonymous-compute
+#SBATCH --qos=anonymous-high
 #SBATCH --job-name=1push_horizon5_dense128_randrobot_nosucc
 #SBATCH -o ./1push_horizon5_dense128_randrobot_nosucc.out
 #SBATCH -e ./1push_horizon5_dense128_randrobot_nosucc.out
