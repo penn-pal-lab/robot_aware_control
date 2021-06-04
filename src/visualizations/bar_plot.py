@@ -84,9 +84,6 @@ def bar_plot(ax, data, colors=None, total_width=0.8, single_width=1, legend=True
     # Draw legend if we need
     if legend:
         ax.legend(bars, data.keys())
-    ax.set_xlabel("Demonstration ID")
-    ax.set_ylabel("Goal Error (cm)")
-    ax.set_title("Goal Error Per Demonstration")
 
 def load_all_stats(data):
     """Loads all stat files into a list
@@ -114,11 +111,11 @@ def load_all_stats(data):
 
 if __name__ == "__main__":
     methods = {
-        "noinpaint": "noip_stats.pkl",
+        "V-C": "vc_stats.pkl",
         # "inpaint": "inpaint_stats.pkl",
-        "dontcare": "dc_stats.pkl"
+        "RA-C": "rac_stats.pkl"
     }
-    success_threshold = 3.0 # in cm
+    success_threshold = 1.0 # in cm
 
     num_demos = 100
     # main("inpaint", "noinpaint", path_1, path_2, num_demos)
@@ -126,7 +123,7 @@ if __name__ == "__main__":
     # store data in list of tuples [a, b, c, d]
     # where a is the baseline error, b, c, d are the other methods errors
     # sort the tuples by value of a
-    data = load_all_stats(methods) # |p| x 100 
+    data = load_all_stats(methods) # |p| x 100
     # measure success rate
     for method, errors in data.items():
         method_errors = np.asarray(errors)
@@ -137,6 +134,9 @@ if __name__ == "__main__":
     bar_plot(ax, data, total_width=.8, single_width=.9)
     fig.set_figheight(2.5)
     fig.set_figwidth(5)
+    xlabel = ax.set_xlabel("Task ID")
+    ax.set_ylabel("Dist. to goal pose (cm)")
+    ax.set_title("Final Distance Per Task ID")
     plt.margins(x=0)
-    # plt.hlines(success_threshold, 0, num_demos, colors="black", linestyles="dashed")
-    plt.savefig("comparison.pdf")
+    plt.hlines(success_threshold, 0, num_demos, colors="black", linestyles="dashed")
+    plt.savefig("comparison.pdf" , bbox_extra_artists=[xlabel], bbox_inches='tight')
