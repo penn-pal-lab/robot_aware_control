@@ -27,7 +27,7 @@ from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinemati
 
 
 LOG_DATA = True
-PACKAGE_PATH = pathlib.Path(__file__).parent.parent.absolute().__str__()
+PACKAGE_PATH = "/home/pallab/locobot_ws/src/eef_control"
 NUM_TRAJ_TO_COLLECT = 1000
 USE_PREPLAN = True
 
@@ -481,5 +481,33 @@ if __name__ == '__main__':
     0.42, 0.0
     """
 
-    eef_control_client(dc.control_client,
-                       target_pose=[0.27, -0.18, PUSH_HEIGHT, 1.3, DEFAULT_ROLL])
+    # control_result = eef_control_client(dc.control_client,
+    #                    target_pose=[0.25, -0.02, 0.3, 1.3, DEFAULT_ROLL])
+
+    eef_target_pos = [0.15, 0.0, 0.55, 0, DEFAULT_ROLL]
+    control_result = eef_control_client(dc.control_client,
+                       target_pose=eef_target_pos)
+
+    eef_pose = control_result.end_pose
+    qpos = control_result.joint_angles
+
+    image = dc.img
+
+    curr_time = strftime("%Y-%m-%d_%H:%M:%S", gmtime())
+    print(curr_time)
+    hf_file = h5py.File(
+        PACKAGE_PATH + '/data/teaser_start_locobot_'+curr_time+'.hdf5', 'w')
+
+
+    observations = np.stack([image])
+    hf_file.create_dataset('observations', data=observations)
+
+
+    # qpos is 5D: from base to elbow, gripper motor not included
+    qpos = np.stack([qpos])
+    hf_file.create_dataset('qpos', data=qpos)
+
+    eef_states = np.stack([eef_pose])
+    hf_file.create_dataset('states', data=eef_states)
+
+    hf_file.close()

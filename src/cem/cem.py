@@ -27,6 +27,7 @@ class CEMPolicy(object):
         topk=5,
         init_std=1.0,
         cam_ext=None,
+        franka_ik=None,
     ):
         # Hyperparameters
         self.horizon = horizon  # Prediction window size
@@ -41,7 +42,7 @@ class CEMPolicy(object):
 
         self.model = model
 
-        self.traj_sampler = TrajectorySampler(cfg, self.model, cam_ext=cam_ext)
+        self.traj_sampler = TrajectorySampler(cfg, self.model, cam_ext=cam_ext, franka_ik=franka_ik)
 
         self.plot_rollouts = cfg.debug_cem
         if self.plot_rollouts:

@@ -2,11 +2,12 @@ from eef_control.msg import (
     FrankaIKAction,
     FrankaIKGoal,
 )
+from time import time
+import numpy as np
 import actionlib
 import rospy
-
+from src.utils.camera_calibration import LOCO_FRANKA_DIFF
 PUSH_HEIGHT = 0.15
-LOCO_FRANKA_DIFF = [-0.365,      -0.06103333]
 
 def map_to_locobot_coord(franka_state):
     franka_state = np.copy(franka_state)
@@ -60,14 +61,18 @@ class FrankaIKClient(object):
             'Franka_IK', FrankaIKAction)
 
     def send_ik_request(self, initial_qpos, batch_waypoints):
+        print("sending IK request...")
+        start = time()
+        initial_qpos = list(initial_qpos)
+        batch_waypoints = np.asarray(batch_waypoints)
         self.client.wait_for_server(rospy.Duration(5))
         g = FrankaIKGoal()
         g.initial_qpos = initial_qpos
         g.num_traj, g.traj_length, g.waypoint_dim = batch_waypoints.shape
-        g.way_points = batch_waypoints.reshape(-1)
+        g.way_points = batch_waypoints.reshape(-1).tolist()
         self.client.send_goal(g)
-        self.client.wait_for_result(rospy.Duration(5))
-
+        self.client.wait_for_result(rospy.Duration(1000000))
+        print(f"Computed IK in {time() - start} sec")
         return self.client.get_result()
 
 if __name__ == "__main__":

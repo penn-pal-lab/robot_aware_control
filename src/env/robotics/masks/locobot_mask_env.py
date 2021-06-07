@@ -15,7 +15,7 @@ class LocobotMaskEnv(MaskEnv):
         self.thick = thick
         model_path = os.path.join("locobot", "locobot_thick.xml")
         if not thick:
-            model_path = os.path.join("locobot", "locobot_modified.xml")
+            model_path = os.path.join("locobot", "locobot.xml")
         initial_qpos = None
         n_actions = 1
         n_substeps = 1
@@ -72,7 +72,8 @@ class LocobotMaskEnv(MaskEnv):
             mask_dim = [height, width]
         mask = np.zeros(mask_dim, dtype=np.bool)
         # TODO: change these to include the robot base
-        ignore_parts = {"finger_r_geom", "finger_l_geom"}
+        # ignore_parts = {"finger_r_geom", "finger_l_geom"}
+        ignore_parts = {}
         # ignore_parts = {}
         for i in geoms_ids:
             if self.thick:

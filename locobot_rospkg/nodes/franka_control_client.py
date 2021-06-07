@@ -15,13 +15,24 @@ class FrankaControlClient(object):
             'Franka_Control', PoseControlAction)
 
     def send_target_eef_request(self, target_pose):
-        self.client.wait_for_server(rospy.Duration(5))
+        target_pose = list(target_pose)
+        self.client.wait_for_server(rospy.Duration(10))
         g = PoseControlGoal()
         g.target_pose = target_pose
         self.client.send_goal(g)
-        self.client.wait_for_result(rospy.Duration(5))
+        self.client.wait_for_result(rospy.Duration(10))
 
         return self.client.get_result()
+
+    def reset(self):
+        self.client.wait_for_server(rospy.Duration(10))
+        g = PoseControlGoal()
+        g.should_reset = True
+        self.client.send_goal(g)
+        self.client.wait_for_result(rospy.Duration(10))
+
+        return self.client.get_result()
+
 
 if __name__ == "__main__":
     rospy.init_node("Franka_Control_client")

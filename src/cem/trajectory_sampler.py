@@ -1,3 +1,4 @@
+from src.dataset.franka.franka_model import FrankaAnalyticalModel
 from src.dataset.robonet.robonet_dataset import normalize
 import time as timer
 from collections import defaultdict
@@ -9,10 +10,11 @@ from src.prediction.losses import RobotWorldCost
 from src.prediction.models.dynamics import SVGConvModel
 from src.utils.state import DemoGoalState, State
 from src.utils.image import zero_robot_region
+from src.utils.camera_calibration import LOCO_FRANKA_DIFF
 
 
 class TrajectorySampler(object):
-    def __init__(self, cfg, model, cam_ext=None) -> None:
+    def __init__(self, cfg, model, cam_ext=None, franka_ik=None) -> None:
         super().__init__()
         self.cfg = cfg
         self.model: SVGConvModel = model
@@ -23,7 +25,10 @@ class TrajectorySampler(object):
         self.low.unsqueeze_(0)
         self.high.unsqueeze_(0)
         if cfg.model_use_robot_state or cfg.model_use_mask or cfg.black_robot_input or "dontcare" in cfg.reward_type:
-            self.robot_model = LocobotAnalyticalModel(cfg, cam_ext=cam_ext)
+            if cfg.experiment == "control_franka":
+                self.robot_model = FrankaAnalyticalModel(cfg, franka_ik, cam_ext)
+            else:
+                self.robot_model = LocobotAnalyticalModel(cfg, cam_ext=cam_ext)
 
     @torch.no_grad()
     def generate_model_rollouts(
@@ -80,8 +85,12 @@ class TrajectorySampler(object):
             states should be normalized, world frame
             '''
             states = torch.zeros((T+1, N, 5), dtype=torch.float32) # only need first timestep
-            qpos = torch.zeros((T+1, N, 5), dtype=torch.float32) # only need first timestep
-            states[0, :] = normalize(torch.tensor(start.state), self.low, self.high)
+            qpos = torch.zeros((T+1, N, cfg.robot_joint_dim), dtype=torch.float32) # only need first timestep
+            start_state = torch.tensor(start.state)
+            if cfg.experiment == "control_franka": # convert from franka to loco frame
+                start_state[:2] = start_state[:2] + LOCO_FRANKA_DIFF
+
+            states[0, :] = normalize(start_state, self.low, self.high)
             qpos[0, :] = torch.tensor(start.qpos)
             start_data = {
                 "states": states,
@@ -90,22 +99,20 @@ class TrajectorySampler(object):
                 "low": self.low.repeat(N,1), # (N, 5)
                 "high": self.high.repeat(N,1), # (N, 5)
             }
-            """
-            Either use thick mask for prediction, thick mask for planning or:
-            normal mask for prediction, thick mask for planning
-            """
-            # if cfg.cem_prediction_use_thick_mask:
-            #     states, masks_thick = self.robot_model.predict_batch(start_data, thick=True)
-            #     masks = masks_thick = masks_thick.to(dev, non_blocking=True)
-            # else:
-            #     states, masks = self.robot_model.predict_batch(start_data)
-            #     masks_thick = self.robot_model.predict_batch(start_data, thick=True)[1]
-            #     masks = masks.to(dev, non_blocking=True)
-            #     masks_thick = masks_thick.to(dev, non_blocking=True)
-
             states, masks = self.robot_model.predict_batch(start_data, thick=True)
             states = states.to(dev, non_blocking=True)
             masks = masks_thick = masks.to(dev, non_blocking=True)
+            # else: # calculate the future states
+            #     # action is ( T, N, 2)
+            #     # states is (T, N, 2)
+            #     # start_state is (2)
+            #     states[0, :] = start_state
+            #     import ipdb; ipdb.set_trace()
+            #     actions = action_sequences.permute(1,0,2)
+            #     for t in range(actions.shape[0]):
+            #         act = actions[t,:, :3]
+            #         states[t+1, :, :3] = states[t,:, :3] + act
+            #     states = normalize(states, self.low, self.high)
 
 
         for b in range(B):

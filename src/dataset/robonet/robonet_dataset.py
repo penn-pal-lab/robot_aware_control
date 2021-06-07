@@ -13,9 +13,11 @@ from src.utils.camera_calibration import (
     world_to_camera_dict,
     cam_intrinsics_dict,
     camera_to_world_dict,
+    LOCO_FRANKA_DIFF
 )
 import ipdb
 
+LOCO_FRANKA_DIFF = np.array([-0.365, -0.06103333])
 
 class RoboNetDataset(data.Dataset):
     def __init__(
@@ -117,7 +119,14 @@ class RoboNetDataset(data.Dataset):
             states = self._preprocess_states(states, low, high, robot_viewpoint, idx)
             # create the actions
             actions = self._preprocess_actions(states, actions, low, high, idx)
-            robot = "locobot" if "locobot" in robot_viewpoint else hf.attrs["robot"]
+            if "robot" in hf.attrs:
+                robot = hf.attrs["robot"]
+            else:
+                if "locobot" in robot_viewpoint:
+                    robot = "locobot"
+                elif "franka" in robot_viewpoint:
+                    robot = "franka"
+
             folder = os.path.basename(os.path.dirname(name))
             if self._config.model_use_heatmap:
                 # heatmaps = create_heatmaps(states, low, high, robot, folder)
@@ -188,7 +197,7 @@ class RoboNetDataset(data.Dataset):
         """
         Load the bounds of the workspace. If in camera space, determine the new bounds.
         """
-        if "locobot" in robot_viewpoint:
+        if "locobot" in robot_viewpoint or "franka" in robot_viewpoint:
             low = np.array([0.015, -0.3, 0.1, 0, 0], dtype=np.float32)
             high = np.array([0.55, 0.3, 0.4, 1, 1], dtype=np.float32)
         else:
@@ -297,6 +306,11 @@ class RoboNetDataset(data.Dataset):
         # first get raw states
         if "locobot" in robot_viewpoint:
             eef_pos = states[:, :3]
+        elif "franka" in robot_viewpoint:
+            # map franka eef pos to locobot states
+            eef_pos = states[:, :3]
+            eef_pos[:, :2] += LOCO_FRANKA_DIFF
+            eef_pos[:, 2] = 0.14 # average locobot z height
         else:
             eef_pos = denormalize(states[:, :3], low[:3], high[:3])
 
