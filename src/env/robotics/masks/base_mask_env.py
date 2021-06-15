@@ -5,13 +5,12 @@ from scipy.spatial.transform.rotation import Rotation
 
 
 class MaskEnv(RobotEnv):
-    def set_opencv_camera_pose(self, cam_name, camera_extrinsics):
+    def set_opencv_camera_pose(self, cam_name, camera_extrinsics, offset=[0,0,0]):
         cam_id = self.sim.model.camera_name2id(cam_name)
         rot_matrix = camera_extrinsics[:3, :3]
         cam_pos = camera_extrinsics[:3, 3]
         rel_rot = Rotation.from_quat([0, 1, 0, 0])  # calculated
         cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
-        offset = [0, 0, 0]
         self.sim.model.cam_pos[cam_id] = cam_pos + offset
         cam_quat = cam_rot.as_quat()
         self.sim.model.cam_quat[cam_id] = [

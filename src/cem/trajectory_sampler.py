@@ -22,7 +22,7 @@ class TrajectorySampler(object):
         self.high = torch.from_numpy(np.array([0.55, 0.3, 0.4, 1, 1], dtype=np.float32))
         self.low.unsqueeze_(0)
         self.high.unsqueeze_(0)
-        if cfg.model_use_robot_state or cfg.model_use_mask or cfg.black_robot_input:
+        if cfg.model_use_robot_state or cfg.model_use_mask or cfg.black_robot_input or "dontcare" in cfg.reward_type:
             self.robot_model = LocobotAnalyticalModel(cfg, cam_ext=cam_ext)
 
     @torch.no_grad()
@@ -75,7 +75,7 @@ class TrajectorySampler(object):
             print("####### Gathering Samples #######")
 
         # use locobot analytical model to generate masks and states
-        if cfg.model_use_robot_state or cfg.model_use_mask or cfg.black_robot_input:
+        if cfg.model_use_robot_state or cfg.model_use_mask or cfg.black_robot_input or "dontcare" in cfg.reward_type:
             '''
             states should be normalized, world frame
             '''
@@ -141,7 +141,7 @@ class TrajectorySampler(object):
                 # compute the img costs
                 goal_idx = t if t < len(goal_imgs) else -1
                 goal_img = goal_imgs[goal_idx]
-                if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input:
+                if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input or "dontcare" in cfg.reward_type:
                     goal_state = State(img=goal_img, mask=goal.masks[0])
                     curr_state = State(img=next_img, mask=masks_thick[t+1, s:e])
                 else:

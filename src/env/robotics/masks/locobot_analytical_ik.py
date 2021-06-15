@@ -47,7 +47,7 @@ class AnalyticInverseKinematics:
         """
         /forearm_link -> /wrist_link
         """
-        self.l3 = 0.3002
+        self.l3 = 0.2602
 
         """
         /wrist_link -> /gripper_link

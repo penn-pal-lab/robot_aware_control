@@ -1,11 +1,8 @@
 from src.utils.plot import save_gif
 from src.dataset.robonet.robonet_dataset import create_heatmaps, denormalize, normalize
 import torch
-from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
+from src.env.robotics.masks.locobot_mask_env import FrankaMaskEnv
 import numpy as np
-from src.env.robotics.masks.locobot_analytical_ik import (
-    AnalyticInverseKinematics as AIK,
-)
 import torchvision.transforms as tf
 import imageio
 from src.utils.camera_calibration import camera_to_world_dict, world_to_camera_dict

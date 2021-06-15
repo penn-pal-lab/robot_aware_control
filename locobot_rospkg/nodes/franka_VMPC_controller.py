@@ -1,6 +1,8 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
+from locobot_rospkg.nodes.data_collection_client import PUSH_HEIGHT
+from src.env.robotics.masks.franka_mask_env import FrankaMaskEnv
 
 import sys
 import time
@@ -21,26 +23,23 @@ import torchvision.transforms as tf
 from cv_bridge import CvBridge
 
 from eef_control.msg import *
-from locobot_rospkg.nodes.data_collection_client import (
-    DEFAULT_PITCH,
-    DEFAULT_ROLL,
-    PUSH_HEIGHT,
-    eef_control_client,
-)
+from locobot_rospkg.nodes.franka_IK_client import FrankaIKClient
+from locobot_rospkg.nodes.franka_control_client import FrankaControlClient
+
 from pupil_apriltags import Detector
 from scipy.spatial.transform.rotation import Rotation
 from sensor_msgs.msg import Image
 from src.cem.cem import CEMPolicy
 from src.config import create_parser, str2bool
-from src.env.robotics.masks.locobot_analytical_ik import (
-    AnalyticInverseKinematics as AIK,
-)
-from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
+
 from src.prediction.models.dynamics import SVGConvModel
 from src.utils.camera_calibration import camera_to_world_dict
 from src.utils.state import DemoGoalState, State
 
+LOCO_FRANKA_DIFF = np.array([-0.365,      -0.06103333])
 start_offset = 0.15
+
+# locobot frame
 START_POS = {
     "left": [0.29, -0.14],
     "right": [0.26, 0.13],
@@ -48,31 +47,23 @@ START_POS = {
 }
 
 CAMERA_CALIB = np.array(
-    [
-        [0.008716, 0.75080825, -0.66046272, 0.77440888],
-        [0.99985879, 0.00294645, 0.01654445, 0.02565873],
-        [0.01436773, -0.66051366, -0.75067655, 0.64211797],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-)
+        [[-0.00589602,  0.76599739, -0.64281664,  1.11131074],
+        [ 0.9983059,  -0.03270131, -0.04812437,  0.07869842 - 0.01],
+        [-0.05788409, -0.64201138, -0.76450691,  0.59455265 + 0.02],
+        [ 0.,          0.,          0.,          1.        ]]
+    )
+PUSH_HEIGHT = 0.15
 
 
 class Visual_MPC(object):
     def __init__(self, config, device="cuda"):
         # Creates the SimpleActionClient, passing the type of the action
-        self.control_client = actionlib.SimpleActionClient(
-            "eef_control", eef_control.msg.PoseControlAction
-        )
-
+        self.control_client = FrankaControlClient()
         self.img_sub = rospy.Subscriber(
             "/camera/color/image_raw", Image, self.img_callback
         )
-        self.depth_sub = rospy.Subscriber(
-            "/camera/depth/image_rect_raw", Image, self.depth_callback
-        )
         self.cv_bridge = CvBridge()
         self.img = np.zeros((480, 640, 3), dtype=np.uint8)
-        self.depth = np.zeros((480, 640), dtype=np.uint16)
 
         self.device = device
         self.model = None
@@ -88,13 +79,10 @@ class Visual_MPC(object):
         model.load_state_dict(ckpt["model"])
         model.eval()
 
-        self.ik_solver = AIK()
-        # self.env = LocobotMaskEnv(thick=False)
-        self.env_thick = LocobotMaskEnv(thick=True)
+        self.ik_solver = FrankaIKClient()
+        self.env_thick = FrankaMaskEnv()
 
         camTbase = CAMERA_CALIB
-        if config.new_camera_calibration:
-            camTbase = self.get_cam_calibration()
         self.set_camera_calibration(camTbase)
 
         self.policy = CEMPolicy(
@@ -109,90 +97,6 @@ class Visual_MPC(object):
     def img_callback(self, data):
         self.img = self.cv_bridge.imgmsg_to_cv2(data)
 
-    def depth_callback(self, data):
-        self.depth = self.cv_bridge.imgmsg_to_cv2(data)
-
-    def get_camera_pose_from_apriltag(self, detector=None):
-        print("[INFO] detecting AprilTags...")
-        if detector is None:
-            detector = Detector(
-                families="tag36h11",
-                nthreads=1,
-                quad_decimate=1.0,
-                quad_sigma=0.0,
-                refine_edges=1,
-                decode_sharpening=0.25,
-                debug=0,
-            )
-
-        gray = cv2.cvtColor(self.img, cv2.COLOR_BGR2GRAY)
-
-        results = []
-        results = detector.detect(
-            gray,
-            estimate_tag_pose=True,
-            camera_params=[612.45, 612.45, 330.55, 248.61],
-            tag_size=0.0353,
-        )
-        print("[INFO] {} total AprilTags detected".format(len(results)))
-
-        if len(results) == 0:
-            return None, None
-        elif len(results) > 1:
-            print("[Error] More than 1 AprilTag detected!")
-
-        # loop over the AprilTag detection results
-        for r in results:
-            pose_t = r.pose_t
-            pose_R = r.pose_R
-        # Tag pose w.r.t. camera
-        return pose_t, pose_R
-
-    def get_cam_calibration(self):
-        control_result = eef_control_client(
-            self.control_client,
-            target_pose=[0.35, 0, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL],
-        )
-        time.sleep(5)
-        control_result = eef_control_client(
-            self.control_client,
-            target_pose=[],
-        )
-        print(control_result.end_pose)
-        # tag to camera transformation
-        pose_t, pose_R = self.get_camera_pose_from_apriltag()
-        if pose_t is None or pose_R is None:
-            return None
-        # TODO: figure out qpos / end effector accuracy
-        # currently qpos is better than using end effector
-        target_qpos = control_result.joint_angles
-        # self.env.sim.data.qpos[self.env._joint_references] = target_qpos
-        # self.env.sim.forward()
-        self.env_thick.sim.data.qpos[self.env_thick._joint_references] = target_qpos
-        self.env_thick.sim.forward()
-
-        # tag to base transformation
-        tagTbase = np.column_stack(
-            (
-                self.env_thick.sim.data.get_geom_xmat("ar_tag_geom"),
-                self.env_thick.sim.data.get_geom_xpos("ar_tag_geom"),
-            )
-        )
-        tagTbase = np.row_stack((tagTbase, [0, 0, 0, 1]))
-
-        tagTcam = np.column_stack((pose_R, pose_t))
-        tagTcam = np.row_stack((tagTcam, [0, 0, 0, 1]))
-
-        # tag in camera to tag in robot transformation
-        # For explanation, refer to Kun's hand drawing
-        tagcTtagw = np.array(
-            [[0, 0, -1, 0], [0, -1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1]]
-        )
-
-        camTbase = tagTbase @ tagcTtagw @ np.linalg.inv(tagTcam)
-        print("camera2world:")
-        print(camTbase)
-        return camTbase
 
     def set_camera_calibration(self, camTbase):
         rot_matrix = camTbase[:3, :3]
@@ -201,8 +105,7 @@ class Visual_MPC(object):
         cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
 
         cam_id = 0
-        offset = [0, -0.015, 0.0125]
-        # offset = [0, -0.007, 0.02]
+        offset = [0, 0, 0]
         print("applying offset", offset)
         self.env_thick.sim.model.cam_pos[cam_id] = cam_pos + offset
         cam_quat = cam_rot.as_quat()
@@ -226,34 +129,21 @@ class Visual_MPC(object):
     def collect_target_img(self, eef_target):
         """ set up the scene and collect goal image """
         if len(eef_target) == 2:
-            eef_target = [*eef_target, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL]
+            eef_target = [*eef_target, PUSH_HEIGHT, 0, 1, 0, 0]
         else:
-            assert len(eef_target) == 5
+            assert len(eef_target) == 7
 
-        control_result = eef_control_client(
-            self.control_client,
-            target_pose=eef_target,
-        )
+        control_result = self.control_client.send_target_eef_request(eef_target)
         input("Move the object to the GOAL position. Press Enter to continue...")
         self.target_img = np.copy(self.img)
         self.target_eef = np.array(control_result.end_pose)
 
-        qpos_from_eef = np.zeros(5)
-        qpos_from_eef[0:4] = self.ik_solver.ik(
-            self.target_eef,
-            alpha=-DEFAULT_PITCH,
-            cur_arm_config=np.array(control_result.joint_angles),
-        )
-        qpos_from_eef[4] = DEFAULT_ROLL
-
-        self.target_qpos = qpos_from_eef
+        self.target_qpos = control_result.joint_angles
 
     def go_to_start_pose(self, eef_start):
         """ set up the starting scene """
-        _ = eef_control_client(
-            self.control_client,
-            target_pose=[*eef_start, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL],
-        )
+        result = self.control_client.send_target_eef_request([*eef_start, PUSH_HEIGHT, 0,1,0,0])
+
         input("Move the object close to the EEF. Press Enter to continue...")
         self.start_img = np.copy(self.img)
         self.start_img = self._img_transform(self.start_img).to(self.device)
@@ -271,11 +161,11 @@ class Visual_MPC(object):
         img = img.cpu().clamp_(0, 1).numpy()
         img = np.transpose(img, axes=(1, 2, 0))
         img = np.uint8(img * 255)
-
-        control_result = eef_control_client(self.control_client, target_pose=[])
+        # TODO: change franka control server to return current state if target pose is empty
+        control_result = self.control_client.send_target_eef_request([])
         state = State(
             img=img,
-            state=[*control_result.end_pose, DEFAULT_PITCH, DEFAULT_ROLL],
+            state=[*control_result.end_pose[:3],0,0],
             qpos=control_result.joint_angles,
         )
         return state
@@ -291,10 +181,10 @@ class Visual_MPC(object):
             os.path.join(self.config.log_dir, "start_goal.png"),
             np.concatenate([start_visual, goal_visual], 1),
         )
-        control_result = eef_control_client(self.control_client, target_pose=[])
+        control_result = self.control_client.send_target_eef_request([])
         start = State(
             img=start_visual,
-            state=[*control_result.end_pose, DEFAULT_PITCH, DEFAULT_ROLL],
+            state=[*control_result.end_pose[:3], 0, 0],
             qpos=control_result.joint_angles,
         )
 
@@ -317,14 +207,13 @@ class Visual_MPC(object):
         return actions
 
     def execute_action(self, action):
-        control_result = eef_control_client(self.control_client, target_pose=[])
+        control_result = self.control_client.send_target_eef_request([])
         end_xy = [
             control_result.end_pose[0] + action[0],
             control_result.end_pose[1] + action[1],
         ]
-        control_result = eef_control_client(
-            self.control_client,
-            target_pose=[*end_xy, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL],
+        control_result = self.control_client.send_target_eef_request(
+            target_pose=[*end_xy, PUSH_HEIGHT, 0, 1, 0, 0]
         )
 
     def execute_open_loop(self, actions):
@@ -386,10 +275,10 @@ if __name__ == "__main__":
     vmpc = Visual_MPC(config=cf)
 
     if cf.goal_img_with_wrong_robot:
-        eef_start_pos = START_POS[push_type]
-        eef_target_pos = [0.15, 0.0, 0.55, 0, DEFAULT_ROLL]
+        eef_start_pos = np.array(START_POS[push_type]) - LOCO_FRANKA_DIFF
+        eef_target_pos = [0.65, 0.0, 0.5, 0, 1, 0, 0]
     else:
-        eef_target_pos = [0.33, 0]
+        eef_target_pos = [0.65, 0]
         eef_start_pos = [eef_target_pos[0], eef_target_pos[1] - start_offset]
 
     if cf.load_start_goal is not None:
@@ -413,6 +302,7 @@ if __name__ == "__main__":
         actions = [[0.05, 0], [0.05, 0], [0.05, 0], [0.05, 0]]
         vmpc.execute_open_loop(actions)
         sys.exit()
+
     if cf.cem_open_loop:
         actions = vmpc.cem(start, goal)
         print(actions)

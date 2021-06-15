@@ -1,4 +1,5 @@
 import numpy as np
+import torchvision.transforms as tf
 import torch
 from src.config import argparser
 from src.dataset.locobot.locobot_singleview_dataloader import create_locobot_modified_loader
@@ -8,6 +9,7 @@ from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
 from src.utils.plot import save_gif
 from tqdm import trange
 import ipdb
+import imageio
 from src.utils.camera_calibration import world_to_camera_dict
 from src.utils.image import zero_robot_region
 
@@ -37,37 +39,37 @@ def plot_rollout(model, data, actions, gif_name):
     states = data["states"]
     ac = actions
     masks = data["masks"]
-    if cf.model_use_heatmap:
-        heatmaps = data["heatmaps"]
+    # if cf.model_use_heatmap:
+    #     heatmaps = data["heatmaps"]
     robot_name = data["robot"]
-    if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
-        x = data["images"]
-        states = data["states"]
-        ac = fake_actions
-        mask = data["masks"]
-        qpos = data["qpos"]
-        robot = data["robot"]
-        folder = data["folder"]
-        input_data = dict(
-            states=states,
-            actions=ac,
-            masks=mask,
-            qpos=qpos,
-            folder=folder,
-            robot=robot,
-        )
-        input_data["low"] = data["low"]
-        input_data["high"] = data["high"]
-        if cf.preprocess_action != "raw":
-            input_data["raw_actions"] = data["raw_actions"]
+    # if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
+    #     x = data["images"]
+    #     states = data["states"]
+    #     ac = fake_actions
+    #     mask = data["masks"]
+    #     qpos = data["qpos"]
+    #     robot = data["robot"]
+    #     folder = data["folder"]
+    #     input_data = dict(
+    #         states=states,
+    #         actions=ac,
+    #         masks=mask,
+    #         qpos=qpos,
+    #         folder=folder,
+    #         robot=robot,
+    #     )
+    #     input_data["low"] = data["low"]
+    #     input_data["high"] = data["high"]
+    #     if cf.preprocess_action != "raw":
+    #         input_data["raw_actions"] = data["raw_actions"]
 
-        if cf.experiment == "finetune_locobot":
-            out = robot_model.predict_batch(input_data)
+    #     if cf.experiment == "finetune_locobot":
+    #         out = robot_model.predict_batch(input_data)
 
-        if cf.model_use_heatmap:
-            states, masks, heatmaps = out
-        else:
-            states, masks = out
+    #     if cf.model_use_heatmap:
+    #         states, masks, heatmaps = out
+    #     else:
+    #         states, masks = out
 
     bs = min(cf.test_batch_size, x.shape[1])
     model.init_hidden(bs)
@@ -176,11 +178,13 @@ def plot_rollout(model, data, actions, gif_name):
 if __name__ == "__main__":
     cf, _ = argparser()
     cf.device = device
-    cf.batch_size = 3  # number of videos
+    cf.batch_size = 1  # number of videos
     cf.lstm_group_norm = True
-    CKPT_PATH = "checkpoints/0shotlb_vanilla_136500.pt"
+    # CKPT_PATH = "checkpoints/0shotlb_vanilla_136500.pt"
+    CKPT_PATH = "checkpoints/vanilla_ckpt_10200.pt"
+    IMG_PATH = "franka_test_imgs/franka_24.png"
     video_len = 5
-    nsample = 3  # number of stochastic samples per video
+    nsample = 2  # number of stochastic samples per video
 
     model = load_model(cf, CKPT_PATH)
     if cf.experiment == "finetune_locobot":
@@ -190,6 +194,14 @@ if __name__ == "__main__":
     loader = create_locobot_modified_loader(cf)
     data_gen = get_batch(loader, device)
     data = next(data_gen)
+
+    img = imageio.imread(IMG_PATH)
+    w, h = cf.image_width, cf.image_height
+    img_transform = tf.Compose([tf.ToTensor(), tf.Resize((h, w))])
+    img = img_transform(img)
+    video = torch.zeros(data["images"].shape, dtype=img.dtype, device=data["images"].device)
+    video[:, 0] = img
+    data["images"] = video
 
 
     ''' decide what actions to take '''

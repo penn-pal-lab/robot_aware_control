@@ -1,4 +1,5 @@
 # project artifacts
+franka_test_imgs
 videos
 demos
 logs
@@ -16,6 +17,9 @@ widowx1_c2_calibration
 widowx_configurations
 *.gif
 src/prediction/obj_movement_histograms
+*.png
+*.pdf
+test.py
 
 # IDE
 *.swp

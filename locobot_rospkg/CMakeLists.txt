@@ -165,6 +165,8 @@ include_directories(
 catkin_install_python(PROGRAMS
   nodes/data_collection_client.py
   nodes/visual_MPC_controller.py
+  nodes/franka_IK_client.py
+  nodes/franka_control_client.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
