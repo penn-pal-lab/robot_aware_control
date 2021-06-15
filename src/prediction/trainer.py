@@ -925,9 +925,7 @@ class PredictionTrainer(object):
         elif self._config.experiment == "train_locobot_singleview":
             from src.dataset.locobot.locobot_singleview_dataloader import create_loaders
         elif self._config.experiment == "finetune_locobot":
-            from src.dataset.locobot.locobot_singleview_dataloader import (
-                create_finetune_loaders as create_loaders,
-            )
+            from src.dataset.locobot.locobot_singleview_dataloader import create_finetune_loaders as create_loaders
         elif self._config.experiment == "train_locobot_table":
             from src.dataset.locobot.locobot_table_dataloaders import create_loaders
         else:

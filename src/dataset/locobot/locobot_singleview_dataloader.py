@@ -135,7 +135,7 @@ def create_loaders(config):
         test_data,
         num_workers=config.data_threads,
         batch_size=config.test_batch_size,
-        shuffle=True,
+        shuffle=False,
         drop_last=False,
         pin_memory=True,
         generator=torch.Generator().manual_seed(config.seed),
