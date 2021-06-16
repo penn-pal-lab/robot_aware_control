@@ -19,6 +19,8 @@ widowx_configurations
 src/prediction/obj_movement_histograms
 *.png
 franka_data
+*.pdf
+test.py
 
 # IDE
 *.swp
