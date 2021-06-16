@@ -18,6 +18,7 @@ widowx_configurations
 *.gif
 src/prediction/obj_movement_histograms
 *.png
+franka_data
 *.pdf
 test.py
 

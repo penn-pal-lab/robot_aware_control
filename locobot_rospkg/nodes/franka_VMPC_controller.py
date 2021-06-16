@@ -26,32 +26,25 @@ from eef_control.msg import *
 from locobot_rospkg.nodes.franka_IK_client import FrankaIKClient
 from locobot_rospkg.nodes.franka_control_client import FrankaControlClient
 
-from pupil_apriltags import Detector
 from scipy.spatial.transform.rotation import Rotation
 from sensor_msgs.msg import Image
 from src.cem.cem import CEMPolicy
 from src.config import create_parser, str2bool
 
 from src.prediction.models.dynamics import SVGConvModel
-from src.utils.camera_calibration import camera_to_world_dict
+from src.utils.camera_calibration import camera_to_world_dict, LOCO_FRANKA_DIFF
 from src.utils.state import DemoGoalState, State
 
-LOCO_FRANKA_DIFF = np.array([-0.365,      -0.06103333])
 start_offset = 0.15
 
 # locobot frame
 START_POS = {
-    "left": [0.29, -0.14],
-    "right": [0.26, 0.13],
-    "forward": [0.2 + 0.02, 0],
+    "left": np.array([0.655, -0.079]),
+    "right": np.array([0.625, 0.191]),
+    "forward": np.array([0.565 + 0.02, 0.061]),
 }
 
-CAMERA_CALIB = np.array(
-        [[-0.00589602,  0.76599739, -0.64281664,  1.11131074],
-        [ 0.9983059,  -0.03270131, -0.04812437,  0.07869842 - 0.01],
-        [-0.05788409, -0.64201138, -0.76450691,  0.59455265 + 0.02],
-        [ 0.,          0.,          0.,          1.        ]]
-    )
+CAMERA_CALIB = camera_to_world_dict["franka_c0"]
 PUSH_HEIGHT = 0.15
 
 
@@ -91,7 +84,9 @@ class Visual_MPC(object):
             init_std=config.cem_init_std,
             action_candidates=config.action_candidates,
             horizon=config.horizon,
+            opt_iter=config.opt_iter,
             cam_ext=camTbase,
+            franka_ik=self.ik_solver
         )
 
     def img_callback(self, data):
@@ -250,6 +245,8 @@ if __name__ == "__main__":
     cf, unparsed = parser.parse_known_args()
     assert len(unparsed) == 0, unparsed
     cf.device = device
+    cf.experiment = "control_franka"
+
     push_type = cf.push_type
     dynamics_model = "vanilla"
     if "roboaware" in cf.dynamics_model_ckpt:
@@ -266,17 +263,18 @@ if __name__ == "__main__":
     # cf.action_candidates = 300
     cf.goal_img_with_wrong_robot = True  # makes the robot out of img by pointing up
     cf.cem_open_loop = False
-    cf.max_episode_length = 4  # ep length of closed loop execution
+    cf.max_episode_length = 3  # ep length of closed loop execution
 
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.
-    rospy.init_node("visual_mpc_client")
+    rospy.init_node("franka_visual_mpc_client")
 
     vmpc = Visual_MPC(config=cf)
+    vmpc.control_client.reset()
 
     if cf.goal_img_with_wrong_robot:
-        eef_start_pos = np.array(START_POS[push_type]) - LOCO_FRANKA_DIFF
-        eef_target_pos = [0.65, 0.0, 0.5, 0, 1, 0, 0]
+        eef_start_pos = np.array(START_POS[push_type])
+        eef_target_pos = [0.55, 0.0, 0.45, 0, 1, 0, 0]
     else:
         eef_target_pos = [0.65, 0]
         eef_start_pos = [eef_target_pos[0], eef_target_pos[1] - start_offset]

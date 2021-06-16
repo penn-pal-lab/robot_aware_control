@@ -276,6 +276,8 @@ def add_dataset_arguments(parser):
             "train_locobot_singleview",
             "train_locobot_table",
             "finetune_locobot",
+            "eval_franka",
+            "control_franka",
         ],
         default="train_robonet",
     )
