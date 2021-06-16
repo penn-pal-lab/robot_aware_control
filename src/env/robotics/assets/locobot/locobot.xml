@@ -8,7 +8,7 @@
         <mesh name="mobile_base" file="mobile_base.STL" scale="0.001 0.001 0.001" />
         <mesh name="shoulder_link" file="shoulder_link.STL"/>
         <mesh name="elbow_link" file="elbow_link.STL"/>
-        <mesh name="forearm_link" file="forearm_link.STL"/>
+        <mesh name="forearm_link" file="forearm_link.STL" scale="1 1.2 1.2"/>
         <mesh name="wrist_link" file="wrist_link.STL"/>
         <mesh name="gripper_link" file="gripper_link.STL" scale="1.0 1.0 1.0"/>
         <mesh name="finger_r" file="finger_r.STL" scale="1.0 1.0 1.0"/>

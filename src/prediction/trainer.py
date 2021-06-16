@@ -781,6 +781,8 @@ class PredictionTrainer(object):
                     wandb.log(info, step=self._step)
                     transfer_data = next(self.transfer_batch_generator)
                     self.plot(transfer_data, epoch, "transfer")
+        self._logger.info(f"Saving last checkpoint {epoch}")
+        self._save_checkpoint()
 
     def train_copy_baseline(self):
         """Compute metrics for copy baseline"""

@@ -16,6 +16,7 @@ class LocobotMaskEnv(MaskEnv):
         model_path = os.path.join("locobot", "locobot_thick.xml")
         if not thick:
             model_path = os.path.join("locobot", "locobot_modified.xml")
+        model_path = os.path.join("locobot", "locobot.xml")
         initial_qpos = None
         n_actions = 1
         n_substeps = 1
