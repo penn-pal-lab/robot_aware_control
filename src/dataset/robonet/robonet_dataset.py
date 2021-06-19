@@ -1,10 +1,12 @@
 import os
+import random
 
 import h5py
 import numpy as np
 import pickle
 import torch
 import torchvision.transforms as tf
+from torchvision.transforms import Lambda, Compose
 import torchvision.transforms.functional as F
 import torch.utils.data as data
 from tqdm import trange
@@ -15,7 +17,6 @@ from src.utils.camera_calibration import (
     camera_to_world_dict,
     LOCO_FRANKA_DIFF
 )
-import ipdb
 
 LOCO_FRANKA_DIFF = np.array([-0.365, -0.06103333])
 
@@ -259,16 +260,19 @@ class RoboNetDataset(data.Dataset):
         """
         if self._augment_img:
             # img_mask = torch.cat([video_tensor, mask_tensor], dim=1)
-            crop_size = [self._config.random_crop_size] * 2
             img_width = self._config.image_width
+            img_height = self._config.image_height
+            rand_crop_size = random.randint(0,5)
+            crop_size = [img_height - rand_crop_size, img_width - rand_crop_size]
             i, j, th, tw = tf.RandomCrop.get_params(
-                torch.zeros(3, img_width, img_width), crop_size
+                torch.zeros(3, img_height, img_width), crop_size
             )
             brightness = (1 - 0.2, 1 + 0.2)
             contrast = (1 - 0.2, 1 + 0.2)
             saturation = (1 - 0.2, 1 + 0.2)
             hue = (-0.1, 0.1)
-            jitter = tf.ColorJitter.get_params(brightness, contrast, saturation, hue)
+            # jitter = tf.ColorJitter.get_params(brightness, contrast, saturation, hue)
+            jitter = get_random_color_jitter(brightness, contrast, saturation, hue)
             aug_imgs = []
             aug_masks = []
             for img, mask in zip(images, masks):
@@ -276,10 +280,10 @@ class RoboNetDataset(data.Dataset):
                 mask = self._img_transform(mask)
                 crop_img = F.crop(img, i, j, th, tw)
                 crop_mask = F.crop(mask, i, j, th, tw)
-                resized_img = F.resize(crop_img, img_width)
+                resized_img = F.resize(crop_img, (img_height, img_width))
                 # cast back to 0 or 1 value
                 resized_mask = (
-                    F.resize(crop_mask, img_width).type(torch.bool).type(torch.float32)
+                    F.resize(crop_mask, (img_height, img_width)).type(torch.bool).type(torch.float32)
                 )
                 color_img = jitter(resized_img)
                 aug_imgs.append(color_img)
@@ -539,6 +543,34 @@ def create_heatmaps(states, low, high, robot, viewpoint):
     heatmaps = np.expand_dims(heatmaps, 1).astype(np.float32)
     return heatmaps
 
+def get_random_color_jitter(
+        brightness,
+        contrast,
+        saturation,
+        hue):
+
+    transforms = []
+
+    if brightness is not None:
+        brightness_factor = random.uniform(brightness[0], brightness[1])
+        transforms.append(Lambda(lambda img: F.adjust_brightness(img, brightness_factor)))
+
+    if contrast is not None:
+        contrast_factor = random.uniform(contrast[0], contrast[1])
+        transforms.append(Lambda(lambda img: F.adjust_contrast(img, contrast_factor)))
+
+    if saturation is not None:
+        saturation_factor = random.uniform(saturation[0], saturation[1])
+        transforms.append(Lambda(lambda img: F.adjust_saturation(img, saturation_factor)))
+
+    if hue is not None:
+        hue_factor = random.uniform(hue[0], hue[1])
+        transforms.append(Lambda(lambda img: F.adjust_hue(img, hue_factor)))
+
+    random.shuffle(transforms)
+    transform = Compose(transforms)
+
+    return transform
 
 if __name__ == "__main__":
     from src.utils.plot import save_gif
