@@ -20,16 +20,19 @@ from locobot_rospkg.nodes.data_collection_client import (DEFAULT_PITCH,
 from pupil_apriltags import Detector
 from scipy.spatial.transform.rotation import Rotation
 from sensor_msgs.msg import Image
-from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
+# from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
+from src.env.robotics.masks.franka_mask_env import FrankaMaskEnv
+from locobot_rospkg.nodes.franka_control_client import FrankaControlClient
 
 PACKAGE_PATH = pathlib.Path(__file__).parent.parent.absolute().__str__()
 
 
 class MaskChecker(object):
     def __init__(self):
-        self.control_client = actionlib.SimpleActionClient(
-            "eef_control", eef_control.msg.PoseControlAction
-        )
+        self.control_client = FrankaControlClient()
+        # self.control_client = actionlib.SimpleActionClient(
+            # "eef_control", eef_control.msg.PoseControlAction
+        # )
         self.img_sub = rospy.Subscriber(
             "/camera/color/image_raw", Image, self.img_callback
         )
@@ -40,9 +43,10 @@ class MaskChecker(object):
         self.img = np.zeros((480, 640, 3), dtype=np.uint8)
         self.depth = np.zeros((480, 640), dtype=np.uint16)
 
-        self.env = LocobotMaskEnv()
-        camTbase = self.get_cam_calibration()
-        self.set_camera_calibration(camTbase)
+        # self.env = LocobotMaskEnv()
+        # camTbase = self.get_cam_calibration()
+        # self.set_camera_calibration(camTbase)
+        self.env = FrankaMaskEnv()
 
 
     def img_callback(self, data):
@@ -158,7 +162,8 @@ class MaskChecker(object):
 
     def show_overlap(self):
         # show the overlap between the mask and current image
-        control_result = eef_control_client(self.control_client, target_pose=[])
+        # control_result = eef_control_client(self.control_client, target_pose=[])
+        control_result = self.control_client.send_target_eef_request([])
         qpos = control_result.joint_angles
         mask = self.env.generate_masks([qpos], width=640, height=480)[0]
         # import ipdb; ipdb.set_trace()
@@ -178,6 +183,15 @@ if __name__ == "__main__":
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.
     rospy.init_node("match_robot_position")
+    camTbase = np.array(
+        [[ 0.01309514,  0.71015083, -0.70392778,  1.13944446],
+        [ 0.9995991,  -0.02697114, -0.00861408,  0.05091183],
+        [-0.02510303, -0.70353277, -0.71021932,  0.5631501 ],
+        [ 0.,          0.,          0.,          1.        ]]
+    )
+
 
     rpos = MaskChecker()
+    offset = [0, 0-0.01, 0+0.015]
+    rpos.env.set_opencv_camera_pose("main_cam", camTbase, offset)
     rpos.show_overlap()
