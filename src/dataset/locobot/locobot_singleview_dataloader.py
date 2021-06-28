@@ -8,16 +8,17 @@ from torchvision.datasets.folder import has_file_allowed_extension
 
 from src.dataset.robonet.robonet_dataset import RoboNetDataset
 
+FOLDERS = ["c0", "c1", "c2", "c3"]
 def create_finetune_loaders(config):
     file_type = "hdf5"
     files = []
     file_labels = []
-
-    data_path = os.path.join(config.data_root, "locobot_views", "c0")
-    for d in os.scandir(data_path):
-        if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            files.append(d.path)
-            file_labels.append("locobot_c0")
+    for folder in FOLDERS:
+        data_path = os.path.join(config.data_root, "locobot_views", folder)
+        for d in os.scandir(data_path):
+            if d.is_file() and has_file_allowed_extension(d.path, file_type):
+                files.append(d.path)
+                file_labels.append("locobot_" + folder)
 
     files = sorted(files)
     random.seed(config.seed)
@@ -63,11 +64,12 @@ def create_transfer_loader(config):
     files = []
     file_labels = []
 
-    data_path = os.path.join(config.data_root, "locobot_views", "c0")
-    for d in os.scandir(data_path):
-        if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            files.append(d.path)
-            file_labels.append("locobot_c0")
+    for folder in FOLDERS:
+        data_path = os.path.join(config.data_root, "locobot_views", folder)
+        for d in os.scandir(data_path):
+            if d.is_file() and has_file_allowed_extension(d.path, file_type):
+                files.append(d.path)
+                file_labels.append("locobot_" + folder)
 
     files = sorted(files)
     random.seed(config.seed)
@@ -97,19 +99,20 @@ def create_loaders(config):
     files = []
     file_labels = []
 
-    data_path = os.path.join(config.data_root, "locobot_views", "c0")
-    for d in os.scandir(data_path):
-        if d.is_file() and has_file_allowed_extension(d.path, file_type):
-            files.append(d.path)
-            file_labels.append("locobot_c0")
+    for folder in FOLDERS:
+        data_path = os.path.join(config.data_root, "locobot_views", folder)
+        for d in os.scandir(data_path):
+            if d.is_file() and has_file_allowed_extension(d.path, file_type):
+                files.append(d.path)
+                file_labels.append("locobot_" + folder)
 
     files = sorted(files)
     random.seed(config.seed)
     random.shuffle(files)
 
     # TODO: change dataset splitting
-    n_test = 100
-    n_train = 1000
+    n_test = 200
+    n_train = 3000
 
     X_test = files[:n_test]
     y_test = file_labels[:n_test]
