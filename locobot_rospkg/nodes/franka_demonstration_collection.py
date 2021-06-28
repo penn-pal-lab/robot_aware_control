@@ -79,7 +79,7 @@ if __name__ == "__main__":
 
     # check labeled masks
     from PIL import Image as PILImage
-    folder = "human_demo/multipush_2"
+    folder = "human_demo/multipush_1"
     imgs = []
     for i in range(6):
         img_path =os.path.join(folder, f"{i}.png")
