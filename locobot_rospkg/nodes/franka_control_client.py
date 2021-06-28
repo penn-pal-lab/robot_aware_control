@@ -5,7 +5,7 @@ from eef_control.msg import (
 import actionlib
 import rospy
 
-PUSH_HEIGHT = 0.15
+PUSH_HEIGHT = 0.12
 START_POSE = [0.55, 0, PUSH_HEIGHT, 0, 1, 0, 0]
 
 

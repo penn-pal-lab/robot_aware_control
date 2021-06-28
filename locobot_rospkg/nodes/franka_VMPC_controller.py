@@ -45,7 +45,7 @@ START_POS = {
 }
 
 CAMERA_CALIB = camera_to_world_dict["franka_c0"]
-PUSH_HEIGHT = 0.15
+PUSH_HEIGHT = 0.12
 
 
 class Visual_MPC(object):
@@ -131,6 +131,7 @@ class Visual_MPC(object):
         control_result = self.control_client.send_target_eef_request(eef_target)
         input("Move the object to the GOAL position. Press Enter to continue...")
         self.target_img = np.copy(self.img)
+        self.target_img_hires = np.copy(self.target_img)
         self.target_eef = np.array(control_result.end_pose)
 
         self.target_qpos = control_result.joint_angles
@@ -141,6 +142,7 @@ class Visual_MPC(object):
 
         input("Move the object close to the EEF. Press Enter to continue...")
         self.start_img = np.copy(self.img)
+        self.start_img_hires = np.copy(self.start_img)
         self.start_img = self._img_transform(self.start_img).to(self.device)
         self.start_img = self.start_img.cpu().clamp_(0, 1).numpy()
         self.start_img = np.transpose(self.start_img, axes=(1, 2, 0))
@@ -152,6 +154,7 @@ class Visual_MPC(object):
             State: A namedtuple of current img, eef, qpos
         """
         img = np.copy(self.img)
+        self.state_img_hires = np.copy(img)
         img = self._img_transform(img).to(self.device)
         img = img.cpu().clamp_(0, 1).numpy()
         img = np.transpose(img, axes=(1, 2, 0))
@@ -164,6 +167,26 @@ class Visual_MPC(object):
             qpos=control_result.joint_angles,
         )
         return state
+
+    def create_human_goal(self, img_path, mask_path):
+        from PIL import Image as PILImage
+
+        img = np.array(PILImage.open(img_path))
+        self.target_img_hires = np.copy(img)
+
+        img = self._img_transform(img).to(self.device)
+        img = img.cpu().clamp_(0, 1).numpy()
+        img = np.transpose(img, axes=(1, 2, 0))
+        img = np.uint8(img * 255)
+
+        with open(mask_path, "rb") as f:
+            mask = pickle.load(f)
+        mask = (self._img_transform(mask).type(torch.bool).type(torch.float32)).to(
+            self.device
+        )
+        goal = DemoGoalState(imgs=[img], masks=[mask])
+        return goal
+
 
     def create_start_goal(self) -> Tuple[State, DemoGoalState]:
         self.read_target_image()
@@ -265,6 +288,9 @@ if __name__ == "__main__":
     cf.cem_open_loop = False
     cf.max_episode_length = 3  # ep length of closed loop execution
 
+    img_path = os.path.join("human_demo", "test", "2.png")
+    mask_path = os.path.join("human_demo", "test", "2mask.pkl")
+
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.
     rospy.init_node("franka_visual_mpc_client")
@@ -289,6 +315,7 @@ if __name__ == "__main__":
         vmpc.collect_target_img(eef_target_pos)
         vmpc.go_to_start_pose(eef_start=eef_start_pos)
         start, goal = vmpc.create_start_goal()
+        goal = vmpc.create_human_goal(img_path, mask_path)
         if cf.save_start_goal:
             start_goal_file = input("name of start goal pkl file:")
             with open(start_goal_file, "wb") as f:
@@ -313,13 +340,13 @@ if __name__ == "__main__":
             opt_traj = torch.tensor([[0, dist]] * (cf.horizon - 1))
         elif push_type == "right":
             opt_traj = torch.tensor([[0, -dist]] * (cf.horizon - 1))
-        img_goal = np.concatenate([start.img, vmpc.goal_visual], 1)
+        img_goal = np.concatenate([vmpc.start_img_hires, vmpc.target_img_hires], 1)
         gif = [img_goal]
         for t in range(cf.max_episode_length):
             act = vmpc.cem(start, goal, t, opt_traj)[0]  # get first action
             print(f"t={t}, executing {act}")
             vmpc.execute_action(act)
             start = vmpc.get_state()
-            img_goal = np.concatenate([start.img, vmpc.goal_visual], 1)
+            img_goal = np.concatenate([vmpc.state_img_hires, vmpc.target_img_hires], 1)
             gif.append(img_goal)
         imageio.mimwrite(cf.log_dir + "/closed_loop.gif", gif, fps=2)

@@ -7,7 +7,7 @@ import numpy as np
 import actionlib
 import rospy
 from src.utils.camera_calibration import LOCO_FRANKA_DIFF
-PUSH_HEIGHT = 0.15
+PUSH_HEIGHT = 0.12
 
 def map_to_locobot_coord(franka_state):
     franka_state = np.copy(franka_state)
