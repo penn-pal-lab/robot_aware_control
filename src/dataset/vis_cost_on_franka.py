@@ -180,8 +180,8 @@ if __name__ == "__main__":
 
     plt.xlabel("Timestep", fontdict=font)
     plt.ylabel("Cost", fontdict=font)
-    plt.title("Cost between current \n and goal image", fontdict={"family":"Times New Roman"})
-    plt.ylim([0, 1.1])
+    plt.title("Relative cost between current \n and goal image", fontdict={"family":"Times New Roman"})
+    plt.ylim([0.5, 1.1])
     plt.xticks(range(4))
     plt.savefig(DATA_ROOT + "/cost_vis.png")
     plt.show()

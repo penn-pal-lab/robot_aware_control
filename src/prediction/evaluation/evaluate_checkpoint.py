@@ -4,23 +4,29 @@ from src.prediction.trainer import (
     make_log_folder,
 )
 # from src.dataset.locobot.locobot_table_dataloaders import create_locobot_modified_loader
-from src.dataset.locobot.locobot_singleview_dataloader import create_locobot_modified_loader
+# from src.dataset.locobot.locobot_singleview_dataloader import create_locobot_modified_loader
 from src.dataset.franka.franka_dataloader import create_transfer_loader
 import ipdb
 import numpy as np
 from time import time
 from tqdm import tqdm
+from collections import defaultdict
 
 
 def compute_metrics(cf):
     trainer = PredictionTrainer(cf)
     trainer._step = trainer._load_checkpoint(cf.dynamics_model_ckpt)
     trainer.model.eval()
+    trainer.batch_p = defaultdict(float)
 
     test_loader = create_transfer_loader(cf)
     info = trainer._compute_epoch_metrics(test_loader, "test")
     print("PSNR:", info["test/autoreg_psnr"])
     print("SSIM:", info["test/autoreg_ssim"])
+    print("World Loss:", info["test/autoreg_world_loss"])
+    world_mse = info["test/autoreg_world_loss"]
+    psnr = 10 * np.log((1/world_mse)) / np.log(10)
+    print("World PSNR", psnr)
     testing_batch_generator = get_batch(test_loader, trainer._device)
     for i in range(1):
        test_data = next(testing_batch_generator)
@@ -46,6 +52,7 @@ if __name__ == "__main__":
 
     # vanilla + state + future state/mask + black robot
      python -m src.prediction.evaluation.evaluate_checkpoint --jobname 0shotlb_vanillastatefuturestatemaskblack_franka --wandb False --data_root /home/pallab/locobot_ws/src/eef_control/data --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --eval_interval 15 --checkpoint_interval 5 --reconstruction_loss l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment eval_franka --preprocess_action raw --train_val_split 0.95 --model_use_robot_state True --model_use_mask True --model_use_future_mask True --model_use_future_robot_state True --random_snippet True --lstm_group_norm True --dynamics_model_ckpt checkpoints/vanillastatefuturestatemaskblack_ckpt_10200.pt --robot_joint_dim 7 --video_length 6 --black_robot True
+
     # roboaware
      python -m src.prediction.evaluation.evaluate_checkpoint --jobname 0shotlb_roboaware_franka --wandb False --data_root /home/pallab/locobot_ws/src/eef_control/data --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --eval_interval 15 --checkpoint_interval 5 --reconstruction_loss dontcare_l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment eval_franka --preprocess_action raw --train_val_split 0.95 --model_use_robot_state True --model_use_mask True --model_use_future_mask True --model_use_future_robot_state True --random_snippet True --lstm_group_norm True --dynamics_model_ckpt checkpoints/roboaware_ckpt_10200.pt --robot_joint_dim 7 --video_length 6
     """

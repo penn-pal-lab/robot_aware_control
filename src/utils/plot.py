@@ -6,7 +6,7 @@ import numpy as np
 import scipy.misc
 import torch
 from torch.autograd import Variable
-from PIL import Image
+from PIL import Image, ImageDraw
 import cv2
 from functools import partial
 
@@ -117,14 +117,30 @@ def save_gif(filename, inputs, duration=0.25):
 
 def save_gif_with_text(filename, inputs, text, duration=0.25):
     images = []
-    for tensor, text in zip(inputs, text):
-        img = image_tensor(
-            [draw_text_tensor(ti, texti) for ti, texti in zip(tensor, text)], padding=0
-        )
-        img = img.cpu()
-        img = img.transpose(0, 1).transpose(1, 2).clamp(0, 1).numpy()
+    for tensor, texti in zip(inputs, text):
+        img = image_tensor(tensor, padding=0)
+        img = img.cpu().transpose_(0, 1).transpose_(1, 2).clamp_(0, 1).numpy()
+        img = np.uint8(img * 255)
+
+        pil = Image.fromarray(img)
+        draw = ImageDraw.Draw(pil)
+        for i, psnr in enumerate(texti):
+            psnr = str(psnr)
+            # each image is 48 height and 64 width
+            draw.text((4, i * 48), psnr, (0, 255, 0))
+        img = np.array(pil)
         images.append(img)
     imageio.mimsave(filename, images, duration=duration)
+
+   # images = []
+    # for tensor, text in zip(inputs, text):
+    #     img = image_tensor(
+    #         [draw_text_tensor(ti, texti) for ti, texti in zip(tensor, text)], padding=0
+    #     )
+    #     img = img.cpu()
+    #     img = img.transpose(0, 1).transpose(1, 2).clamp(0, 1).numpy()
+    #     images.append(img)
+    # imageio.mimsave(filename, images, duration=duration)
 
 
 def save_image(filename, tensor):
