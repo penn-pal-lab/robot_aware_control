@@ -240,12 +240,10 @@ class LocobotTableEnv(MaskEnv):
                 self.sim.model.get_joint_qvel_addr(x) for x in self._joints
             ]
 
-        # img = np.zeros((3, self._img_height, self._img_width), np.uint8)
-        # masks = np.zeros((self._img_height, self._img_width), np.bool)
-        # img = self.render("rgb_array")
-        # masks = self.get_robot_mask()
-        img = np.zeros((48,64,3))
-        masks = np.zeros((48,64,1))
+        img = self.render("rgb_array")
+        masks = self.get_robot_mask()
+        # img = np.zeros((48,64,3))
+        # masks = np.zeros((48,64,1))
         gripper_xpos = self.get_gripper_world_pos()
         # assume 0 for rotation, gripper force
         states = np.array([*gripper_xpos, 0, 0])
@@ -362,7 +360,7 @@ class LocobotTableEnv(MaskEnv):
         Returns a dictionary with observation, action
         """
         obs = self.reset()
-        self.render("human")
+        # self.render("human")
         history = defaultdict(list)
         history["obs"].append(obs)
         self.random_grasp(history)
@@ -397,7 +395,7 @@ class LocobotTableEnv(MaskEnv):
                 history["ac"].append(pad_ac)
 
             obs, _, _, info = self.step(pad_ac)
-            self.render("human")
+            # self.render("human")
             if history is not None:
                 history["obs"].append(obs)
                 for k, v in info.items():
@@ -424,7 +422,7 @@ class LocobotTableEnv(MaskEnv):
                 history["ac"].append(pad_ac)
 
             obs, _, _, info = self.step(pad_ac)
-            self.render("human")
+            # self.render("human")
             if history is not None:
                 history["obs"].append(obs)
                 for k, v in info.items():
@@ -439,7 +437,7 @@ class LocobotTableEnv(MaskEnv):
                 history["ac"].append(pad_ac)
 
             obs, _, _, info = self.step(pad_ac)
-            self.render("human")
+            # self.render("human")
         # move it to a random place location
         noise = 0
         speed = 2
@@ -459,7 +457,7 @@ class LocobotTableEnv(MaskEnv):
                 history["ac"].append(pad_ac)
 
             obs, _, _, info = self.step(pad_ac)
-            self.render("human")
+            # self.render("human")
             if history is not None:
                 history["obs"].append(obs)
                 for k, v in info.items():
@@ -496,16 +494,16 @@ if __name__ == "__main__":
     #         env.step([0,0,0.0, 0.005])
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
-    for i in range(500):
+    for i in range(5):
         # obs = env.reset()
         history = env.generate_demo()
         gif = []
         for o in history["obs"]:
             img = o["observation"]
-            # mask = o["masks"]
-            # img[mask] = (0, 255, 255)
+            mask = o["masks"]
+            img[mask] = (0, 255, 255)
             gif.append(img)
-        # imageio.mimwrite(f"test{i}.gif", gif)
+        imageio.mimwrite(f"test{i}.gif", gif)
     sys.exit(0)
 
     # env.get_robot_mask()
