@@ -8,17 +8,19 @@ from src.env.robotics.utils import (
     reset_mocap_welds,
 )
 from src.env.robotics.masks.base_mask_env import MaskEnv
+from src.env.robotics.rotations import euler2mat, euler2quat
 from gym import spaces
 import numpy as np
 import os
 
+DEBUG = False
 DEFAULT_PITCH = 1.3
 DEFAULT_ROLL = 0.0
 CAMERA_CALIB = np.array(
     [
         [0.008716, 0.75080825, -0.66046272, 0.77440888],
         [0.99985879, 0.00294645, 0.01654445, 0.02565873],
-        [0.01436773, -0.66051366, -0.75067655, 0.64211797],
+        [0.01436773, -0.66051366, -0.75067655, 0.4211797],
         [0.0, 0.0, 0.0, 1.0],
     ]
 )
@@ -43,16 +45,6 @@ class LocobotTableEnv(MaskEnv):
         else:
             self._joints = [f"joint_{i}" for i in range(1, 8)]
 
-        super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
-
-        self._camera_name = "main_cam"
-        # self._joints.append("gripper_revolute_joint")
-        self._joint_references = [
-            self.sim.model.get_joint_qpos_addr(x) for x in self._joints
-        ]
-        self._joint_vel_references = [
-            self.sim.model.get_joint_qvel_addr(x) for x in self._joints
-        ]
         self._geoms = {
             # "robot-geom-0",
             # "robot-geom-1",
@@ -72,6 +64,17 @@ class LocobotTableEnv(MaskEnv):
             "finger_r_geom",
             "finger_l_geom",
         }
+
+        super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
+
+        self._camera_name = "main_cam"
+        # self._joints.append("gripper_revolute_joint")
+        self._joint_references = [
+            self.sim.model.get_joint_qpos_addr(x) for x in self._joints
+        ]
+        self._joint_vel_references = [
+            self.sim.model.get_joint_qvel_addr(x) for x in self._joints
+        ]
         self.action_space = spaces.Box(-1.0, 1.0, shape=(n_actions,), dtype="float32")
         if modified:
             self.locobot_ik = ModifiedAnalyticInverseKinematics()
@@ -84,7 +87,8 @@ class LocobotTableEnv(MaskEnv):
         self._ws_low = [0.2, -0.17, -float('inf')]
         self._ws_high = [0.47, 0.17, float('inf')]
 
-        self.set_opencv_camera_pose("main_cam", CAMERA_CALIB)
+        # modify camera R
+        # self.set_opencv_camera_pose("main_cam", CAMERA_CALIB)
         self.initial_sim_state = None
 
 
@@ -239,11 +243,12 @@ class LocobotTableEnv(MaskEnv):
             self._joint_vel_references = [
                 self.sim.model.get_joint_qvel_addr(x) for x in self._joints
             ]
-
-        img = self.render("rgb_array")
-        masks = self.get_robot_mask()
-        # img = np.zeros((48,64,3))
-        # masks = np.zeros((48,64,1))
+        if DEBUG:
+            img = np.zeros((48,64,3))
+            masks = np.zeros((48,64,1))
+        else:
+            img = self.render("rgb_array")
+            masks = self.get_robot_mask()
         gripper_xpos = self.get_gripper_world_pos()
         # assume 0 for rotation, gripper force
         states = np.array([*gripper_xpos, 0, 0])
@@ -264,7 +269,7 @@ class LocobotTableEnv(MaskEnv):
                 device_id=self._render_device,
             )
             # original image is upside-down, so flip it
-            return data
+            return data[::-1]
         elif mode == "human":
             self._get_viewer(mode).render()
 
@@ -360,7 +365,8 @@ class LocobotTableEnv(MaskEnv):
         Returns a dictionary with observation, action
         """
         obs = self.reset()
-        # self.render("human")
+        if DEBUG:
+            self.render("human")
         history = defaultdict(list)
         history["obs"].append(obs)
         self.random_grasp(history)
@@ -395,7 +401,8 @@ class LocobotTableEnv(MaskEnv):
                 history["ac"].append(pad_ac)
 
             obs, _, _, info = self.step(pad_ac)
-            # self.render("human")
+            if DEBUG:
+                self.render("human")
             if history is not None:
                 history["obs"].append(obs)
                 for k, v in info.items():
@@ -422,7 +429,8 @@ class LocobotTableEnv(MaskEnv):
                 history["ac"].append(pad_ac)
 
             obs, _, _, info = self.step(pad_ac)
-            # self.render("human")
+            if DEBUG:
+                self.render("human")
             if history is not None:
                 history["obs"].append(obs)
                 for k, v in info.items():
@@ -437,12 +445,13 @@ class LocobotTableEnv(MaskEnv):
                 history["ac"].append(pad_ac)
 
             obs, _, _, info = self.step(pad_ac)
-            # self.render("human")
-        # move it to a random place location
+            if DEBUG:
+                self.render("human")
+        # move it to the side
         noise = 0
         speed = 2
         gripper_xpos = self.get_gripper_world_pos()
-        place_xpos = np.random.uniform((-0.1, -0.1, 0.1), high=(0.1, 0.1, 0.15))
+        place_xpos = np.random.uniform((-0.1, -0.1, 0.25), high=(0.1, 0.1, 0.3))
         target = block_xpos + place_xpos
         d = target - gripper_xpos
         step = 0
@@ -457,7 +466,8 @@ class LocobotTableEnv(MaskEnv):
                 history["ac"].append(pad_ac)
 
             obs, _, _, info = self.step(pad_ac)
-            # self.render("human")
+            if DEBUG:
+                self.render("human")
             if history is not None:
                 history["obs"].append(obs)
                 for k, v in info.items():
@@ -481,9 +491,9 @@ if __name__ == "__main__":
     config.gpu = 0
     # config.modified = False
 
-
+    DEBUG = True
     env = LocobotTableEnv(config)
-    # env.reset()
+    env.reset()
     # while True:
     #     env.render("human")
     #     for i in range(10):
@@ -494,16 +504,16 @@ if __name__ == "__main__":
     #         env.step([0,0,0.0, 0.005])
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
-    for i in range(5):
+    for i in range(50):
         # obs = env.reset()
         history = env.generate_demo()
         gif = []
         for o in history["obs"]:
             img = o["observation"]
-            mask = o["masks"]
-            img[mask] = (0, 255, 255)
-            gif.append(img)
-        imageio.mimwrite(f"test{i}.gif", gif)
+            # mask = o["masks"]
+            # img[mask] = (0, 255, 255)
+            # gif.append(img)
+        # imageio.mimwrite(f"test{i}.gif", gif)
     sys.exit(0)
 
     # env.get_robot_mask()
