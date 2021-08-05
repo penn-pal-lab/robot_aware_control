@@ -167,6 +167,9 @@ catkin_install_python(PROGRAMS
   nodes/visual_MPC_controller.py
   nodes/franka_IK_client.py
   nodes/franka_control_client.py
+  nodes/franka_demonstration_collection.py
+  nodes/franka_VMPC_controller.py
+  nodes/franka_demo_VMPC_controller.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

@@ -36,7 +36,7 @@ def create_transfer_loader(config):
         train_data,
         num_workers=config.data_threads,
         batch_size=config.batch_size,
-        shuffle=True,
+        shuffle=False,
         drop_last=False,
         pin_memory=True,
         generator=torch.Generator().manual_seed(config.seed),

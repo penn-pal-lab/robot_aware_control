@@ -75,6 +75,7 @@ class TrajectorySampler(object):
         goal_imgs = torch.stack(
             [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in goal.imgs]
         ).to(dev)
+        goal_masks = torch.stack([torch.from_numpy(g) for g in goal.masks]).to(dev)
         if not suppress_print:
             start_time = timer.time()
             print("####### Gathering Samples #######")
@@ -148,8 +149,11 @@ class TrajectorySampler(object):
                 # compute the img costs
                 goal_idx = t if t < len(goal_imgs) else -1
                 goal_img = goal_imgs[goal_idx]
+                goal_mask = None
+                if goal.masks is not None:
+                    goal_mask = goal_masks[goal_idx]
                 if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input or "dontcare" in cfg.reward_type:
-                    goal_state = State(img=goal_img, mask=goal.masks[0])
+                    goal_state = State(img=goal_img, mask=goal_mask)
                     curr_state = State(img=next_img, mask=masks_thick[t+1, s:e])
                 else:
                     goal_state = State(img=goal_img)

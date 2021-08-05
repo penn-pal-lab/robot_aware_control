@@ -21,6 +21,8 @@ src/prediction/obj_movement_histograms
 franka_data
 *.pdf
 test.py
+human_demo
+tckn_data
 
 # IDE
 *.swp

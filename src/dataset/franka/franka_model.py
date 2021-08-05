@@ -9,7 +9,7 @@ import imageio
 from src.utils.camera_calibration import camera_to_world_dict, LOCO_FRANKA_DIFF
 
 
-PUSH_HEIGHT = 0.15
+PUSH_HEIGHT = 0.12
 
 class FrankaAnalyticalModel(object):
     """

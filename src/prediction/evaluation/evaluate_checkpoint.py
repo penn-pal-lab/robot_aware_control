@@ -10,17 +10,23 @@ import ipdb
 import numpy as np
 from time import time
 from tqdm import tqdm
+from collections import defaultdict
 
 
 def compute_metrics(cf):
     trainer = PredictionTrainer(cf)
     trainer._step = trainer._load_checkpoint(cf.dynamics_model_ckpt)
     trainer.model.eval()
+    trainer.batch_p = defaultdict(float)
 
     test_loader = create_transfer_loader(cf)
     info = trainer._compute_epoch_metrics(test_loader, "test")
     print("PSNR:", info["test/autoreg_psnr"])
     print("SSIM:", info["test/autoreg_ssim"])
+    print("World Loss:", info["test/autoreg_world_loss"])
+    world_mse = info["test/autoreg_world_loss"]
+    psnr = 10 * np.log((1/world_mse)) / np.log(10)
+    print("World PSNR", psnr)
     testing_batch_generator = get_batch(test_loader, trainer._device)
     for i in range(1):
        test_data = next(testing_batch_generator)

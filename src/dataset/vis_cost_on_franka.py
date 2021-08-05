@@ -1,4 +1,5 @@
 import os
+import ipdb
 import numpy as np
 import imageio
 import h5py
@@ -11,8 +12,11 @@ from src.env.robotics.masks.franka_mask_env import FrankaMaskEnv
 from src.prediction.losses import RobotWorldCost
 from src.utils.state import State
 
+VISUALIZE = True
+DATA_ROOT = "/home/pallab/locobot_ws/src/eef_control/data/franka_views/vis_cost"
 
-def compute_all_rews(imgs, masks, cf):
+
+def compute_all_rews(imgs, masks, cf, vis_heatmap=False, write_path=None):
     cost = RobotWorldCost(cf)
     goal_img = imgs[-1]
     goal_mask = masks[-1]
@@ -37,6 +41,24 @@ def compute_all_rews(imgs, masks, cf):
 
         all_rew.append(rew)
         all_relative_rew.append(relative_rew)
+
+        if vis_heatmap:
+            img_diff = np.linalg.norm(
+                np.array(goal_img, dtype=int) - np.array(imgs[i], dtype=int), axis=-1
+            ).clip(0, 255)
+            img_diff = np.array(img_diff, dtype=np.uint8)
+            if "dontcare" in cf.reward_type:
+                img_diff[goal_mask] = 0
+                img_diff[masks[i]] = 0
+                imageio.imwrite(
+                    write_path + "_diff_heat_RA_" + str(i) + ".png",
+                    img_diff,
+                )
+            else:
+                imageio.imwrite(
+                    write_path + "_diff_heat_" + str(i) + ".png",
+                    img_diff,
+                )
     return all_rew, all_relative_rew
 
 
@@ -46,8 +68,6 @@ if __name__ == "__main__":
     parser = create_parser()
     cf, unparsed = parser.parse_known_args()
 
-    VISUALIZE = True
-    DATA_ROOT = "/home/pallab/locobot_ws/src/eef_control/data/franka_views/vis_cost"
     camera_extrinsics = np.array(
         [
             [-0.00589602, 0.76599739, -0.64281664, 1.11131074],
@@ -76,6 +96,7 @@ if __name__ == "__main__":
     count = 0
     linestype = ["", "o", "x", "-", "."]
 
+    colorID = 0
     for fp in tqdm(files):
         imgs = None
         with h5py.File(fp, "r") as hf:
@@ -112,26 +133,55 @@ if __name__ == "__main__":
             obj_name = "box"
 
         cf.reward_type = "dontcare"
-        all_rew, all_relative_rew = compute_all_rews(imgs, masks, cf)
+        all_rew, all_relative_rew = compute_all_rews(
+            imgs,
+            masks,
+            cf,
+            vis_heatmap=True,
+            write_path=fp,
+        )
         plt.plot(
             all_relative_rew[:-1],
-            "r-" + linestype[count % len(linestype)],
-            label=obj_name + "_RA-C",
+            # "C1-" + linestype[count % len(linestype)],
+            "C" + str(colorID) + "-",
+            # label=obj_name + "_RA-C",
+            label="RA Cost"
         )
 
         cf.reward_type = "dense"
-        all_rew, all_relative_rew = compute_all_rews(imgs, masks, cf)
+        all_rew, all_relative_rew = compute_all_rews(
+            imgs,
+            masks,
+            cf,
+            vis_heatmap=True,
+            write_path=fp,
+        )
         plt.plot(
             all_relative_rew[:-1],
-            "b-" + linestype[count % len(linestype)],
-            label=obj_name + "_V-C",
+            # "C0-" + linestype[count % len(linestype)],
+            "C" + str(colorID+1) + "-",
+            # label=obj_name + "_V-C",
+            label="Pixel Cost"
         )
 
+        colorID += 1
         count += 1
 
-    plt.legend()
-    plt.xlabel("time step")
-    plt.ylabel("relative reward")
-    plt.ylim([0, 1.1])
+    font = {
+        "family": "Times New Roman",
+        "color": "black",
+        "weight": "normal",
+        "size": 12,
+    }
+
+    plt.legend(prop={
+        "family": "Times New Roman"
+    })
+
+    plt.xlabel("Timestep", fontdict=font)
+    plt.ylabel("Cost", fontdict=font)
+    plt.title("Relative cost between current \n and goal image", fontdict={"family":"Times New Roman"})
+    plt.ylim([0.5, 1.1])
+    plt.xticks(range(4))
     plt.savefig(DATA_ROOT + "/cost_vis.png")
     plt.show()

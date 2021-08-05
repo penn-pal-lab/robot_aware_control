@@ -77,6 +77,22 @@ def world_mse_criterion(prediction, target, mask):
     mean_err = torch.mean((diff ** 2).sum((1,2,3)) / num_world_pixels)
     return mean_err
 
+def world_psnr_criterion(prediction, target, mask):
+    """
+    MSE of the world pixels
+    prediction / target is B x C x H x W
+    mask is B x 1 x H x W
+    """
+    diff = target - prediction # 3 x H x W
+    mask = mask.type(torch.bool)
+    repeat_mask = mask.repeat(1,3,1,1) # repeat channel dim
+    diff[repeat_mask] = 0
+    num_world_pixels = (~repeat_mask).sum((1,2,3)) + 1
+    batch_mse = (diff ** 2).sum((1,2,3)) / num_world_pixels
+    psnr = 10 * (1 / batch_mse).log() / np.log(10)
+    # mean_err = torch.mean(batch_mse)
+    return psnr
+
 
 def kl_criterion(mu1, logvar1, mu2, logvar2, bs):
     sigma1 = logvar1.mul(0.5).exp()

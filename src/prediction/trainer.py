@@ -42,9 +42,10 @@ from src.prediction.losses import (
     mse_criterion,
     robot_mse_criterion,
     world_mse_criterion,
+    world_psnr_criterion,
 )
 from src.utils.metrics import psnr, ssim
-from src.utils.plot import save_gif
+from src.utils.plot import save_gif, save_gif_with_text
 from torch import optim
 from tqdm import tqdm
 
@@ -513,6 +514,7 @@ class PredictionTrainer(object):
                 "robot": data["robot"],
                 "qpos": data["qpos"][s:e],
                 "folder": data["folder"],
+                "file_path": data["file_path"],
             }
             if cf.model_use_heatmap:
                 batch_data["heatmaps"] = data["heatmaps"][s:e]
@@ -554,7 +556,7 @@ class PredictionTrainer(object):
 
         # now pick the best sample by world error, and average over frames
         if autoregressive and self._config.model == "svg":
-            sampled_losses.sort(key=lambda x: x["autoreg_world_loss"])
+            sampled_losses.sort(key=lambda x: x["autoreg_psnr"], reverse=True)
         best_loss = sampled_losses[0]
 
         for k, v in best_loss.items():
@@ -684,7 +686,12 @@ class PredictionTrainer(object):
                 x_pred_black = zero_robot_region(true_masks[i], x_pred)
                 x_i_black = zero_robot_region(true_masks[i], x_i)
 
-                p = psnr(x_i_black.clamp(0, 1), x_pred_black.clamp(0, 1)).mean().item()
+                batch_p = psnr(x_i_black.clamp(0, 1), x_pred_black.clamp(0, 1))
+                # batch_p = world_psnr_criterion(x_pred, x[i], true_masks[i])
+                for file, p in zip(data["file_path"], batch_p.cpu()):
+                    self.batch_p[file] += p.item()
+
+                p = batch_p.mean().item()
                 s = ssim(x_i_black, x_pred_black).mean().item()
                 losses[f"{prefix}_psnr"] += p
                 losses[f"{prefix}_ssim"] += s
@@ -960,7 +967,7 @@ class PredictionTrainer(object):
         if cf.model == "svg":
             nsample = 3
 
-        b = min(x.shape[1], 16)
+        b = min(x.shape[1], 25)
         # first frame of all videos
         start = 0
         video_len = cf.n_eval
@@ -1124,8 +1131,13 @@ class PredictionTrainer(object):
         else:
             fname = os.path.join(cf.plot_dir, f"{name}_ep{epoch}_{instance}.gif")
             mask_fname = os.path.join(cf.plot_dir, f"{name}_ep{epoch}_{instance}_masks.gif")
-        save_gif(fname, gifs)
-        save_gif(mask_fname, mask_gifs)
+        # save_gif(fname, gifs)
+        batch_p = []
+        for k,v in self.batch_p.items():
+            batch_p.append(f"{(v/5):.2f}")
+        text = [batch_p for _ in range(len(gifs))]
+        save_gif_with_text(fname, gifs, text)
+        # save_gif(mask_fname, mask_gifs)
         if cf.wandb:
             wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
             wandb.log(
