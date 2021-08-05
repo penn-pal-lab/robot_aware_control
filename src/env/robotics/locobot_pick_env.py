@@ -26,7 +26,7 @@ CAMERA_CALIB = np.array(
 )
 
 
-class LocobotTableEnv(MaskEnv):
+class LocobotPickEnv(MaskEnv):
     def __init__(self, config):
         self._config = config
         modified =  config.modified
@@ -39,8 +39,8 @@ class LocobotTableEnv(MaskEnv):
         n_actions = 4
         n_substeps = 20
         seed = None
-        self._img_width = 64 * 4
-        self._img_height = 48 * 4
+        self._img_width = 64
+        self._img_height = 48
         self._render_device = config.render_device
         if modified:
             self._joints = [f"joint_{i}" for i in range(1, 8)]
@@ -548,7 +548,7 @@ if __name__ == "__main__":
     # config.modified = False
 
     DEBUG = True
-    env = LocobotTableEnv(config)
+    env = LocobotPickEnv(config)
     env.reset()
     while True:
         for i in range(15):
