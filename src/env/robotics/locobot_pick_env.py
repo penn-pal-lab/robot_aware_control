@@ -31,6 +31,8 @@ class LocobotTableEnv(MaskEnv):
         self._config = config
         modified =  config.modified
         model_path = f"locobot_pick.xml"
+        if modified:
+            model_path = "locobot_pick_fetch.xml"
         model_path = os.path.join("locobot", model_path)
 
         initial_qpos = None
@@ -137,11 +139,7 @@ class LocobotTableEnv(MaskEnv):
     def reset(self):
         if self.initial_sim_state is None:
             if self._config.modified:
-                # print(self.get_gripper_world_pos())
-                # eef_target_pos = [0.3, 0, 0.55]
-                # self._move(eef_target_pos, speed=1000)
-                self.sim.data.qpos[self._joint_references] = [0, -1.15, 0,  0.35 , 0,  2.3293635, 0]
-                self.sim.forward()
+                self.sim.data.qpos[self._joint_references] = [-0.25862757, -1.20163741,  0.32891832,  1.42506277, -0.10650079,  1.43468923, 0.06129823]
             else:
                 # first move the arm above to avoid object collision
                 robot_above_qpos = [0.0, 0.43050715, 0.2393125, 0.63018035, 0.0, 0, 0]
@@ -159,10 +157,7 @@ class LocobotTableEnv(MaskEnv):
         # some noise to the x/y of the eef initial pos
         noise = np.random.uniform(-0.03, 0.03, size = 2)
         eef_target_pos[:2] += noise
-        if self._config.modified:
-            self._move(eef_target_pos, threshold=0.01, max_time=100)
-        else:
-            self._move(eef_target_pos, threshold=0.01, max_time=100, speed=10)
+        self._move(eef_target_pos, threshold=0.01, max_time=100, speed=10)
 
             # eef_target_pos = [0.27, 0.0, 0.1]
             # # some noise to the x/y of the eef initial pos
@@ -552,28 +547,29 @@ if __name__ == "__main__":
     config.gpu = 0
     # config.modified = False
 
-    DEBUG = False
+    DEBUG = True
     env = LocobotTableEnv(config)
-    # while True:
-    #     env.render("human")
-    #     for i in range(10):
-    #         env.render("human")
-    #         env.step([0, 0, 0,-0.005])
-    #     for i in range(10):
-    #         env.render("human")
-    #         env.step([0,0,0.0, 0.005])
+    env.reset()
+    while True:
+        for i in range(15):
+            env.render("human")
+            env.step([-0,0,0, 0.005])
+        for i in range(15):
+            env.render("human")
+            env.step([-0,0,0, -0.005])
+    # sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
-    for i in range(10):
+    for i in range(1000):
         # obs = env.reset()
         history = env.generate_demo()
         gif = []
-        for o in history["obs"]:
-            img = o["observation"]
-            mask = o["masks"]
-            img[mask] = (0, 255, 255)
-            gif.append(img)
-        imageio.mimwrite(f"test{i}.gif", gif)
+        # for o in history["obs"]:
+        #     img = o["observation"]
+        #     mask = o["masks"]
+        #     img[mask] = (0, 255, 255)
+        #     gif.append(img)
+        # imageio.mimwrite(f"test{i}.gif", gif)
     sys.exit(0)
 
     # env.get_robot_mask()
