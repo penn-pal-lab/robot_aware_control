@@ -275,8 +275,8 @@ class LocobotTableEnv(MaskEnv):
 
     def _sample_objects(self):
         # set objects in radius around spawn
-        center = self.sim.data.get_site_xpos("spawn")[:2]
-        spawn_id = self.sim.model.site_name2id("spawn")
+        center = self.sim.data.get_site_xpos("blockspawn")[:2]
+        spawn_id = self.sim.model.site_name2id("blockspawn")
         radius = self.sim.model.site_size[spawn_id][0]
         failed = False
         sampled_points = []
@@ -286,8 +286,8 @@ class LocobotTableEnv(MaskEnv):
             for i in range(1000):
                 no_overlap = True
                 xy = self._sample_from_circle(center, radius)
-                if np.linalg.norm(xy - center) < 0.08:
-                    continue
+                # if np.linalg.norm(xy - center) < 0.08:
+                #     continue
 
                 for other_xy in sampled_points:
                     if np.linalg.norm(xy - other_xy) < 0.07:
@@ -365,16 +365,23 @@ class LocobotTableEnv(MaskEnv):
         Runs a hard coded behavior and stores the episode
         Returns a dictionary with observation, action
         """
+        # initialize place pos
+        place_xpos = self.place_xpos = np.array([0.3, 0.11, 0.14])
+        place_noise = np.random.uniform([-0.05, -0.02], [0.05, 0.03], size=2)
+        place_xpos[:2] += place_noise
+        body_idx = self.sim.model.body_name2id("placebody")
+        self.sim.model.body_pos[body_idx] = place_xpos.copy()
+        # initialize the place  marker
         obs = self.reset()
         if DEBUG:
             self.render("human")
         history = defaultdict(list)
         history["obs"].append(obs)
-        self.random_grasp(history)
+        self.pick_place(place_xpos, history)
         return history
 
 
-    def random_grasp(self, history, max_actions=14):
+    def pick_place(self, place_xpos, history, max_actions=14):
         """first move robot gripper over random object,
         then grasp
         """
@@ -383,14 +390,15 @@ class LocobotTableEnv(MaskEnv):
 
         obj = np.random.choice(self._objects)
         history["pushed_obj"] = obj
+
         # move gripper behind the block and oriented for a goal push
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
         above_block_xpos = block_xpos.copy()
         above_block_xpos[2] += 0.05
         # move robot above slightly above block
         target = above_block_xpos
-        noise = 0.05
-        gripper_noise = 0.001
+        noise = 0.07
+        gripper_noise = 0.002
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -422,7 +430,7 @@ class LocobotTableEnv(MaskEnv):
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
         block_xpos[2] -= 0.01
         target = block_xpos
-        noise = 0.01
+        noise = 0.02
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -492,14 +500,7 @@ class LocobotTableEnv(MaskEnv):
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
 
-        # choose left or right side of black edge
-        # black edge starts at +- 0.2 in y axis
-        place_xpos = gripper_xpos.copy()
-        place_xpos[2] = 0.09
-        place_xpos[1] = -0.23
-        if gripper_xpos[1] > 0:
-            place_xpos[1] = 0.23
-
+        # move it on top of the platform
         target = place_xpos
         d = target - gripper_xpos
         step = 0
@@ -563,7 +564,7 @@ if __name__ == "__main__":
     #         env.step([0,0,0.0, 0.005])
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
-    for i in range(4):
+    for i in range(10):
         # obs = env.reset()
         history = env.generate_demo()
         gif = []

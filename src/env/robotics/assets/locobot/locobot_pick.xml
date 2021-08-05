@@ -73,18 +73,29 @@
             <site name="object2" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
         </body> -->
 
-        <body name="arenaboundary" pos="0.3 0 0.05">
-            <geom  pos="0 0.25 0" size="0.2 0.12 0.03" rgba="0.2 0.2 0.2 1" type="box" ></geom>
-            <geom  pos="0 -0.25 0" size="0.2 0.12 0.03" rgba="0.2 0.2 0.2 1" type="box" ></geom>
+
+        <body name="blockspawnboundary" pos="0.3 0.0 0.05">
             <!-- <geom  pos="0 -0.2 0" size="0.2 0.005 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
             <!-- <geom  pos="-0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
             <!-- <geom pos="0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
-            <site name="spawn" pos="0 0 0" size="0.1 0.005" rgba="0.1 0 0 0" type="cylinder"></site>
+            <site name="blockspawn" pos="0 0 0" size="0.05 0.005" rgba="0.1 0 0 0" type="cylinder"></site>
+        </body>
+
+        <body name="arenaboundary" pos="0.3 0 0.05">
+            <geom  pos="0 0.15 0" size="0.07 0.07 0.07" rgba="0.0 1 1 1" type="box" ></geom>
+            <!-- <geom  pos="0 -0.25 0" size="0.2 0.12 0.03" rgba="0.2 0.2 0.2 1" type="box" ></geom> -->
+            <!-- <geom  pos="0 -0.2 0" size="0.2 0.005 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
+            <!-- <geom  pos="-0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
+            <!-- <geom pos="0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
+            <site name="spawn" pos="0 0 0" size="0.05 0.005" rgba="0.1 0 0 0" type="cylinder"></site>
+        </body>
+        <body name="placebody" pos="0.3 0 0.05">
+            <site name="place_site" pos="0 0 0" size="0.01 0.01 0.01" rgba="1 1 0 0" type="sphere"></site>
         </body>
 
 
         <!-- camera -->
-        <camera fovy="43.3" name="main_cam" pos="0.75 0  0.35" mode="targetbody" target="arenaboundary" ></camera>
+        <camera fovy="43.3" name="main_cam" pos="0.75 0  0.32" mode="targetbody" target="arenaboundary" ></camera>
         <!-- <site rgba="1 0 0 1" name="main_cam_site" pos="0.81822263 -0.05511966  0.45810006" quat="-0.3351224   0.6429879   0.61176364 -0.31623533" type="box" size="0.02 0.05 0.1"></site> -->
         <site rgba="1 0 0 1" name="origin_site" pos="0 0 0" quat="1 0 0 0" size="0.02"></site>
         <!-- <body name="eef_body">
