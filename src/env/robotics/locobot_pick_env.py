@@ -393,6 +393,7 @@ class LocobotPickEnv(MaskEnv):
         # move robot above slightly above block
         target = above_block_xpos
         noise = 0.07
+        z_noise = 0.04
         gripper_noise = 0.002
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
@@ -402,6 +403,7 @@ class LocobotPickEnv(MaskEnv):
             # add some random noise to ac
             if noise > 0:
                 d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
+                d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
             ac = np.clip(d[:3] * speed, -1, 1)
             gripper_ac = -0.002  + np.random.uniform(-gripper_noise, gripper_noise) # start closing
             pad_ac = [*ac, gripper_ac]
@@ -434,6 +436,7 @@ class LocobotPickEnv(MaskEnv):
             # add some random noise to ac
             if noise > 0:
                 d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
+                d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
             ac = np.clip(d[:3] * speed, -1, 1)
             gripper_ac = -0.002 + np.random.uniform(-gripper_noise, gripper_noise)# close
             pad_ac = [*ac, gripper_ac]
@@ -470,6 +473,7 @@ class LocobotPickEnv(MaskEnv):
             # add some random noise to ac
             if noise > 0:
                 d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
+                d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
             ac = np.clip(d[:3] * speed, -1, 1)
             gripper_ac = -0.002 + np.random.uniform(-gripper_noise, gripper_noise)# close
             pad_ac = [*ac, gripper_ac]
@@ -505,6 +509,7 @@ class LocobotPickEnv(MaskEnv):
                 # add some random noise to ac
                 if noise > 0:
                     d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
+                    d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
                 ac = np.clip(d[:3] * speed, -1, 1)
                 gripper_ac = -0.002 + np.random.uniform(-gripper_noise, gripper_noise)# close
                 pad_ac = [*ac, gripper_ac]
@@ -529,7 +534,7 @@ class LocobotPickEnv(MaskEnv):
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
         # print(block_xpos[2])
         success =  block_xpos[2] >= 0.099
-        history["success"] = True
+        history["success"] = success
         # print("total", len(history["ac"]), total_steps)
         # print("success", success)
 
@@ -549,14 +554,14 @@ if __name__ == "__main__":
 
     DEBUG = True
     env = LocobotPickEnv(config)
-    env.reset()
-    while True:
-        for i in range(15):
-            env.render("human")
-            env.step([-0,0,0, 0.005])
-        for i in range(15):
-            env.render("human")
-            env.step([-0,0,0, -0.005])
+    # env.reset()
+    # while True:
+    #     for i in range(15):
+    #         env.render("human")
+    #         env.step([-0,0,0, 0.005])
+    #     for i in range(15):
+    #         env.render("human")
+    #         env.step([-0,0,0, -0.005])
     # sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
