@@ -81,7 +81,7 @@ class LocobotTableEnv(MaskEnv):
         else:
             self.locobot_ik = AnalyticInverseKinematics()
 
-        self._objects = ["object0", "object1", "object2"]
+        self._objects = ["object1"]
 
         # workspace boundaries for eef
         self._ws_low = [0.2, -0.17, -float('inf')]
@@ -329,6 +329,7 @@ class LocobotTableEnv(MaskEnv):
         threshold=0.01,
         speed=10,
         noise=0,
+        gripper=0.05
     ):
         if target_type == "gripper":
             gripper_xpos = self.get_gripper_world_pos()
@@ -342,7 +343,7 @@ class LocobotTableEnv(MaskEnv):
             if noise > 0:
                 d[:3] = d[:3] + np.random.uniform(-noise, noise, size=2)
             ac = np.clip(d[:3] * speed, -1, 1)
-            pad_ac = [*ac, 0]
+            pad_ac = [*ac, gripper]
             if history is not None:
                 history["ac"].append(pad_ac)
 
@@ -373,10 +374,13 @@ class LocobotTableEnv(MaskEnv):
         return history
 
 
-    def random_grasp(self, history):
+    def random_grasp(self, history, max_actions=14):
         """first move robot gripper over random object,
         then grasp
         """
+        total_steps = 0
+        max_actions = 14
+
         obj = np.random.choice(self._objects)
         history["pushed_obj"] = obj
         # move gripper behind the block and oriented for a goal push
@@ -385,18 +389,20 @@ class LocobotTableEnv(MaskEnv):
         above_block_xpos[2] += 0.05
         # move robot above slightly above block
         target = above_block_xpos
-        noise = 0
-        speed = 5
+        noise = 0.05
+        gripper_noise = 0.001
+        speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
         step = 0
-        while np.linalg.norm(d[:2]) > 0.005 and step < 10:
+        while np.linalg.norm(d[:2]) > 0.01 and step < 3:
             # add some random noise to ac
             if noise > 0:
-                d[:3] = d[:3] + np.random.uniform(-noise, noise, size=2)
+                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
             ac = np.clip(d[:3] * speed, -1, 1)
-            gripper_ac = 0.05 # open
+            gripper_ac = -0.002  + np.random.uniform(-gripper_noise, gripper_noise) # start closing
             pad_ac = [*ac, gripper_ac]
+            pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
             if history is not None:
                 history["ac"].append(pad_ac)
 
@@ -410,58 +416,25 @@ class LocobotTableEnv(MaskEnv):
             gripper_xpos = self.get_gripper_world_pos()
             d = target - gripper_xpos
             step += 1
-        # move robot onto block, and close gripper
+        total_steps += step
+        # print("move above", step)
+        # descend onto block, and close gripper
+        block_xpos = self.sim.data.get_site_xpos(obj).copy()
+        block_xpos[2] -= 0.01
         target = block_xpos
-        noise = 0
-        speed = 10
+        noise = 0.01
+        speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
         step = 0
-        while np.linalg.norm(d) > 0.01 and step < 10:
+        while np.linalg.norm(d) > 0.01 and step < 3:
             # add some random noise to ac
             if noise > 0:
-                d[:3] = d[:3] + np.random.uniform(-noise, noise, size=2)
+                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
             ac = np.clip(d[:3] * speed, -1, 1)
-            gripper_ac = -0.0025 # close
-            gripper_ac = 0.0 # close
+            gripper_ac = -0.002 + np.random.uniform(-gripper_noise, gripper_noise)# close
             pad_ac = [*ac, gripper_ac]
-            if history is not None:
-                history["ac"].append(pad_ac)
-
-            obs, _, _, info = self.step(pad_ac)
-            if DEBUG:
-                self.render("human")
-            if history is not None:
-                history["obs"].append(obs)
-                for k, v in info.items():
-                    history[k].append(v)
-            gripper_xpos = self.get_gripper_world_pos()
-            d = target - gripper_xpos
-            step += 1
-        # fully close gripper
-        for i in range(5):
-            pad_ac = [0, 0, 0, -0.005]
-            if history is not None:
-                history["ac"].append(pad_ac)
-
-            obs, _, _, info = self.step(pad_ac)
-            if DEBUG:
-                self.render("human")
-        # move it to the side
-        noise = 0
-        speed = 2
-        gripper_xpos = self.get_gripper_world_pos()
-        place_xpos = np.random.uniform((-0.1, -0.1, 0.25), high=(0.1, 0.1, 0.3))
-        target = block_xpos + place_xpos
-        d = target - gripper_xpos
-        step = 0
-        while np.linalg.norm(d) > 0.01 and step < 10:
-            # add some random noise to ac
-            if noise > 0:
-                d[:3] = d[:3] + np.random.uniform(-noise, noise, size=2)
-            ac = np.clip(d[:3] * speed, -1, 1)
-            gripper_ac = -0.005 # close
-            pad_ac = [*ac, gripper_ac]
+            pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
             if history is not None:
                 history["ac"].append(pad_ac)
 
@@ -476,6 +449,93 @@ class LocobotTableEnv(MaskEnv):
             d = target - gripper_xpos
             step += 1
 
+        total_steps += step
+        # print("pick", step)
+
+        # Place primitive
+        noise = 0.01
+        speed = 40
+        gripper_xpos = self.get_gripper_world_pos()
+        block_xpos = self.sim.data.get_site_xpos(obj).copy()
+
+        target = block_xpos.copy()
+        target[2] = 0.15
+        d = target - gripper_xpos
+        step = 0
+        # first lift it up
+        while np.linalg.norm(d) > 0.01 and step < 2:
+            # add some random noise to ac
+            if noise > 0:
+                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
+            ac = np.clip(d[:3] * speed, -1, 1)
+            gripper_ac = -0.002 + np.random.uniform(-gripper_noise, gripper_noise)# close
+            pad_ac = [*ac, gripper_ac]
+            pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
+            if history is not None:
+                history["ac"].append(pad_ac)
+
+            obs, _, _, info = self.step(pad_ac)
+            if DEBUG:
+                self.render("human")
+            if history is not None:
+                history["obs"].append(obs)
+                for k, v in info.items():
+                    history[k].append(v)
+            gripper_xpos = self.get_gripper_world_pos()
+            d = target - gripper_xpos
+            step += 1
+        # print("lift", step)
+        total_steps += step
+
+        # move it to a side.
+        noise = 0
+        speed = 40
+        gripper_xpos = self.get_gripper_world_pos()
+
+        # choose left or right side of black edge
+        # black edge starts at +- 0.2 in y axis
+        place_xpos = gripper_xpos.copy()
+        place_xpos[2] = 0.09
+        place_xpos[1] = -0.23
+        if gripper_xpos[1] > 0:
+            place_xpos[1] = 0.23
+
+        target = place_xpos
+        d = target - gripper_xpos
+        step = 0
+        while total_steps < max_actions:
+
+            if np.linalg.norm(d) > 0.01:
+                # add some random noise to ac
+                if noise > 0:
+                    d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
+                ac = np.clip(d[:3] * speed, -1, 1)
+                gripper_ac = -0.002 + np.random.uniform(-gripper_noise, gripper_noise)# close
+                pad_ac = [*ac, gripper_ac]
+                pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
+            else:
+                pad_ac = np.zeros(4)
+
+            if history is not None:
+                history["ac"].append(pad_ac)
+
+            obs, _, _, info = self.step(pad_ac)
+            if DEBUG:
+                self.render("human")
+            if history is not None:
+                history["obs"].append(obs)
+                for k, v in info.items():
+                    history[k].append(v)
+            gripper_xpos = self.get_gripper_world_pos()
+            d = target - gripper_xpos
+            total_steps += 1
+
+        block_xpos = self.sim.data.get_site_xpos(obj).copy()
+        # print(block_xpos[2])
+        success =  block_xpos[2] >= 0.099
+        history["success"] = True
+        # print("total", len(history["ac"]), total_steps)
+        # print("success", success)
 
     def get_gripper_world_pos(self):
         return self.sim.data.get_site_xpos("robot0:grip").copy()
@@ -491,9 +551,8 @@ if __name__ == "__main__":
     config.gpu = 0
     # config.modified = False
 
-    DEBUG = True
+    DEBUG = False
     env = LocobotTableEnv(config)
-    env.reset()
     # while True:
     #     env.render("human")
     #     for i in range(10):
@@ -504,16 +563,16 @@ if __name__ == "__main__":
     #         env.step([0,0,0.0, 0.005])
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
-    for i in range(50):
+    for i in range(4):
         # obs = env.reset()
         history = env.generate_demo()
         gif = []
         for o in history["obs"]:
             img = o["observation"]
-            # mask = o["masks"]
-            # img[mask] = (0, 255, 255)
-            # gif.append(img)
-        # imageio.mimwrite(f"test{i}.gif", gif)
+            mask = o["masks"]
+            img[mask] = (0, 255, 255)
+            gif.append(img)
+        imageio.mimwrite(f"test{i}.gif", gif)
     sys.exit(0)
 
     # env.get_robot_mask()

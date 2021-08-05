@@ -55,27 +55,27 @@
         </body>
 
         <!-- Objects and tray -->
-        <body name="object0" pos="0.3 0.1 0.075">
+        <!-- <body name="object0" pos="0.3 0.1 0.075">
 			<joint name="object0:joint" type="free" damping="0.01"></joint>
-			<geom size="0.025 0.025 0.02" type="box" condim="3" name="object0" material="block_mat" mass="0.2"  quat="1 0 0 0"></geom>
+			<geom size="0.025 0.025 0.02" type="box" condim="4" name="object0" material="block_mat" mass="0.2"  quat="1 0 0 0"></geom>
 			<site name="object0" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
-        </body>
+        </body> -->
 
         <body name="object1" pos="0.4 0 0.075">
             <joint name="object1:joint" type="free" damping="0.01"></joint>
-            <geom size="0.025 0.025 0.02" type="box" condim="3" name="object1" rgba="1 0 0 1" material="block_mat" mass="0.2" ></geom>
+            <geom size="0.025 0.025 0.02" type="box" condim="4" solref="0.001 1" name="object1" rgba="1 0 0 1" material="block_mat" mass="0.2" ></geom>
             <site name="object1" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
 		</body>
 
-        <body name="object2" pos="0.5 0 0.075">
+        <!-- <body name="object2" pos="0.5 0 0.075">
             <joint name="object2:joint" type="free" damping="0.01"></joint>
-            <geom size="0.025 0.025 0.02" type="box" condim="3" name="object2" rgba="0 1 0 1" material="block_mat" mass="0.1"></geom>
+            <geom size="0.025 0.025 0.02" type="box" condim="4" name="object2" rgba="0 1 0 1" material="block_mat" solref="0.001 1" mass="0.1"></geom>
             <site name="object2" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
-        </body>
+        </body> -->
 
         <body name="arenaboundary" pos="0.3 0 0.05">
-            <geom  pos="0 0.25 0" size="0.2 0.1 0.005" rgba="0.2 0.2 0.2 1" type="box" ></geom>
-            <geom  pos="0 -0.25 0" size="0.2 0.1 0.005" rgba="0.2 0.2 0.2 1" type="box" ></geom>
+            <geom  pos="0 0.25 0" size="0.2 0.12 0.03" rgba="0.2 0.2 0.2 1" type="box" ></geom>
+            <geom  pos="0 -0.25 0" size="0.2 0.12 0.03" rgba="0.2 0.2 0.2 1" type="box" ></geom>
             <!-- <geom  pos="0 -0.2 0" size="0.2 0.005 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
             <!-- <geom  pos="-0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
             <!-- <geom pos="0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
@@ -84,7 +84,7 @@
 
 
         <!-- camera -->
-        <camera fovy="43.3" name="main_cam" pos="0.7 0  0.35" mode="targetbody" target="arenaboundary" ></camera>
+        <camera fovy="43.3" name="main_cam" pos="0.75 0  0.35" mode="targetbody" target="arenaboundary" ></camera>
         <!-- <site rgba="1 0 0 1" name="main_cam_site" pos="0.81822263 -0.05511966  0.45810006" quat="-0.3351224   0.6429879   0.61176364 -0.31623533" type="box" size="0.02 0.05 0.1"></site> -->
         <site rgba="1 0 0 1" name="origin_site" pos="0 0 0" quat="1 0 0 0" size="0.02"></site>
         <!-- <body name="eef_body">
@@ -140,13 +140,13 @@
                                 <inertial pos="0.0100192 0.00643833 -0.0048328" quat="0.522879 0.523899 0.475677 0.475246" mass="0.0121931" diaginertia="3.13241e-06 2.77936e-06 6.51268e-07" />
                                 <joint axis="0 -1 0" name="joint_7" range="0 0.03"></joint>
                                 <geom name="finger_r_geom" type="mesh" rgba="1 0.819608 0.933333 1" mesh="finger_r" contype="0" conaffinity="0"/>
-                                <geom name="finger_r_contact_geom_1" pos="0.016 -0.009 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 0 0" friction="1 0.05 0.01" />
+                                <geom name="finger_r_contact_geom_1" pos="0.016 -0.009 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 0 0" friction="1 0.005 0.0001" />
                             </body>
                             <body childclass="robot0:fetchGripper" name="finger_l" pos="0.07285 0.0 0">
                                 <inertial pos="0.0100192 0.00643833 -0.0048328" quat="0.522879 0.523899 0.475677 0.475246" mass="0.0121931" diaginertia="3.13241e-06 2.77936e-06 6.51268e-07" />
                                 <joint axis="0 1 0" name="joint_6" range="0 0.03"></joint>
                                 <geom name="finger_l_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="finger_l" contype="0" conaffinity="0"/>
-                                <geom name="finger_l_contact_geom_1" pos="0.016 0.006 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 1 0"  friction="1 0.05 0.01"/>
+                                <geom name="finger_l_contact_geom_1" pos="0.016 0.006 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 1 0"    friction="1 0.005 0.0001"/>
                                 <!-- <geom name="finger_l_contact_geom_1" pos="0.016 0.006 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 1 0" /> -->
                                 <!-- <site name="robot0:grip" pos="0.03 0 0" rgba="1 1 0 0" size="0.01 0.01 0.01"></site> -->
                             </body>
