@@ -1142,9 +1142,9 @@ class PredictionTrainer(object):
         # save_gif(mask_fname, mask_gifs)
         if cf.wandb:
             wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
-            wandb.log(
+            # wandb.log(
             # {f"{name}/masks_gifs": wandb.Video(mask_fname, format="gif")}, step=self._step
-            )
+            # )
 
     def predict_video(self, data):
         """Generate predictions for the video
