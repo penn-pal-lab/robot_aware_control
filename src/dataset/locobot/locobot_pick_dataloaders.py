@@ -24,8 +24,8 @@ def create_loaders(config):
     random.shuffle(files)
 
     # TODO: change dataset splitting
-    n_test = 10
-    n_train = 100
+    n_test = 500
+    n_train = 10000
 
     X_test = files[:n_test]
     y_test = file_labels[:n_test]
