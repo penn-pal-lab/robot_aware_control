@@ -275,6 +275,7 @@ def add_dataset_arguments(parser):
             "finetune_widowx",
             "train_locobot_singleview",
             "train_locobot_table",
+            "train_locobot_pick",
             "finetune_locobot",
             "eval_franka",
             "control_franka",

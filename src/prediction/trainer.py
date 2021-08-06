@@ -937,6 +937,8 @@ class PredictionTrainer(object):
             from src.dataset.locobot.locobot_singleview_dataloader import create_finetune_loaders as create_loaders
         elif self._config.experiment == "train_locobot_table":
             from src.dataset.locobot.locobot_table_dataloaders import create_loaders
+        elif self._config.experiment == "train_locobot_pick":
+            from src.dataset.locobot.locobot_pick_dataloaders import create_loaders
         else:
             raise NotImplementedError(self._config.experiment)
         self.train_loader, self.test_loader = create_loaders(self._config)

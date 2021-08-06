@@ -9,6 +9,4 @@ def zero_robot_region(mask, image, inplace=False):
     if not inplace:
         image = image.clone()
     image[robot_mask] *= 0
-    # change to white
-    image[robot_mask] += 1
     return image

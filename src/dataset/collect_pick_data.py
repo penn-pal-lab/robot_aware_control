@@ -104,8 +104,8 @@ def collect_svg_data():
     init_mjrender_device(config)
 
     config.modified = MODIFIED
-    config.demo_dir = f"/scratch/edward/Robonet/locobot_pick{'_fetch' if MODIFIED else ''}_views/c0"
-    # config.demo_dir = f"/home/pallab/locobot_ws/src/roboaware/demos"
+    # config.demo_dir = f"/scratch/edward/Robonet/locobot_pick{'_fetch' if MODIFIED else ''}_views/c0"
+    config.demo_dir = f"/home/pallab/locobot_ws/src/roboaware/demos"
     create_demo_dataset(config, num_demos, num_workers, record)
 
 
