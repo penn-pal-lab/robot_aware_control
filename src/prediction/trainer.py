@@ -688,8 +688,8 @@ class PredictionTrainer(object):
 
                 batch_p = psnr(x_i_black.clamp(0, 1), x_pred_black.clamp(0, 1))
                 # batch_p = world_psnr_criterion(x_pred, x[i], true_masks[i])
-                for file, p in zip(data["file_path"], batch_p.cpu()):
-                    self.batch_p[file] += p.item()
+                # for file, p in zip(data["file_path"], batch_p.cpu()):
+                    # self.batch_p[file] += p.item()
 
                 p = batch_p.mean().item()
                 s = ssim(x_i_black, x_pred_black).mean().item()
@@ -1133,12 +1133,12 @@ class PredictionTrainer(object):
         else:
             fname = os.path.join(cf.plot_dir, f"{name}_ep{epoch}_{instance}.gif")
             mask_fname = os.path.join(cf.plot_dir, f"{name}_ep{epoch}_{instance}_masks.gif")
-        # save_gif(fname, gifs)
-        batch_p = []
-        for k,v in self.batch_p.items():
-            batch_p.append(f"{(v/5):.2f}")
-        text = [batch_p for _ in range(len(gifs))]
-        save_gif_with_text(fname, gifs, text)
+        save_gif(fname, gifs)
+        # batch_p = []
+        # for k,v in self.batch_p.items():
+        #     batch_p.append(f"{(v/5):.2f}")
+        # text = [batch_p for _ in range(len(gifs))]
+        # save_gif_with_text(fname, gifs, text)
         # save_gif(mask_fname, mask_gifs)
         if cf.wandb:
             wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
