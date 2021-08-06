@@ -743,7 +743,7 @@ class PredictionTrainer(object):
         # load models and dataset
         self._step = self._load_checkpoint(cf.dynamics_model_ckpt)
         self._setup_data()
-        T = 31
+        T = 15
         window = cf.n_past + cf.n_future
         total = cf.niter * cf.epoch_size * floor(T / window)
         desc = "batches seen"
