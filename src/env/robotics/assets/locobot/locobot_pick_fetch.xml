@@ -163,12 +163,12 @@
                                             <body euler="0 0 0" name="robot0:gripper_link" pos="0.0832 0 0">
                                                 <inertial diaginertia="0.0024 0.0019 0.0013" mass="1.5175" pos="-0.045 -0.00005 -0.00085" quat="0 0.7071 0 0.7071"></inertial>
                                                 <geom mesh="robot0:gripper_link" name="robot0:gripper_link" material="robot0:gripper_mat"></geom>
-                                                <body childclass="robot0:fetchGripper" name="robot0:r_gripper_finger_link" pos="0 0.0159 0">
+                                                <body childclass="robot0:fetchGripper" name="robot0:r_gripper_finger_link" pos="0 0.0195 0">
                                                     <inertial diaginertia="0.1 0.1 0.1" mass="4" pos="-0.005 0 0"></inertial>
                                                     <joint axis="0 1 0" name="robot0:r_gripper_finger_joint" range="0 0.02"></joint>
                                                     <geom pos="0 -0.004 0" size="0.01925 0.0035 0.01175" type="box" name="robot0:r_gripper_finger_link" material="robot0:gripper_finger_mat" friction="1 0.005 0.0001"></geom>
                                                 </body>
-                                                <body childclass="robot0:fetchGripper" name="robot0:l_gripper_finger_link" pos="0 -0.0159 0">
+                                                <body childclass="robot0:fetchGripper" name="robot0:l_gripper_finger_link" pos="0 -0.0195 0">
                                                     <inertial diaginertia="0.1 0.1 0.1" mass="4" pos="-0.005 0 0"></inertial>
                                                     <joint axis="0 -1 0" name="robot0:l_gripper_finger_joint" range="0 0.02"></joint>
                                                     <geom pos="0 0.004 0" size="0.01925 0.0035 0.01175" type="box" name="robot0:l_gripper_finger_link" material="robot0:gripper_finger_mat" friction="1 0.005 0.0001"></geom>

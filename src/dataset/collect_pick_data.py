@@ -22,6 +22,7 @@ def generate_demos(rank, config, record, num_trajectories):
     config.seed = rank
     env = LocobotPickEnv(config)
     len_stats = []
+    succ_stats = 0
     it = range(num_trajectories)
     if rank == 0:
         it = tqdm(it)
@@ -33,6 +34,7 @@ def generate_demos(rank, config, record, num_trajectories):
         record_path = f"videos/pick_{config.seed}_{i}.gif"
         obs = history["obs"]  # array of observation dictionaries
         len_stats.append(len(obs))
+        succ_stats += int(history["success"])
         states = []
         masks = []
         imgs = []
@@ -57,7 +59,7 @@ def generate_demos(rank, config, record, num_trajectories):
             create_dataset("masks", data=masks)
 
     # print out stats about the dataset
-    stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}\n"
+    stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}\n Success: {succ_stats/num_trajectories}"
     print(stats_str)
     stats_path = os.path.join(config.demo_dir, f"stats_pick_{config.seed}.txt")
     with open(stats_path, "w") as f:

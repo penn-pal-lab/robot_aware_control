@@ -395,6 +395,9 @@ class LocobotPickEnv(MaskEnv):
         noise = 0.07
         z_noise = 0.04
         gripper_noise = 0.002
+        # noise = 0.00
+        # z_noise = 0.00
+        # gripper_noise = 0.000
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -428,6 +431,7 @@ class LocobotPickEnv(MaskEnv):
         block_xpos[2] -= 0.01
         target = block_xpos
         noise = 0.02
+        # noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -438,7 +442,7 @@ class LocobotPickEnv(MaskEnv):
                 d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
                 d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
             ac = np.clip(d[:3] * speed, -1, 1)
-            gripper_ac = -0.002 + np.random.uniform(-gripper_noise, gripper_noise)# close
+            gripper_ac = -0.01 + np.random.uniform(-gripper_noise, gripper_noise)# close
             pad_ac = [*ac, gripper_ac]
             pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
             if history is not None:
@@ -460,6 +464,7 @@ class LocobotPickEnv(MaskEnv):
 
         # Place primitive
         noise = 0.01
+        # noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
@@ -475,7 +480,7 @@ class LocobotPickEnv(MaskEnv):
                 d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
                 d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
             ac = np.clip(d[:3] * speed, -1, 1)
-            gripper_ac = -0.002 + np.random.uniform(-gripper_noise, gripper_noise)# close
+            gripper_ac = -0.01 + np.random.uniform(-gripper_noise, gripper_noise)# close
             pad_ac = [*ac, gripper_ac]
             pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
             if history is not None:
@@ -511,7 +516,7 @@ class LocobotPickEnv(MaskEnv):
                     d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
                     d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
                 ac = np.clip(d[:3] * speed, -1, 1)
-                gripper_ac = -0.002 + np.random.uniform(-gripper_noise, gripper_noise)# close
+                gripper_ac = -0.01 + np.random.uniform(-gripper_noise, gripper_noise)# close
                 pad_ac = [*ac, gripper_ac]
                 pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
             else:
@@ -533,7 +538,7 @@ class LocobotPickEnv(MaskEnv):
 
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
         # print(block_xpos[2])
-        success =  block_xpos[2] >= 0.099
+        success =  np.linalg.norm(block_xpos - place_xpos) < 0.02
         history["success"] = success
         # print("total", len(history["ac"]), total_steps)
         # print("success", success)
@@ -565,9 +570,11 @@ if __name__ == "__main__":
     # sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
-    for i in range(1000):
+    num_success = 0
+    for i in range(100):
         # obs = env.reset()
         history = env.generate_demo()
+        num_success += int(history["success"])
         gif = []
         # for o in history["obs"]:
         #     img = o["observation"]
@@ -575,6 +582,7 @@ if __name__ == "__main__":
         #     img[mask] = (0, 255, 255)
         #     gif.append(img)
         # imageio.mimwrite(f"test{i}.gif", gif)
+    print("success", num_success)
     sys.exit(0)
 
     # env.get_robot_mask()
