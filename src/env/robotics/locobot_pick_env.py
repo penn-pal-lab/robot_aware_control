@@ -1,6 +1,5 @@
 from collections import defaultdict
 import copy
-from src.env.robotics.masks.locobot_analytical_ik import AnalyticInverseKinematics, ModifiedAnalyticInverseKinematics
 from src.env.robotics.utils import (
     mocap_set_action,
     ctrl_set_action,
@@ -38,7 +37,8 @@ class LocobotPickEnv(MaskEnv):
         initial_qpos = None
         n_actions = 4
         n_substeps = 20
-        seed = None
+        seed = config.seed
+        np.random.seed(seed)
         self._img_width = 64
         self._img_height = 48
         self._render_device = config.render_device
@@ -78,10 +78,6 @@ class LocobotPickEnv(MaskEnv):
             self.sim.model.get_joint_qvel_addr(x) for x in self._joints
         ]
         self.action_space = spaces.Box(-1.0, 1.0, shape=(n_actions,), dtype="float32")
-        if modified:
-            self.locobot_ik = ModifiedAnalyticInverseKinematics()
-        else:
-            self.locobot_ik = AnalyticInverseKinematics()
 
         self._objects = ["object1"]
 
