@@ -74,7 +74,6 @@ class EpisodeRunner(object):
             if cfg.use_env_dynamics:
                 curr_state = env.get_flattened_state()
             start = State(img=curr_img, mask=curr_mask, state=curr_state)
-
             goal_imgs = demo["observations"][goal_timestep + 1:]
             goal_masks = demo["masks"][goal_timestep + 1:]
             opt_traj = demo["actions"][goal_timestep:]
@@ -89,7 +88,10 @@ class EpisodeRunner(object):
             ep_timestep += 1
             # TODO: update goal timestep based on progress
             goal_timestep += 1
-            if ep_timestep >= 9:
+            if goal_timestep + 1 >= len(demo["observations"]):
+                goal_timestep -= 1
+
+            if ep_timestep >= 15:
                 break
 
         imageio.mimwrite("exec.gif", [x["observation"] for x in trajectory["obs"]])
@@ -195,7 +197,7 @@ if __name__ == "__main__":
     config, _ = argparser()
     config.use_env_dynamics = True
     config.action_dim = 4
-    config.action_candidates = 300
+    config.action_candidates = 100
     config.cem_init_std = 0.5
     runner = EpisodeRunner(config)
     runner.run_episode(0, demo_name, demo_path)

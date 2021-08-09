@@ -54,6 +54,8 @@ class TrajectorySampler(object):
         if opt_traj is not None:
             # (N, T, 1), (T,1)
             opt_traj = torch.from_numpy(opt_traj[:T][None])
+            # add no-op actions if horizon is greater than opt action sequence
+            opt_traj = torch.cat([opt_traj, torch.zeros((1, T - opt_traj.shape[1],4))], 1)
             # add optimal trajectory to end of action sequence list
             action_sequences = torch.cat([action_sequences, opt_traj])
 
