@@ -28,9 +28,9 @@ def generate_demos(rank, config, record, num_trajectories):
         it = tqdm(it)
     for i in it:
         record = rank == 0 and record
-        name = f"pick_{rank}_{i}.hdf5"
-        path = os.path.join(config.demo_dir, name)
         history = env.generate_demo()
+        name = f"pick_{rank}_{i}_{'s' if history['success'] else 'f'}.hdf5"
+        path = os.path.join(config.demo_dir, name)
         record_path = f"videos/pick_{config.seed}_{i}.gif"
         obs = history["obs"]  # array of observation dictionaries
         len_stats.append(len(obs))
@@ -39,11 +39,13 @@ def generate_demos(rank, config, record, num_trajectories):
         masks = []
         imgs = []
         qpos = []
+        obj_qpos = []
         for ob in obs:
             imgs.append(ob["observation"])
             masks.append(ob["masks"])
             states.append(ob["states"])
             qpos.append(ob["qpos"])
+            obj_qpos.append(ob["obj_qpos"])
 
         # make 3d action 5d for video prediction
         actions = [np.array([ac[0], ac[1], ac[2], 0, ac[3]]) for ac in history["ac"]]
@@ -56,6 +58,7 @@ def generate_demos(rank, config, record, num_trajectories):
             create_dataset("observations", data=imgs)
             create_dataset("states", data=states)
             create_dataset("qpos", data=qpos)
+            create_dataset("obj_qpos", data=obj_qpos)
             create_dataset("masks", data=masks)
 
     # print out stats about the dataset
@@ -97,8 +100,8 @@ def collect_svg_data():
     Generate video dataset for SVG model training
     """
     num_workers = 1
-    num_demos = 10 // num_workers
-    record = False
+    num_demos = 20 // num_workers
+    record = True
     MODIFIED = False
 
     config, _ = argparser()
@@ -107,7 +110,8 @@ def collect_svg_data():
 
     config.modified = MODIFIED
     # config.demo_dir = f"/scratch/edward/Robonet/locobot_pick{'_fetch' if MODIFIED else ''}_views/c0"
-    config.demo_dir = f"/home/pallab/locobot_ws/src/roboaware/demos"
+    # config.demo_dir = f"/home/pallab/locobot_ws/src/roboaware/demos"
+    config.demo_dir = f"/home/ed/roboaware/demos/locobot_pick"
     create_demo_dataset(config, num_demos, num_workers, record)
 
 

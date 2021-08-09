@@ -132,7 +132,7 @@ class LocobotPickEnv(MaskEnv):
         masks = np.asarray(masks, dtype=np.bool)
         return masks
 
-    def reset(self):
+    def reset(self, initial_state=None):
         if self.initial_sim_state is None:
             if self._config.modified:
                 self.sim.data.qpos[self._joint_references] = [-0.25862757, -1.20163741,  0.32891832,  1.42506277, -0.10650079,  1.43468923, 0.06129823]
@@ -155,22 +155,10 @@ class LocobotPickEnv(MaskEnv):
         eef_target_pos[:2] += noise
         self._move(eef_target_pos, threshold=0.01, max_time=100, speed=10)
 
-            # eef_target_pos = [0.27, 0.0, 0.1]
-            # # some noise to the x/y of the eef initial pos
-            # # noise = np.random.uniform(-0.03, 0.03, size = 2)
-            # # eef_target_pos[:2] += noise
-            # # then bring robot gripper down
-            # curr_qpos = self.sim.data.qpos[self._joint_references][:4].copy()
-            # qpos_from_eef = np.zeros(5)
-            # qpos_from_eef[0:4] = self.locobot_ik.ik(
-            #     eef_target_pos, alpha=-DEFAULT_PITCH, cur_arm_config=curr_qpos
-            # )
-            # qpos_from_eef[4] = DEFAULT_ROLL
-            # # qpos_from_eef = [0, 0.43050715, 0.2393125, 0.63018035, 0]
-            # # move robot to start pos
-            # self.sim.data.qpos[self._joint_references] = qpos_from_eef
-            # self.sim.forward()
-        # import ipdb; ipdb.set_trace()
+        if initial_state is not None:
+            self.sim.data.qpos[self._joint_references] = initial_state["qpos"].copy()
+            self.sim.data.set_joint_qpos("object1:joint", initial_state["obj_qpos"].copy())
+            self.sim.forward()
         return self._get_obs()
 
     def step(self, action):
@@ -244,7 +232,9 @@ class LocobotPickEnv(MaskEnv):
         # assume 0 for rotation, gripper force
         states = np.array([*gripper_xpos, 0, 0])
         qpos = self.sim.data.qpos[self._joint_references].copy()
-        return {"observation": img, "masks": masks, "states": states, "qpos": qpos}
+        # object qpos
+        obj_qpos = self.sim.data.get_joint_qpos("object1:joint").copy()
+        return {"observation": img, "masks": masks, "states": states, "qpos": qpos, "obj_qpos": obj_qpos}
 
     def render(self, mode="rgb_array", camera_name=None, segmentation=False, width=None, height=None):
         if width is None or height is None:
@@ -388,12 +378,12 @@ class LocobotPickEnv(MaskEnv):
         above_block_xpos[2] += 0.05
         # move robot above slightly above block
         target = above_block_xpos
-        noise = 0.07
-        z_noise = 0.04
-        gripper_noise = 0.002
-        # noise = 0.00
-        # z_noise = 0.00
-        # gripper_noise = 0.000
+        # noise = 0.07
+        # z_noise = 0.04
+        # gripper_noise = 0.002
+        noise = 0.00
+        z_noise = 0.00
+        gripper_noise = 0.000
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -426,8 +416,8 @@ class LocobotPickEnv(MaskEnv):
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
         block_xpos[2] -= 0.01
         target = block_xpos
-        noise = 0.02
-        # noise = 0.0
+        # noise = 0.02
+        noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -459,8 +449,8 @@ class LocobotPickEnv(MaskEnv):
         # print("pick", step)
 
         # Place primitive
-        noise = 0.01
-        # noise = 0.0
+        # noise = 0.01
+        noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
@@ -496,7 +486,8 @@ class LocobotPickEnv(MaskEnv):
         total_steps += step
 
         # move it to a side.
-        noise = 0
+        # noise = 0.01
+        noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
 
