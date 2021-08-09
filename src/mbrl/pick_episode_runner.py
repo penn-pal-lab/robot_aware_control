@@ -58,10 +58,13 @@ class EpisodeRunner(object):
         trajectory = defaultdict(list)
 
         demo = self._load_demo(demo_path)
-        start_timestep = 2
+        start_timestep = 0
         initial_state = {"qpos": demo["qpos"][start_timestep], "obj_qpos": demo["obj_qpos"][start_timestep]}
+        goal_pos = demo["obj_qpos"][-1][:3]
         obs = env.reset(initial_state=initial_state)
         trajectory["obs"].append(obs)
+        obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
+        print("initial dist", obj_dist)
 
         goal_timestep = start_timestep
 
@@ -90,8 +93,9 @@ class EpisodeRunner(object):
             goal_timestep += 1
             if goal_timestep + 1 >= len(demo["observations"]):
                 goal_timestep -= 1
-
-            if ep_timestep >= 15:
+            obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
+            print("step", ep_timestep, obj_dist)
+            if ep_timestep >= 15 or obj_dist < 0.02:
                 break
 
         imageio.mimwrite("exec.gif", [x["observation"] for x in trajectory["obs"]])
