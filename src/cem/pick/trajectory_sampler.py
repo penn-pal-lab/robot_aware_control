@@ -17,6 +17,7 @@ class TrajectorySampler(object):
         self.physics = physics
         if physics == "gt":
             self.env = LocobotPickEnv(cfg)
+            self.env.reset()
         else:
             self.model: SVGConvModel = None
         self.cost = RobotWorldCost(cfg)
@@ -49,47 +50,47 @@ class TrajectorySampler(object):
         cfg = self.cfg
         env = self.env
         cost = RobotWorldCost(self.cfg)
-        N = len(action_sequences)  # Number of candidate action sequences
         T = len(action_sequences[0])
+        if opt_traj is not None:
+            # (N, T, 1), (T,1)
+            opt_traj = torch.from_numpy(opt_traj[:T][None])
+            # add optimal trajectory to end of action sequence list
+            action_sequences = torch.cat([action_sequences, opt_traj])
+
+        N = len(action_sequences)  # Number of candidate action sequences
         sum_cost = np.zeros(N)
         all_obs = []  # N x T x obs
         all_step_cost = []  # N x T x 1
-        env_state = env.get_flattened_state()
+        env_state = start.state
+
+
         if not suppress_print:
             start_time = timer.time()
             print("####### Gathering Samples #######")
+        # rollout action sequence per episode
         for ep_num in range(N):
             ep_obs = []
             ep_cost = []
-            optimal_sum_cost = 0
+            env.set_flattened_state(env_state.copy())
+
             for t in range(T):
+                action = action_sequences[ep_num, t].numpy()
+                ob, _, _, _ = env.step(action)
+
+                img = ob["observation"].astype(np.float32)
+                mask = ob["masks"]
+                curr_state = State(img=img, mask=mask)
+                rew = 0
+
+                # calculate cost between demonstration and current image
                 goal_idx = t if t < len(goal.imgs) else -1
                 goal_img = goal.imgs[goal_idx].astype(np.float32)
                 goal_mask = None
                 if goal.masks is not None:
                     goal_mask = goal.masks[goal_idx]
                 goal_state = State(img=goal_img, mask=goal_mask)
-                if opt_traj is not None:  # for debug comparison
-                    opt_state = opt_traj[goal_idx]
-
-                action = action_sequences[ep_num, t].numpy()
-                ob, _, _, _ = env.step(action)
-
-                img = ob["observation"].astype(np.float32)
-                robot = ob["robot"]
-                mask = ob["mask"]
-                curr_state = State(img=img, robot=robot, mask=mask)
-                rew = 0
                 if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
-                    rew = cost(curr_state, goal_state)
-                    if opt_traj is not None and ep_num == 0:
-                        optimal_sum_cost += cost(opt_state, goal_state)
-
-                        # print("env", optimal_sum_cost, goal_idx)
-                        # import pickle
-                        # with open(f"env_goal_{t}.pkl", "wb") as f:
-                        #     data = {"opt_img": opt_img, "goal_img": goal_img}
-                        #     pickle.dump(data, f)
+                    rew = cost(curr_state, goal_state, print_cost=False)
 
                 sum_cost[ep_num] += rew
                 if ret_obs:
@@ -99,14 +100,36 @@ class TrajectorySampler(object):
 
             all_obs.append(ep_obs)
             all_step_cost.append(ep_cost)
-            env.set_flattened_state(env_state.copy())  # reset env to before rollout
-            if env._background_img is not None:
-                env._background_img = bg_img.copy()
+
         if not suppress_print:
             print(
                 "======= Samples Gathered  ======= | >>>> Time taken = %f "
                 % (timer.time() - start_time)
             )
+
+        # debug: print like 25 gifs
+        # import imageio
+        # for i, episode in enumerate(all_obs[:10]):
+        #     imageio.mimwrite(f"cem_{i}.gif", episode)
+        # import ipdb; ipdb.set_trace()
+
+        rollouts = defaultdict(float)
+        if opt_traj is not None:
+            rollouts["optimal_sum_cost"] = sum_cost[-1]
+            rollouts["optimal_obs"] = np.asarray(all_obs[-1])
+            # ignore the optimal trajectory cost for argsort
+            sum_cost = sum_cost[:-1]
+
+        rollouts["sum_cost"] = sum_cost
+        # just return the top K trajectories
+        if ret_obs:
+            topk_idx = np.argsort(sum_cost)[: cfg.topk]
+            all_obs = np.asarray(all_obs)
+            topk_obs = all_obs[topk_idx]
+            rollouts["topk_idx"] = topk_idx
+            rollouts["obs"] = topk_obs
+        if ret_step_cost:
+            rollouts["step_cost"] = np.asarray(all_step_cost)
 
         return rollouts
 

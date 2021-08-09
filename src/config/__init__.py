@@ -83,7 +83,7 @@ def add_method_arguments(parser: ArgumentParser):
     parser.add_argument("--record_video_interval", type=int, default=1)
 
     # environment
-    parser.add_argument("--env", type=str, default="FetchPush", choices=["FetchPush", "LocobotTable"])
+    parser.add_argument("--env", type=str, default="FetchPush", choices=["FetchPush", "LocobotTable", "LocobotPick"])
     args, unparsed = parser.parse_known_args()
 
     add_prediction_arguments(parser)
@@ -98,6 +98,8 @@ def add_method_arguments(parser: ArgumentParser):
         add_fetch_push_arguments(parser)
     elif args.env == "LocobotTable":
         add_locobot_table_arguments(parser)
+    elif args.env == "LocobotPick":
+        add_locobot_pick_arguments(parser)
 
     return parser
 
@@ -138,6 +140,10 @@ def add_fetch_push_arguments(parser: ArgumentParser):
 def add_locobot_table_arguments(parser: ArgumentParser):
     parser.add_argument("--modified", type=str2bool, default=False)
     parser.add_argument("--demo_dir", type=str, default="demos/locobot_table")
+
+def add_locobot_pick_arguments(parser: ArgumentParser):
+    parser.add_argument("--modified", type=str2bool, default=False)
+    parser.add_argument("--demo_dir", type=str, default="demos/locobot_pick")
 
 # Video Prediction arguments from SVG
 def add_prediction_arguments(parser):

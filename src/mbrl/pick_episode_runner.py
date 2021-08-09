@@ -3,6 +3,7 @@ import os
 import pickle
 from collections import defaultdict
 from os.path import join
+from src.cem.pick.cem import CEMPolicy
 from src.utils.mujoco import init_mjrender_device
 from typing import List
 import colorlog
@@ -35,7 +36,14 @@ class EpisodeRunner(object):
         self._stats = defaultdict(list)
 
     def _setup_policy(self, config, env):
-        self.policy = None
+        self.policy: CEMPolicy = CEMPolicy(
+            config,
+            physics="gt" if config.use_env_dynamics else "learned",
+            init_std=config.cem_init_std,
+            action_candidates=config.action_candidates,
+            horizon=config.horizon,
+            opt_iter=config.opt_iter
+        )
 
     def _setup_cost(self, config):
         self.cost: RobotWorldCost = RobotWorldCost(config)
@@ -50,25 +58,41 @@ class EpisodeRunner(object):
         trajectory = defaultdict(list)
 
         demo = self._load_demo(demo_path)
-        start_timestep = 4
+        start_timestep = 2
         initial_state = {"qpos": demo["qpos"][start_timestep], "obj_qpos": demo["obj_qpos"][start_timestep]}
         obs = env.reset(initial_state=initial_state)
         trajectory["obs"].append(obs)
 
+        goal_timestep = start_timestep
+
         # begin policy rollout
         ep_timestep = start_timestep
         while True:
-            # ac = self.policy.get_action()
-            ac = demo["actions"][ep_timestep, (0,1,2,4)]
+            curr_img = obs["observation"]
+            curr_mask = obs["masks"]
+            curr_state = None
+            if cfg.use_env_dynamics:
+                curr_state = env.get_flattened_state()
+            start = State(img=curr_img, mask=curr_mask, state=curr_state)
+
+            goal_imgs = demo["observations"][goal_timestep + 1:]
+            goal_masks = demo["masks"][goal_timestep + 1:]
+            opt_traj = demo["actions"][goal_timestep:]
+            goal = DemoGoalState(imgs=goal_imgs, masks=goal_masks)
+
+            ac = self.policy.get_action(start, goal, ep_num, ep_timestep, opt_traj)[0]
+            # ac = demo["actions"][ep_timestep, (0,1,2,4)]
             trajectory["ac"].append(ac)
             obs, _, _, _ = env.step(ac)
             trajectory["obs"].append(obs)
 
             ep_timestep += 1
-            if ep_timestep >= len(demo["actions"]):
+            # TODO: update goal timestep based on progress
+            goal_timestep += 1
+            if ep_timestep >= 9:
                 break
 
-        # imageio.mimwrite("exec.gif", [x["observation"] for x in trajectory["obs"]])
+        imageio.mimwrite("exec.gif", [x["observation"] for x in trajectory["obs"]])
         # imageio.mimwrite("true_exec.gif", demo["observations"][start_timestep:])
 
 
@@ -88,7 +112,8 @@ class EpisodeRunner(object):
             demo["obj_qpos"] = hf["obj_qpos"][:]
             demo["qpos"] = hf["qpos"][:]
             demo["observations"] = hf["observations"][:]
-            demo["actions"] = hf["actions"][:]
+            demo["masks"] = hf["masks"][:]
+            demo["actions"] = hf["actions"][:][:, (0,1,2,4)]
         return demo
 
     def _setup_loggers(self, config):
@@ -168,5 +193,9 @@ if __name__ == "__main__":
     demo_path = "/home/ed/roboaware/demos/locobot_pick/pick_0_3_s.hdf5"
     demo_name = "pick_0_3"
     config, _ = argparser()
+    config.use_env_dynamics = True
+    config.action_dim = 4
+    config.action_candidates = 300
+    config.cem_init_std = 0.5
     runner = EpisodeRunner(config)
     runner.run_episode(0, demo_name, demo_path)

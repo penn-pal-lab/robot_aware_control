@@ -35,7 +35,7 @@ class CEMPolicy(object):
         self.init_std = init_std
         self.sparse_cost = cfg.sparse_cost  # Use cost function at end of traj
 
-        self.action_dim = 2
+        self.action_dim = cfg.action_dim
         self.cfg = cfg
 
 
@@ -46,7 +46,7 @@ class CEMPolicy(object):
             self.debug_cem_dir = cfg.log_dir
             os.makedirs(self.debug_cem_dir, exist_ok=True)
 
-    def get_action(self, start, goal, ep_num, step, opt_traj=None):
+    def get_action(self, start: State, goal: DemoGoalState, ep_num, step, opt_traj=None):
         """
         start: data class containing start img, start robot, etc.
         goal: data class containing goal imgs, goal robot, etc.
@@ -63,7 +63,14 @@ class CEMPolicy(object):
         self.step = step
         # Initialize action sequence belief as standard normal, of shape (T-1, A)
         mean = torch.zeros(T - 1, A)
+        # try setting means to opt_traj mean
+        # mean = mean + opt_traj[:T-1]
+
         std = torch.ones(T - 1, A) * self.init_std
+        # gripper range should be [-0.01, 0]
+        mean[:, -1] = -0.005
+        std[:, -1] = 0.005
+
         mean_top_costs = []  # for debugging
         # Optimization loop
         for i in trange(
@@ -72,18 +79,18 @@ class CEMPolicy(object):
             # Sample N candidate action sequence
             m = Normal(mean, std)
             act_seq = m.sample((N,))  # of shape (N, T-1, A)
-            if i == 0:
-                act_seq[-1] = 0  # always have a "do nothing" action sequence in start
+            # if i == 0:
+            #     act_seq[-1] = 0  # always have a "do nothing" action sequence in start
 
-            act_seq.clamp_(-0.05, 0.05)  # clamp actions
-            padded_act_seq = torch.cat([act_seq, torch.zeros((N, T - 1, 3))], 2)
+            act_seq.clamp_(-1, 1)  # clamp actions
+            act_seq[:,-1].clamp_(-0.01, 0)  # clamp gripper actions
             # Generate N rollouts of the N action trajectories
             if i == self.optimization_iter - 1:
                 rollouts = self._get_rollouts(
-                    padded_act_seq, start, goal, opt_traj, self.plot_rollouts
+                    act_seq, start, goal, opt_traj, self.plot_rollouts
                 )
             else:
-                rollouts = self._get_rollouts(padded_act_seq, start, goal)
+                rollouts = self._get_rollouts(act_seq, start, goal)
 
             # Select top K action sequences based on cumulative cost
             costs = torch.from_numpy(rollouts["sum_cost"])
@@ -108,7 +115,6 @@ class CEMPolicy(object):
         """
         Return the rollouts from model
         """
-
         rollouts = self.traj_sampler.generate_rollouts(
             act_seq,
             start,
@@ -123,9 +129,10 @@ class CEMPolicy(object):
             if opt_traj is not None:
                 opt_obs = np.expand_dims(rollouts["optimal_obs"], 0)
                 obs = np.concatenate([opt_obs, obs])
-            obs = np.uint8(255 * obs)
-            obs = obs.transpose((0, 1, 3, 4, 2))  # K x T x H x W x C
-            topk_act = act_seq[rollouts["topk_idx"]]
+            obs = np.uint8(obs)
+            # obs = np.uint8(255 * obs)
+            # obs = obs.transpose((0, 1, 3, 4, 2))  # K x T x H x W x C
+            # topk_act = act_seq[rollouts["topk_idx"]]
             gif_folder = self.debug_cem_dir
             os.makedirs(gif_folder, exist_ok=True)
 
@@ -146,20 +153,20 @@ class CEMPolicy(object):
                     if opt_traj is not None:
                         if k == 0:
                             putText(img, f"Opt", (0, 8), color=(255, 255, 255))
-                            ac = opt_traj[t]
+                            # ac = opt_traj[t]
                         else:
                             putText(img, f"Rank {k-1}", (0, 8), color=(255, 255, 255))
-                            ac = topk_act[k - 1, t]
+                            # ac = topk_act[k - 1, t]
                     else:
                         putText(img, f"Rank {k}", (0, 8), color=(255, 255, 255))
-                        ac = topk_act[k, t]
+                        # ac = topk_act[k, t]
 
-                    putText(
-                        img, f"X:{ac[0] * 100:.1f}cm", (0, 16), color=(255, 255, 255)
-                    )
-                    putText(
-                        img, f"Y:{ac[1] * 100:.1f}cm", (0, 24), color=(255, 255, 255)
-                    )
+                    # putText(
+                    #     img, f"X:{ac[0] * 100:.1f}cm", (0, 16), color=(255, 255, 255)
+                    # )
+                    # putText(
+                    #     img, f"Y:{ac[1] * 100:.1f}cm", (0, 24), color=(255, 255, 255)
+                    # )
                     putText(img, f"{t}", (64, 8), color=(255, 255, 255))
                     putText(img, "GOAL", (128, 8), color=(255, 255, 255))
                     all_k_img.append(img)
@@ -168,6 +175,7 @@ class CEMPolicy(object):
 
             gif_path = os.path.join(gif_folder, f"step_{self.step}_top_k.gif")
             imageio.mimwrite(gif_path, gif, fps=2)
+            # import ipdb; ipdb.set_trace()
         return rollouts
 
 
