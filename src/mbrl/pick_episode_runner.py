@@ -56,6 +56,8 @@ class EpisodeRunner(object):
         cfg = self._config
         env = self._env
         logger = self._logger
+        logger.info(f"=== Episode {ep_num}, {demo_name} ===")
+        ep_stats = defaultdict(list)
         trajectory = defaultdict(list)
 
         demo = self._load_demo(demo_path)
@@ -64,7 +66,7 @@ class EpisodeRunner(object):
         goal_pos = demo["obj_qpos"][-1][:3]
         obs = env.reset(initial_state=initial_state)
         trajectory["obs"].append(obs)
-        obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
+        obj_dist = init_obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
         gripper_dist = np.linalg.norm(obs["obj_qpos"][:3] - env.get_gripper_world_pos())
         print("initial obj-goal dist", obj_dist)
         print("initial obj-gripper dist", gripper_dist)
@@ -72,27 +74,29 @@ class EpisodeRunner(object):
         goal_timestep = start_timestep
 
         # begin policy rollout
+        success = False
         ep_timestep = start_timestep
         while True:
             curr_img = obs["observation"]
             curr_mask = obs["masks"]
-            curr_state = None
+            curr_sim_state = None
             if cfg.use_env_dynamics:
-                curr_state = env.get_flattened_state()
-            start = State(img=curr_img, mask=curr_mask, state=curr_state)
-            goal_imgs = demo["observations"][goal_timestep + 1:]
-            # goal_imgs = demo["obj_observations"][goal_timestep + 1:]
-            goal_masks = demo["masks"][goal_timestep + 1:]
-            # goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
+                curr_sim_state = env.get_flattened_state()
+            start = State(img=curr_img, mask=curr_mask, sim_state=curr_sim_state)
+            # goal_imgs = demo["observations"][goal_timestep + 1:]
+            goal_imgs = demo["obj_observations"][goal_timestep + 1:]
+            # goal_masks = demo["masks"][goal_timestep + 1:]
+            goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
+            goal_eef_states = demo["eef_states"][goal_timestep:]
             opt_traj = demo["actions"][goal_timestep:]
-            goal = DemoGoalState(imgs=goal_imgs, masks=goal_masks)
+            goal = DemoGoalState(imgs=goal_imgs, masks=goal_masks, states=goal_eef_states)
 
             ac = self.policy.get_action(start, goal, ep_num, ep_timestep, opt_traj)[0]
             # ac = np.random.uniform(low=-1, high=1, size=4)
             # ac = demo["actions"][ep_timestep, (0,1,2,4)]
             # print("ac", ac)
-            curr_eef_state = env.get_gripper_world_pos()
-            print("obj-gripper dist", np.linalg.norm(curr_eef_state - obs["obj_qpos"][:3]))
+            # curr_eef_state = env.get_gripper_world_pos()
+            # print("obj-gripper dist", np.linalg.norm(curr_eef_state - obs["obj_qpos"][:3]))
             trajectory["ac"].append(ac)
             obs, _, _, _ = env.step(ac)
             trajectory["obs"].append(obs)
@@ -104,27 +108,57 @@ class EpisodeRunner(object):
                 goal_timestep -= 1
             obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
             print("step", ep_timestep, obj_dist)
+            success = obj_dist < 0.01
+            if np.linalg.norm(obj_dist - init_obj_dist) >= 0.03:
+                print("early exiting")
             if ep_timestep >= 12 or obj_dist < 0.01:
                 break
+        if success:
+            logger.info("SUCCESS")
 
-        record_path = os.path.join(cfg.log_dir, f"exec_{ep_num}.gif")
+        record_path = join(cfg.log_dir, f"exec_{ep_num}.gif")
         if cfg.reward_type == "dontcare":
             # imageio.mimwrite(record_path, [zero_robot_region(x["masks"], x["observation"]) for x in trajectory["obs"]])
             imageio.mimwrite(record_path, [x["observation"] for x in trajectory["obs"]], fps=4)
         else:
             imageio.mimwrite(record_path, [x["observation"] for x in trajectory["obs"]], fps=4)
-        record_path = os.path.join(cfg.log_dir, f"true_exec_{ep_num}.gif")
+        record_path = join(cfg.log_dir, f"true_exec_{ep_num}.gif")
         imageio.mimwrite(record_path, demo["observations"][start_timestep:], fps=4)
-
+        ep_stats["success"] = success
+        return ep_stats
 
     def run(self):
         """
         Run all episodes and log their metrics
         """
+        trials_per_demo = 5
         files = self._load_demo_dataset(self._config)
-        for i in trange(self._config.num_episodes, desc="running episode"):
-            demo_name, demo_path = files[i]
-            self.run_episode(i, demo_name, demo_path)
+        all_files = []
+        success = 0
+        all_stats = []
+        for f in files:
+            all_files.extend([f for _ in range(trials_per_demo)])
+
+        for i in trange(len(all_files), desc="running episode"):
+            demo_name, demo_path = all_files[i]
+            ep_stats = self.run_episode(i, demo_name, demo_path)
+            all_stats.append(ep_stats)
+            success += ep_stats["success"]
+            print(f"running success {success}/{i+1}",  success / (i + 1))
+
+        self._logger.info("\n\n### Summary ###")
+        self._logger.info(f"Success {success}/{len(all_files)},   {(success / len(all_files)):.2f}%")
+
+        with open(join(self._config.log_dir, "stats.pkl"), "wb") as f:
+            pickle.dump(all_stats, f)
+
+    def _load_demo_dataset(self, config):
+        files = []
+        for d in os.scandir(config.object_demo_dir):
+            if d.is_file() and d.name.endswith("hdf5"):
+                files.append((d.name, d.path))
+        files.sort(key=lambda e: e[0])
+        return files[: config.num_episodes]
 
     def _load_demo(self, path):
         # load start,
@@ -132,6 +166,7 @@ class EpisodeRunner(object):
         with h5py.File(path, "r") as hf:
             demo["obj_qpos"] = hf["obj_qpos"][:]
             demo["qpos"] = hf["qpos"][:]
+            demo["eef_states"] = hf["states"][:]
             demo["observations"] = hf["observations"][:]
             demo["obj_observations"] = hf["obj_only_imgs"][:]
             demo["masks"] = hf["masks"][:]
@@ -219,6 +254,7 @@ if __name__ == "__main__":
 
     # env
     config.modified = True
+    config.object_demo_dir = "/home/ed/roboaware/demos/fetch_pick_demos"
 
     # cem
     config.debug_cem = True
@@ -230,8 +266,12 @@ if __name__ == "__main__":
     config.opt_iter = 5
 
     # cost
-    config.reward_type = "dontcare"
+    # config.reward_type = "dontcare"
+    config.reward_type = "weighted"
     config.sparse_cost = False
+    config.robot_cost_weight = 0
+    config.world_cost_weight = 1
 
     runner = EpisodeRunner(config)
-    runner.run_episode(0, demo_name, demo_path)
+    runner.run()
+    # runner.run_episode(0, demo_name, demo_path)

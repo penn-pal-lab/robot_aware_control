@@ -68,6 +68,7 @@ class CEMPolicy(object):
         # mean = mean + opt_traj[:T-1]
 
         std = torch.ones(T - 1, A) * self.init_std
+        std[:, 0] = 0.2
         # gripper range should be [-0.01, 0]
         mean[:, -1] = -0.005
         std[:, -1] = 0.005

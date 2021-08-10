@@ -63,7 +63,7 @@ class TrajectorySampler(object):
         sum_cost = np.zeros(N)
         all_obs = []  # N x T x obs
         all_step_cost = []  # N x T x 1
-        env_state = start.state
+        env_state = start.sim_state
 
 
         if not suppress_print:
@@ -81,9 +81,10 @@ class TrajectorySampler(object):
 
                 img = ob["observation"].astype(np.float32)
                 mask = ob["masks"]
+                state = ob["states"]
                 if cfg.reward_type == "dontcare":
                     img = zero_robot_region(mask, img)
-                curr_state = State(img=img, mask=mask)
+                curr_state = State(img=img, mask=mask, state=state)
                 rew = 0
 
                 # calculate cost between demonstration and current image
@@ -93,7 +94,11 @@ class TrajectorySampler(object):
                 if goal.masks is not None:
                     goal_mask = goal.masks[goal_idx]
                     goal_img = zero_robot_region(goal_mask, goal_img)
-                goal_state = State(img=goal_img, mask=goal_mask)
+
+                if goal.states is not None:
+                    goal_state = goal.states[goal_idx]
+
+                goal_state = State(img=goal_img, mask=goal_mask, state=goal_state)
                 if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
                     rew = cost(curr_state, goal_state, print_cost=False)
 

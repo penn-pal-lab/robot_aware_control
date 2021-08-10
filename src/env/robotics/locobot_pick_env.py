@@ -82,8 +82,9 @@ class LocobotPickEnv(MaskEnv):
         self._objects = ["object1"]
 
         # workspace boundaries for eef
-        self._ws_low = [0.24, -0.17, 0.05]
-        self._ws_high = [0.34, 0.17, float('inf')]
+        # self._ws_low = [0.24, -0.17, 0.05]
+        self._ws_low = [0.28, -0.17, 0.05]
+        self._ws_high = [0.33, 0.17, 0.15]
 
         # modify camera R
         # self.set_opencv_camera_pose("main_cam", CAMERA_CALIB)
@@ -550,11 +551,11 @@ if __name__ == "__main__":
     while True:
         for i in range(15):
             env.render("human")
-            env.step([1,0,-0, 0.005])
+            env.step([0,0,-1, 0.005])
         for i in range(15):
             env.render("human")
-            env.step([-1,-0,0, -0.005])
-    # sys.exit(0)
+            env.step([-0,-0,1, -0.005])
+    sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
     num_success = 0
