@@ -76,12 +76,14 @@ class EpisodeRunner(object):
         # begin policy rollout
         success = False
         ep_timestep = start_timestep
+        # before_img = env._get_obs()["observation"]
+        # imageio.imwrite("before_ac.png", before_img)
         while True:
             curr_img = obs["observation"]
             curr_mask = obs["masks"]
             curr_sim_state = None
             if cfg.use_env_dynamics:
-                curr_sim_state = env.get_flattened_state()
+                curr_sim_state = env.get_flattened_state().copy()
             start = State(img=curr_img, mask=curr_mask, sim_state=curr_sim_state)
             # goal_imgs = demo["observations"][goal_timestep + 1:]
             goal_imgs = demo["obj_observations"][goal_timestep + 1:]
@@ -100,6 +102,9 @@ class EpisodeRunner(object):
             trajectory["ac"].append(ac)
             obs, _, _, _ = env.step(ac)
             trajectory["obs"].append(obs)
+            after_img = env._get_obs()["observation"]
+            # imageio.imwrite("after_ac.png", after_img)
+            # imageio.imwrite("after_ac_obs.png", obs["observation"])
 
             ep_timestep += 1
             # TODO: update goal timestep based on progress
@@ -250,30 +255,32 @@ if __name__ == "__main__":
     from src.config import argparser
 
     # demo_path = "/home/ed/roboaware/demos/locobot_pick/pick_0_3_s.hdf5"
-    demo_path = "/home/ed/roboaware/demos/fetch_pick/pick_0_12_s.hdf5"
-    demo_name = "pick_0_12"
+    # demo_path = "/home/ed/roboaware/demos/fetch_pick/pick_0_3_f.hdf5"
+    # demo_name = "pick_0_3_f"
     config, _ = argparser()
 
     # env
     config.modified = True
-    # config.object_demo_dir = "/home/ed/roboaware/demos/fetch_pick_demos"
-    config.object_demo_dir = "/home/edward/roboaware/demos/fetch_pick_demos"
+    config.object_demo_dir = "/home/ed/roboaware/demos/fetch_pick_demos"
+    # config.object_demo_dir = "/home/edward/roboaware/demos/fetch_pick_demos"
 
     # cem
     config.debug_cem = True
     config.action_dim = 4
-    config.action_candidates = 100
+    config.action_candidates = 5
     config.use_env_dynamics = True
     config.cem_init_std = 0.5
-    config.horizon = 5
-    config.opt_iter = 5
+    config.horizon = 2
+    config.opt_iter = 2
 
     # cost
-    # config.reward_type = "dontcare"
-    config.reward_type = "weighted"
+    config.reward_type = "dontcare"
+    # config.reward_type = "weighted"
     config.sparse_cost = False
-    config.robot_cost_weight = 0
-    config.world_cost_weight = 1
+    # config.robot_cost_weight = 1
+    config.robot_cost_weight = 1
+    # config.world_cost_weight = 0.0001
+    config.world_cost_weight = 0.3
 
     runner = EpisodeRunner(config)
     runner.run()
