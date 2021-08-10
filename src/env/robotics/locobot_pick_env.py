@@ -230,6 +230,7 @@ class LocobotPickEnv(MaskEnv):
             img = np.zeros((48,64,3))
             masks = np.zeros((48,64,1))
         else:
+            self.render("rgb_array",width=2, height=2)
             img = self.render("rgb_array")
             masks = self.get_robot_mask()
         gripper_xpos = self.get_gripper_world_pos()
@@ -571,14 +572,18 @@ if __name__ == "__main__":
 
     DEBUG = True
     env = LocobotPickEnv(config)
-    env.reset()
     while True:
-        for i in range(15):
-            env.render("human")
-            env.step([0,0,-1, 0.005])
-        for i in range(15):
-            env.render("human")
-            env.step([-0,-0,1, -0.005])
+        env.reset()
+        env.render("human")
+        eef_pos = [0.31807845, 0.0108918,  0.12371251]
+        env._move(eef_pos, threshold=0.001, max_time=1000, speed=5, gripper=0, clip=False)
+        env._move()
+        # for i in range(15):
+        #     env.render("human")
+        #     env.step([0,0,-1, 0.005])
+        # for i in range(15):
+        #     env.render("human")
+        #     env.step([-0,-0,1, -0.005])
     sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
