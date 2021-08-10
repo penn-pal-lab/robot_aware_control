@@ -109,8 +109,10 @@ class EpisodeRunner(object):
             obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
             print("step", ep_timestep, obj_dist)
             success = obj_dist < 0.01
-            if np.linalg.norm(obj_dist - init_obj_dist) >= 0.03:
+            # if object dist is larger than 3cm from the starting object dist, exit
+            if (obj_dist - 0.03) >= init_obj_dist:
                 print("early exiting")
+                break
             if ep_timestep >= 12 or obj_dist < 0.01:
                 break
         if success:
@@ -254,12 +256,13 @@ if __name__ == "__main__":
 
     # env
     config.modified = True
-    config.object_demo_dir = "/home/ed/roboaware/demos/fetch_pick_demos"
+    # config.object_demo_dir = "/home/ed/roboaware/demos/fetch_pick_demos"
+    config.object_demo_dir = "/home/edward/roboaware/demos/fetch_pick_demos"
 
     # cem
     config.debug_cem = True
     config.action_dim = 4
-    config.action_candidates = 500
+    config.action_candidates = 100
     config.use_env_dynamics = True
     config.cem_init_std = 0.5
     config.horizon = 5
