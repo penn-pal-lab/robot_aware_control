@@ -44,6 +44,7 @@ class LocobotPickEnv(MaskEnv):
         self._render_device = config.render_device
         if modified:
             self._joints = [f"joint_{i}" for i in range(1, 8)]
+            self._gripper_joints = ['robot0:r_gripper_finger_joint', 'robot0:l_gripper_finger_joint']
         else:
             self._joints = [f"joint_{i}" for i in range(1, 8)]
 
@@ -162,15 +163,17 @@ class LocobotPickEnv(MaskEnv):
             self.sim.forward()
         return self._get_obs()
 
-    def step(self, action):
+    def step(self, action, clip=False):
+        action = np.asarray(action)
         action = np.clip(action, self.action_space.low, self.action_space.high)
-        # check if applying action will violate the workspace boundary, if so, clip it.
-        curr_eef_state = self.get_gripper_world_pos()
-        next_eef_state = curr_eef_state + (action[:3] * 0.05)
+        if clip:
+            # check if applying action will violate the workspace boundary, if so, clip it.
+            curr_eef_state = self.get_gripper_world_pos()
+            next_eef_state = curr_eef_state + (action[:3] * 0.05)
 
-        next_eef_state = np.clip(next_eef_state, self._ws_low, self._ws_high)
-        clipped_ac = (next_eef_state - curr_eef_state) / 0.05
-        action[:3] = clipped_ac
+            next_eef_state = np.clip(next_eef_state, self._ws_low, self._ws_high)
+            clipped_ac = (next_eef_state - curr_eef_state) / 0.05
+            action[:3] = clipped_ac
         self._set_action(action)
         # gravity compensation
         self.sim.data.qfrc_applied[
@@ -311,7 +314,8 @@ class LocobotPickEnv(MaskEnv):
         threshold=0.01,
         speed=10,
         noise=0,
-        gripper=0.05
+        gripper=0.05,
+        clip=True
     ):
         if target_type == "gripper":
             gripper_xpos = self.get_gripper_world_pos()
@@ -329,7 +333,7 @@ class LocobotPickEnv(MaskEnv):
             if history is not None:
                 history["ac"].append(pad_ac)
 
-            obs, _, _, info = self.step(pad_ac)
+            obs, _, _, info = self.step(pad_ac, clip=clip)
             if history is not None:
                 history["obs"].append(obs)
                 for k, v in info.items():
@@ -533,6 +537,26 @@ class LocobotPickEnv(MaskEnv):
 
     def get_gripper_world_pos(self):
         return self.sim.data.get_site_xpos("robot0:grip").copy()
+
+    def get_gripper_val(self):
+        if self._config.modified:
+            gripper_joints = self._gripper_joints
+        else:
+            gripper_joints = self._joints[-2:]
+
+        return np.array([self.sim.data.get_joint_qpos(g).copy() for g in gripper_joints])
+
+    def set_gripper_val(self, values):
+        if self._config.modified:
+            gripper_joints = self._gripper_joints
+        else:
+            gripper_joints = self._joints[-2:]
+        # assumes right, then left gripper value
+        self.sim.data.set_joint_qpos(gripper_joints[0], values[0])
+        self.sim.data.set_joint_qpos(gripper_joints[1], values[1])
+        self.sim.forward()
+
+
 
 if __name__ == "__main__":
     import sys

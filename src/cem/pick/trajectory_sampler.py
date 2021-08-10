@@ -1,7 +1,9 @@
 import time as timer
+from copy import deepcopy
 from collections import defaultdict
 
 import numpy as np
+import imageio
 import torch
 from src.prediction.losses import RobotWorldCost
 from src.prediction.models.dynamics import SVGConvModel
@@ -16,8 +18,22 @@ class TrajectorySampler(object):
         self.cfg = cfg
         self.physics = physics
         if physics == "gt":
-            self.env = LocobotPickEnv(cfg)
-            self.env.reset()
+            # source robot env
+            source_cfg = deepcopy(cfg)
+            source_cfg.modified = not cfg.modified
+            if source_cfg.modified:
+                print("Using fetch as source robot")
+            else:
+                print("Using widowx as source robot")
+            # source robot env: the robot we plan in
+            self.env = LocobotPickEnv(source_cfg)
+            obs = self.env.reset()
+            # imageio.imwrite("env.png", obs["observation"])
+
+            # target robot: the robot we run control in / get masks
+            self.target_env = LocobotPickEnv(cfg)
+            obs = self.target_env.reset()
+            # imageio.imwrite("target_env.png", obs["observation"])
         else:
             self.model: SVGConvModel = None
         self.cost = RobotWorldCost(cfg)
@@ -33,9 +49,25 @@ class TrajectorySampler(object):
         suppress_print=True,
     ):
         if self.physics == "gt":
-            return self.generate_env_rollouts(action_sequences, start, goal, opt_traj, ret_obs, ret_step_cost, suppress_print)
+            return self.generate_env_rollouts(
+                action_sequences,
+                start,
+                goal,
+                opt_traj,
+                ret_obs,
+                ret_step_cost,
+                suppress_print,
+            )
         else:
-            return self.generate_model_rollouts(action_sequences, start, goal, opt_traj, ret_obs, ret_step_cost, suppress_print)
+            return self.generate_model_rollouts(
+                action_sequences,
+                start,
+                goal,
+                opt_traj,
+                ret_obs,
+                ret_step_cost,
+                suppress_print,
+            )
 
     def generate_env_rollouts(
         self,
@@ -49,13 +81,16 @@ class TrajectorySampler(object):
     ):
         cfg = self.cfg
         env = self.env
+        target_env = self.target_env
         cost = RobotWorldCost(self.cfg)
         T = len(action_sequences[0])
         if opt_traj is not None:
             # (N, T, 1), (T,1)
             opt_traj = torch.from_numpy(opt_traj[:T][None])
             # add no-op actions if horizon is greater than opt action sequence
-            opt_traj = torch.cat([opt_traj, torch.zeros((1, T - opt_traj.shape[1],4))], 1)
+            opt_traj = torch.cat(
+                [opt_traj, torch.zeros((1, T - opt_traj.shape[1], 4))], 1
+            )
             # add optimal trajectory to end of action sequence list
             action_sequences = torch.cat([action_sequences, opt_traj])
 
@@ -63,8 +98,31 @@ class TrajectorySampler(object):
         sum_cost = np.zeros(N)
         all_obs = []  # N x T x obs
         all_step_cost = []  # N x T x 1
-        env_state = start.sim_state
 
+        # first set the target env.
+        target_env_state = start.sim_state
+        target_env.set_flattened_state(target_env_state.copy())
+        target_env.sim.step()
+        eef_pos = target_env.get_gripper_world_pos()
+        # print("fetch eef pos", eef_pos)
+
+        # env should be the corresponding widowx state
+        env.reset()
+        # first move the object out of scene
+        env.sim.data.set_joint_qpos("object1:joint", [10,10,10, 1,0,0,0])
+        # first move the widowx gripper with IK
+        history = defaultdict(list)
+        env._move(eef_pos, history, threshold=0.001, max_time=1000, speed=5, gripper=0, clip=False)
+        env_eef_pos = env.get_gripper_world_pos()
+        # print("widowx eef pos", env_eef_pos)
+        # then set the target gripper value
+        gripper_val = target_env.get_gripper_val()
+        env.set_gripper_val(gripper_val)
+        # source_init_img = env._get_obs()["observation"]
+        # target_init_img = target_env._get_obs()["observation"]
+        # imageio.imwrite("source_target.png", np.concatenate([source_init_img, target_init_img]))
+        # import ipdb; ipdb.set_trace()
+        env_state = env.get_flattened_state()
 
         if not suppress_print:
             start_time = timer.time()
@@ -74,6 +132,7 @@ class TrajectorySampler(object):
             ep_obs = []
             ep_cost = []
             env.set_flattened_state(env_state.copy())
+            target_env.set_flattened_state(target_env_state.copy())
 
             for t in range(T):
                 action = action_sequences[ep_num, t].numpy()
@@ -82,6 +141,10 @@ class TrajectorySampler(object):
                 img = ob["observation"].astype(np.float32)
                 mask = ob["masks"]
                 state = ob["states"]
+                # get the target robot mask
+                target_ob, _, _, _ = target_env.step(action)
+                target_mask = target_ob["masks"]
+                mask = target_mask
                 if cfg.reward_type == "dontcare":
                     img = zero_robot_region(mask, img)
                 curr_state = State(img=img, mask=mask, state=state)
@@ -173,7 +236,7 @@ class TrajectorySampler(object):
         if opt_traj is not None:
             # (N, T, 1), (T,1)
             # pad 0s, add batch dimension to opt traj
-            opt_traj = torch.cat([opt_traj, torch.zeros((len(opt_traj),3))], 1)
+            opt_traj = torch.cat([opt_traj, torch.zeros((len(opt_traj), 3))], 1)
             opt_traj.unsqueeze_(0)
             # add optimal trajectory to end of action sequence list
             action_sequences = torch.cat([action_sequences, opt_traj])
@@ -194,14 +257,23 @@ class TrajectorySampler(object):
             print("####### Gathering Samples #######")
 
         # use locobot analytical model to generate masks and states
-        if cfg.model_use_robot_state or cfg.model_use_mask or cfg.black_robot_input or "dontcare" in cfg.reward_type:
-            '''
+        if (
+            cfg.model_use_robot_state
+            or cfg.model_use_mask
+            or cfg.black_robot_input
+            or "dontcare" in cfg.reward_type
+        ):
+            """
             states should be normalized, world frame
-            '''
-            states = torch.zeros((T+1, N, 5), dtype=torch.float32) # only need first timestep
-            qpos = torch.zeros((T+1, N, cfg.robot_joint_dim), dtype=torch.float32) # only need first timestep
+            """
+            states = torch.zeros(
+                (T + 1, N, 5), dtype=torch.float32
+            )  # only need first timestep
+            qpos = torch.zeros(
+                (T + 1, N, cfg.robot_joint_dim), dtype=torch.float32
+            )  # only need first timestep
             start_state = torch.tensor(start.state)
-            if cfg.experiment == "control_franka": # convert from franka to loco frame
+            if cfg.experiment == "control_franka":  # convert from franka to loco frame
                 start_state[:2] = start_state[:2] + LOCO_FRANKA_DIFF
 
             states[0, :] = normalize(start_state, self.low, self.high)
@@ -209,9 +281,9 @@ class TrajectorySampler(object):
             start_data = {
                 "states": states,
                 "qpos": qpos,
-                "actions": action_sequences.permute(1,0,2), # (T, N, 2)
-                "low": self.low.repeat(N,1), # (N, 5)
-                "high": self.high.repeat(N,1), # (N, 5)
+                "actions": action_sequences.permute(1, 0, 2),  # (T, N, 2)
+                "low": self.low.repeat(N, 1),  # (N, 5)
+                "high": self.high.repeat(N, 1),  # (N, 5)
             }
             states, masks = self.robot_model.predict_batch(start_data, thick=True)
             states = states.to(dev, non_blocking=True)
@@ -228,7 +300,6 @@ class TrajectorySampler(object):
             #         states[t+1, :, :3] = states[t,:, :3] + act
             #     states = normalize(states, self.low, self.high)
 
-
         for b in range(B):
             s = b * ac_per_batch
             e = (b + 1) * ac_per_batch if b < B - 1 else N
@@ -241,7 +312,7 @@ class TrajectorySampler(object):
             for t in range(T):
                 ac = actions[:, t]  # (J, |A|)
                 # compute the next img
-                mask, state, heatmap  = None, None, None
+                mask, state, heatmap = None, None, None
                 if cfg.model_use_mask:
                     mask = masks[t, s:e]
                 if cfg.model_use_robot_state:
@@ -251,23 +322,29 @@ class TrajectorySampler(object):
                     curr_img = zero_robot_region(mask, curr_img)
 
                 if cfg.model_use_future_mask:
-                    mask = torch.cat([mask, masks[t+1, s:e]], 1)
+                    mask = torch.cat([mask, masks[t + 1, s:e]], 1)
                 if cfg.model_use_future_robot_state:
-                    state = (state, states[t+1, s:e])
-                x_pred = model.forward(curr_img, mask, state, heatmap, ac, sample_mean=cfg.sample_mean)[0]
+                    state = (state, states[t + 1, s:e])
+                x_pred = model.forward(
+                    curr_img, mask, state, heatmap, ac, sample_mean=cfg.sample_mean
+                )[0]
                 x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
                 next_img = (1 - x_pred_mask) * curr_img + (x_pred_mask) * x_pred
                 if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input:
-                    next_img = zero_robot_region(masks[t+1, s:e], next_img)
+                    next_img = zero_robot_region(masks[t + 1, s:e], next_img)
                 # compute the img costs
                 goal_idx = t if t < len(goal_imgs) else -1
                 goal_img = goal_imgs[goal_idx]
                 goal_mask = None
                 if goal.masks is not None:
                     goal_mask = goal_masks[goal_idx]
-                if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input or "dontcare" in cfg.reward_type:
+                if (
+                    "dontcare" in cfg.reconstruction_loss
+                    or cfg.black_robot_input
+                    or "dontcare" in cfg.reward_type
+                ):
                     goal_state = State(img=goal_img, mask=goal_mask)
-                    curr_state = State(img=next_img, mask=masks_thick[t+1, s:e])
+                    curr_state = State(img=next_img, mask=masks_thick[t + 1, s:e])
                 else:
                     goal_state = State(img=goal_img)
                     curr_state = State(img=next_img)
@@ -303,5 +380,7 @@ class TrajectorySampler(object):
             rollouts["topk_idx"] = topk_idx
             rollouts["obs"] = topk_obs.cpu().numpy()
         if ret_step_cost:
-            rollouts["step_cost"] = torch.stack(all_step_cost).transpose(0, 1).cpu().numpy()
+            rollouts["step_cost"] = (
+                torch.stack(all_step_cost).transpose(0, 1).cpu().numpy()
+            )
         return rollouts
