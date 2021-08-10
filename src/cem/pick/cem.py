@@ -1,4 +1,5 @@
 import os
+from src.utils.image import zero_robot_region
 
 import imageio
 import numpy as np
@@ -87,7 +88,7 @@ class CEMPolicy(object):
             # Generate N rollouts of the N action trajectories
             if i == self.optimization_iter - 1:
                 rollouts = self._get_rollouts(
-                    act_seq, start, goal, opt_traj, self.plot_rollouts
+                    act_seq, start, goal, opt_traj, self.plot_rollouts, ep_num
                 )
             else:
                 rollouts = self._get_rollouts(act_seq, start, goal)
@@ -110,7 +111,7 @@ class CEMPolicy(object):
         return mean.numpy()
 
     def _get_rollouts(
-        self, act_seq, start: State, goal: DemoGoalState, opt_traj=None, plot=False
+        self, act_seq, start: State, goal: DemoGoalState, opt_traj=None, plot=False, ep_num=None
     ):
         """
         Return the rollouts from model
@@ -133,7 +134,7 @@ class CEMPolicy(object):
             # obs = np.uint8(255 * obs)
             # obs = obs.transpose((0, 1, 3, 4, 2))  # K x T x H x W x C
             # topk_act = act_seq[rollouts["topk_idx"]]
-            gif_folder = self.debug_cem_dir
+            gif_folder = os.path.join(self.debug_cem_dir, f"ep_{ep_num}")
             os.makedirs(gif_folder, exist_ok=True)
 
             goal_img = goal.imgs[0]
@@ -148,6 +149,8 @@ class CEMPolicy(object):
                     curr_img = obs[k, t]
                     g = t if t < len(goal.imgs) else -1
                     goal_img = goal.imgs[g]
+                    if goal.masks is not None:
+                        goal_img = zero_robot_region(goal.masks[g], goal_img)
                     info_img = np.zeros_like(goal_img)
                     img = np.concatenate([info_img, curr_img, goal_img], axis=1).copy()
                     if opt_traj is not None:

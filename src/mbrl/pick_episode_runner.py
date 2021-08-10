@@ -3,6 +3,7 @@ import os
 import pickle
 from collections import defaultdict
 from os.path import join
+from src.utils.image import zero_robot_region
 from src.cem.pick.cem import CEMPolicy
 from src.utils.mujoco import init_mjrender_device
 from typing import List
@@ -58,13 +59,15 @@ class EpisodeRunner(object):
         trajectory = defaultdict(list)
 
         demo = self._load_demo(demo_path)
-        start_timestep = 0
+        start_timestep = 4
         initial_state = {"qpos": demo["qpos"][start_timestep], "obj_qpos": demo["obj_qpos"][start_timestep]}
         goal_pos = demo["obj_qpos"][-1][:3]
         obs = env.reset(initial_state=initial_state)
         trajectory["obs"].append(obs)
         obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
-        print("initial dist", obj_dist)
+        gripper_dist = np.linalg.norm(obs["obj_qpos"][:3] - env.get_gripper_world_pos())
+        print("initial obj-goal dist", obj_dist)
+        print("initial obj-gripper dist", gripper_dist)
 
         goal_timestep = start_timestep
 
@@ -78,12 +81,18 @@ class EpisodeRunner(object):
                 curr_state = env.get_flattened_state()
             start = State(img=curr_img, mask=curr_mask, state=curr_state)
             goal_imgs = demo["observations"][goal_timestep + 1:]
+            # goal_imgs = demo["obj_observations"][goal_timestep + 1:]
             goal_masks = demo["masks"][goal_timestep + 1:]
+            # goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
             opt_traj = demo["actions"][goal_timestep:]
             goal = DemoGoalState(imgs=goal_imgs, masks=goal_masks)
 
             ac = self.policy.get_action(start, goal, ep_num, ep_timestep, opt_traj)[0]
+            # ac = np.random.uniform(low=-1, high=1, size=4)
             # ac = demo["actions"][ep_timestep, (0,1,2,4)]
+            # print("ac", ac)
+            curr_eef_state = env.get_gripper_world_pos()
+            print("obj-gripper dist", np.linalg.norm(curr_eef_state - obs["obj_qpos"][:3]))
             trajectory["ac"].append(ac)
             obs, _, _, _ = env.step(ac)
             trajectory["obs"].append(obs)
@@ -95,11 +104,17 @@ class EpisodeRunner(object):
                 goal_timestep -= 1
             obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
             print("step", ep_timestep, obj_dist)
-            if ep_timestep >= 15 or obj_dist < 0.02:
+            if ep_timestep >= 12 or obj_dist < 0.01:
                 break
 
-        imageio.mimwrite("exec.gif", [x["observation"] for x in trajectory["obs"]])
-        # imageio.mimwrite("true_exec.gif", demo["observations"][start_timestep:])
+        record_path = os.path.join(cfg.log_dir, f"exec_{ep_num}.gif")
+        if cfg.reward_type == "dontcare":
+            # imageio.mimwrite(record_path, [zero_robot_region(x["masks"], x["observation"]) for x in trajectory["obs"]])
+            imageio.mimwrite(record_path, [x["observation"] for x in trajectory["obs"]], fps=4)
+        else:
+            imageio.mimwrite(record_path, [x["observation"] for x in trajectory["obs"]], fps=4)
+        record_path = os.path.join(cfg.log_dir, f"true_exec_{ep_num}.gif")
+        imageio.mimwrite(record_path, demo["observations"][start_timestep:], fps=4)
 
 
     def run(self):
@@ -118,6 +133,7 @@ class EpisodeRunner(object):
             demo["obj_qpos"] = hf["obj_qpos"][:]
             demo["qpos"] = hf["qpos"][:]
             demo["observations"] = hf["observations"][:]
+            demo["obj_observations"] = hf["obj_only_imgs"][:]
             demo["masks"] = hf["masks"][:]
             demo["actions"] = hf["actions"][:][:, (0,1,2,4)]
         return demo
@@ -196,12 +212,26 @@ class EpisodeRunner(object):
 if __name__ == "__main__":
     from src.config import argparser
 
-    demo_path = "/home/ed/roboaware/demos/locobot_pick/pick_0_3_s.hdf5"
-    demo_name = "pick_0_3"
+    # demo_path = "/home/ed/roboaware/demos/locobot_pick/pick_0_3_s.hdf5"
+    demo_path = "/home/ed/roboaware/demos/fetch_pick/pick_0_12_s.hdf5"
+    demo_name = "pick_0_12"
     config, _ = argparser()
-    config.use_env_dynamics = True
+
+    # env
+    config.modified = True
+
+    # cem
+    config.debug_cem = True
     config.action_dim = 4
-    config.action_candidates = 100
+    config.action_candidates = 500
+    config.use_env_dynamics = True
     config.cem_init_std = 0.5
+    config.horizon = 5
+    config.opt_iter = 5
+
+    # cost
+    config.reward_type = "dontcare"
+    config.sparse_cost = False
+
     runner = EpisodeRunner(config)
     runner.run_episode(0, demo_name, demo_path)

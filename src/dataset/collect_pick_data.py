@@ -31,7 +31,6 @@ def generate_demos(rank, config, record, num_trajectories):
         history = env.generate_demo()
         name = f"pick_{rank}_{i}_{'s' if history['success'] else 'f'}.hdf5"
         path = os.path.join(config.demo_dir, name)
-        record_path = f"videos/pick_{config.seed}_{i}.gif"
         obs = history["obs"]  # array of observation dictionaries
         len_stats.append(len(obs))
         succ_stats += int(history["success"])
@@ -50,8 +49,28 @@ def generate_demos(rank, config, record, num_trajectories):
         # make 3d action 5d for video prediction
         actions = [np.array([ac[0], ac[1], ac[2], 0, ac[3]]) for ac in history["ac"]]
         # now render the object only demonstration
+        env.reset()
+        # first move robot out of view
+        env.sim.data.set_joint_qpos("robot0:slide2", 1)
+        env.sim.data.set_joint_qpos("robot0:slide0", -1)
+        env.sim.forward()
+        # save the arm overhead state for rendering object only scene
+        arm_overhead_state = env.get_flattened_state()
+        # for each timestep, set objects, render the image, and save
+        obj_only_obs = []
+        for t in range(len(obs)):
+            env.sim.data.set_joint_qpos("object1:joint",obj_qpos[t])
+            env.sim.forward()
+            object_only_img = env.render()
+            obj_only_obs.append(object_only_img)
+            env.set_flattened_state(arm_overhead_state)
+
         if record:
+            record_path = f"videos/pick_{config.seed}_{i}.gif"
             imageio.mimwrite(record_path, imgs)
+            # record_path = f"videos/pick_{config.seed}_{i}_obj.gif"
+            # imageio.mimwrite(record_path, obj_only_obs)
+
         with h5py.File(path, "w") as hf:
             create_dataset = partial(hf.create_dataset, compression="gzip")
             create_dataset("actions", data=actions)
@@ -60,6 +79,7 @@ def generate_demos(rank, config, record, num_trajectories):
             create_dataset("qpos", data=qpos)
             create_dataset("obj_qpos", data=obj_qpos)
             create_dataset("masks", data=masks)
+            create_dataset("obj_only_imgs", data=obj_only_obs)
 
     # print out stats about the dataset
     stats_str = f"Avg len: {np.mean(len_stats)}\nstd: {np.std(len_stats)}\nmin: {np.min(len_stats)}\nmax: {np.max(len_stats)}\n Success: {succ_stats/num_trajectories}"
@@ -100,9 +120,9 @@ def collect_svg_data():
     Generate video dataset for SVG model training
     """
     num_workers = 1
-    num_demos = 20 // num_workers
+    num_demos = 100 // num_workers
     record = True
-    MODIFIED = False
+    MODIFIED = True
 
     config, _ = argparser()
     config.gpu = 0
@@ -111,7 +131,7 @@ def collect_svg_data():
     config.modified = MODIFIED
     # config.demo_dir = f"/scratch/edward/Robonet/locobot_pick{'_fetch' if MODIFIED else ''}_views/c0"
     # config.demo_dir = f"/home/pallab/locobot_ws/src/roboaware/demos"
-    config.demo_dir = f"/home/ed/roboaware/demos/locobot_pick"
+    config.demo_dir = f"/home/ed/roboaware/demos/fetch_pick"
     create_demo_dataset(config, num_demos, num_workers, record)
 
 

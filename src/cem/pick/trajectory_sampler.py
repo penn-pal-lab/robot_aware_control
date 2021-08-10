@@ -81,6 +81,8 @@ class TrajectorySampler(object):
 
                 img = ob["observation"].astype(np.float32)
                 mask = ob["masks"]
+                if cfg.reward_type == "dontcare":
+                    img = zero_robot_region(mask, img)
                 curr_state = State(img=img, mask=mask)
                 rew = 0
 
@@ -90,6 +92,7 @@ class TrajectorySampler(object):
                 goal_mask = None
                 if goal.masks is not None:
                     goal_mask = goal.masks[goal_idx]
+                    goal_img = zero_robot_region(goal_mask, goal_img)
                 goal_state = State(img=goal_img, mask=goal_mask)
                 if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
                     rew = cost(curr_state, goal_state, print_cost=False)
