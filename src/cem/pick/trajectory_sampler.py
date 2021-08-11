@@ -1,9 +1,7 @@
 import time as timer
-from copy import deepcopy
 from collections import defaultdict
 
 import numpy as np
-import imageio
 import torch
 from src.prediction.losses import RobotWorldCost
 from src.prediction.models.dynamics import SVGConvModel
@@ -18,22 +16,8 @@ class TrajectorySampler(object):
         self.cfg = cfg
         self.physics = physics
         if physics == "gt":
-            # source robot env
-            source_cfg = deepcopy(cfg)
-            source_cfg.modified = not cfg.modified
-            if source_cfg.modified:
-                print("Using fetch as source robot")
-            else:
-                print("Using widowx as source robot")
-            # source robot env: the robot we plan in
-            self.env = LocobotPickEnv(source_cfg)
-            obs = self.env.reset()
-            # imageio.imwrite("env.png", obs["observation"])
-
-            # target robot: the robot we run control in / get masks
-            self.target_env = LocobotPickEnv(cfg)
-            obs = self.target_env.reset()
-            # imageio.imwrite("target_env.png", obs["observation"])
+            self.env = LocobotPickEnv(cfg)
+            self.env.reset()
         else:
             self.model: SVGConvModel = None
         self.cost = RobotWorldCost(cfg)
@@ -81,7 +65,6 @@ class TrajectorySampler(object):
     ):
         cfg = self.cfg
         env = self.env
-        target_env = self.target_env
         cost = RobotWorldCost(self.cfg)
         T = len(action_sequences[0])
         if opt_traj is not None:
@@ -98,31 +81,7 @@ class TrajectorySampler(object):
         sum_cost = np.zeros(N)
         all_obs = []  # N x T x obs
         all_step_cost = []  # N x T x 1
-
-        # first set the target env.
-        target_env_state = start.sim_state
-        target_env.set_flattened_state(target_env_state.copy())
-        target_env.sim.step()
-        eef_pos = target_env.get_gripper_world_pos()
-        # print("fetch eef pos", eef_pos)
-
-        # env should be the corresponding widowx state
-        env.reset()
-        # first move the object out of scene
-        env.sim.data.set_joint_qpos("object1:joint", [10,10,10, 1,0,0,0])
-        # first move the widowx gripper with IK
-        history = defaultdict(list)
-        env._move(eef_pos, history, threshold=0.001, max_time=1000, speed=5, gripper=0, clip=False)
-        env_eef_pos = env.get_gripper_world_pos()
-        # print("widowx eef pos", env_eef_pos)
-        # then set the target gripper value
-        gripper_val = target_env.get_gripper_val()
-        env.set_gripper_val(gripper_val)
-        # source_init_img = env._get_obs()["observation"]
-        # target_init_img = target_env._get_obs()["observation"]
-        # imageio.imwrite("source_target.png", np.concatenate([source_init_img, target_init_img]))
-        # import ipdb; ipdb.set_trace()
-        env_state = env.get_flattened_state()
+        env_state = start.sim_state
 
         if not suppress_print:
             start_time = timer.time()
@@ -132,7 +91,6 @@ class TrajectorySampler(object):
             ep_obs = []
             ep_cost = []
             env.set_flattened_state(env_state.copy())
-            target_env.set_flattened_state(target_env_state.copy())
 
             for t in range(T):
                 action = action_sequences[ep_num, t].numpy()
@@ -141,10 +99,6 @@ class TrajectorySampler(object):
                 img = ob["observation"].astype(np.float32)
                 mask = ob["masks"]
                 state = ob["states"]
-                # get the target robot mask
-                target_ob, _, _, _ = target_env.step(action)
-                target_mask = target_ob["masks"]
-                mask = target_mask
                 if cfg.reward_type == "dontcare":
                     img = zero_robot_region(mask, img)
                 curr_state = State(img=img, mask=mask, state=state)

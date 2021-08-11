@@ -230,7 +230,6 @@ class LocobotPickEnv(MaskEnv):
             img = np.zeros((48,64,3))
             masks = np.zeros((48,64,1))
         else:
-            self.render("rgb_array",width=2, height=2)
             img = self.render("rgb_array")
             masks = self.get_robot_mask()
         gripper_xpos = self.get_gripper_world_pos()
