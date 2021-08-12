@@ -84,7 +84,7 @@ class LocobotPickEnv(MaskEnv):
 
         # workspace boundaries for eef
         # self._ws_low = [0.24, -0.17, 0.05]
-        self._ws_low = [0.28, -0.17, 0.05]
+        self._ws_low = [0.24, -0.17, 0.05]
         self._ws_high = [0.33, 0.17, 0.15]
 
         # modify camera R
@@ -163,7 +163,7 @@ class LocobotPickEnv(MaskEnv):
             self.sim.forward()
         return self._get_obs()
 
-    def step(self, action, clip=False):
+    def step(self, action, clip=True):
         action = np.asarray(action)
         action = np.clip(action, self.action_space.low, self.action_space.high)
         if clip:
@@ -383,12 +383,12 @@ class LocobotPickEnv(MaskEnv):
         above_block_xpos[2] += 0.05
         # move robot above slightly above block
         target = above_block_xpos
-        # noise = 0.07
-        # z_noise = 0.04
-        # gripper_noise = 0.002
-        noise = 0.00
-        z_noise = 0.00
-        gripper_noise = 0.000
+        noise = 0.07
+        z_noise = 0.04
+        gripper_noise = 0.002
+        # noise = 0.00
+        # z_noise = 0.00
+        # gripper_noise = 0.000
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -421,8 +421,8 @@ class LocobotPickEnv(MaskEnv):
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
         block_xpos[2] -= 0.01
         target = block_xpos
-        # noise = 0.02
-        noise = 0.0
+        noise = 0.02
+        # noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -454,8 +454,8 @@ class LocobotPickEnv(MaskEnv):
         # print("pick", step)
 
         # Place primitive
-        # noise = 0.01
-        noise = 0.0
+        noise = 0.01
+        # noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
@@ -491,8 +491,8 @@ class LocobotPickEnv(MaskEnv):
         total_steps += step
 
         # move it to a side.
-        # noise = 0.01
-        noise = 0.0
+        noise = 0.01
+        # noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
 
@@ -571,18 +571,14 @@ if __name__ == "__main__":
 
     DEBUG = True
     env = LocobotPickEnv(config)
+    env.reset()
     while True:
-        env.reset()
-        env.render("human")
-        eef_pos = [0.31807845, 0.0108918,  0.12371251]
-        env._move(eef_pos, threshold=0.001, max_time=1000, speed=5, gripper=0, clip=False)
-        env._move()
-        # for i in range(15):
-        #     env.render("human")
-        #     env.step([0,0,-1, 0.005])
-        # for i in range(15):
-        #     env.render("human")
-        #     env.step([-0,-0,1, -0.005])
+        for i in range(15):
+            env.render("human")
+            env.step([1,0,-0, 0.005])
+        for i in range(15):
+            env.render("human")
+            env.step([-1,-0,0, -0.005])
     sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
