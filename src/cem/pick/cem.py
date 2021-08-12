@@ -36,10 +36,10 @@ class CEMPolicy(object):
         self.init_std = init_std
         self.sparse_cost = cfg.sparse_cost  # Use cost function at end of traj
 
-        self.action_dim = cfg.action_dim
+        self.action_dim = 4
         self.cfg = cfg
 
-
+        self.physics = physics
         self.traj_sampler = TrajectorySampler(cfg, physics)
 
         self.plot_rollouts = cfg.debug_cem
@@ -127,60 +127,119 @@ class CEMPolicy(object):
         )
         # Plot the Top K model rollouts
         if plot:
-            obs = rollouts["obs"]  # K x T x C x H x W
-            if opt_traj is not None:
-                opt_obs = np.expand_dims(rollouts["optimal_obs"], 0)
-                obs = np.concatenate([opt_obs, obs])
-            obs = np.uint8(obs)
-            # obs = np.uint8(255 * obs)
-            # obs = obs.transpose((0, 1, 3, 4, 2))  # K x T x H x W x C
-            # topk_act = act_seq[rollouts["topk_idx"]]
-            gif_folder = os.path.join(self.debug_cem_dir, f"ep_{ep_num}")
-            os.makedirs(gif_folder, exist_ok=True)
-
-            goal_img = goal.imgs[0]
-            curr_img = start.img.copy()
-            info_img = np.zeros_like(goal_img)
-            img = np.concatenate([info_img, curr_img, goal_img], axis=1)
-            putText(img, f"Start", (0, 8), color=(255, 255, 255))
-            gif = [np.concatenate([img] * obs.shape[0])]
-            for t in range(obs.shape[1]):
-                all_k_img = []
-                for k in range(obs.shape[0]):
-                    curr_img = obs[k, t]
-                    g = t if t < len(goal.imgs) else -1
-                    goal_img = goal.imgs[g]
-                    if goal.masks is not None:
-                        goal_img = zero_robot_region(goal.masks[g], goal_img)
-                    info_img = np.zeros_like(goal_img)
-                    img = np.concatenate([info_img, curr_img, goal_img], axis=1).copy()
-                    if opt_traj is not None:
-                        if k == 0:
-                            putText(img, f"Opt", (0, 8), color=(255, 255, 255))
-                            # ac = opt_traj[t]
-                        else:
-                            putText(img, f"Rank {k-1}", (0, 8), color=(255, 255, 255))
-                            # ac = topk_act[k - 1, t]
-                    else:
-                        putText(img, f"Rank {k}", (0, 8), color=(255, 255, 255))
-                        # ac = topk_act[k, t]
-
-                    # putText(
-                    #     img, f"X:{ac[0] * 100:.1f}cm", (0, 16), color=(255, 255, 255)
-                    # )
-                    # putText(
-                    #     img, f"Y:{ac[1] * 100:.1f}cm", (0, 24), color=(255, 255, 255)
-                    # )
-                    putText(img, f"{t}", (64, 8), color=(255, 255, 255))
-                    putText(img, "GOAL", (128, 8), color=(255, 255, 255))
-                    all_k_img.append(img)
-                all_k_img = np.concatenate(all_k_img)
-                gif.append(all_k_img)
-
-            gif_path = os.path.join(gif_folder, f"step_{self.step}_top_k.gif")
-            imageio.mimwrite(gif_path, gif, fps=2)
-            # import ipdb; ipdb.set_trace()
+            if self.physics == "gt":
+                self._plot_env_rollouts(rollouts, start, goal, opt_traj, ep_num)
+            else:
+                self._plot_model_rollouts(rollouts, start, goal, opt_traj, ep_num)
         return rollouts
+
+    def _plot_env_rollouts(self, rollouts, start: State, goal: DemoGoalState, opt_traj=None, ep_num=None):
+        obs = rollouts["obs"]  # K x T x C x H x W
+        if opt_traj is not None:
+            opt_obs = np.expand_dims(rollouts["optimal_obs"], 0)
+            obs = np.concatenate([opt_obs, obs])
+        obs = np.uint8(obs)
+        # obs = np.uint8(255 * obs)
+        # obs = obs.transpose((0, 1, 3, 4, 2))  # K x T x H x W x C
+        # topk_act = act_seq[rollouts["topk_idx"]]
+        gif_folder = os.path.join(self.debug_cem_dir, f"ep_{ep_num}")
+        os.makedirs(gif_folder, exist_ok=True)
+
+        goal_img = goal.imgs[0]
+        curr_img = start.img.copy()
+        info_img = np.zeros_like(goal_img)
+        img = np.concatenate([info_img, curr_img, goal_img], axis=1)
+        putText(img, f"Start", (0, 8), color=(255, 255, 255))
+        gif = [np.concatenate([img] * obs.shape[0])]
+        for t in range(obs.shape[1]):
+            all_k_img = []
+            for k in range(obs.shape[0]):
+                curr_img = obs[k, t]
+                g = t if t < len(goal.imgs) else -1
+                goal_img = goal.imgs[g]
+                if goal.masks is not None:
+                    goal_img = zero_robot_region(goal.masks[g], goal_img)
+                info_img = np.zeros_like(goal_img)
+                import ipdb; ipdb.set_trace()
+                img = np.concatenate([info_img, curr_img, goal_img], axis=1).copy()
+                if opt_traj is not None:
+                    if k == 0:
+                        putText(img, f"Opt", (0, 8), color=(255, 255, 255))
+                        # ac = opt_traj[t]
+                    else:
+                        putText(img, f"Rank {k-1}", (0, 8), color=(255, 255, 255))
+                        # ac = topk_act[k - 1, t]
+                else:
+                    putText(img, f"Rank {k}", (0, 8), color=(255, 255, 255))
+                    # ac = topk_act[k, t]
+
+                # putText(
+                #     img, f"X:{ac[0] * 100:.1f}cm", (0, 16), color=(255, 255, 255)
+                # )
+                # putText(
+                #     img, f"Y:{ac[1] * 100:.1f}cm", (0, 24), color=(255, 255, 255)
+                # )
+                putText(img, f"{t}", (64, 8), color=(255, 255, 255))
+                putText(img, "GOAL", (128, 8), color=(255, 255, 255))
+                all_k_img.append(img)
+            all_k_img = np.concatenate(all_k_img)
+            gif.append(all_k_img)
+
+        gif_path = os.path.join(gif_folder, f"step_{self.step}_top_k.gif")
+        imageio.mimwrite(gif_path, gif, fps=2)
+
+    def _plot_model_rollouts(self, rollouts, start: State, goal: DemoGoalState, opt_traj=None, ep_num=None):
+        obs = rollouts["obs"]  # K x T x C x H x W
+        if opt_traj is not None:
+            opt_obs = np.expand_dims(rollouts["optimal_obs"], 0)
+            obs = np.concatenate([opt_obs, obs])
+        obs = np.uint8(255 * obs)
+        obs = obs.transpose((0, 1, 3, 4, 2))  # K x T x H x W x C
+        # topk_act = act_seq[rollouts["topk_idx"]]
+        gif_folder = os.path.join(self.debug_cem_dir, f"ep_{ep_num}")
+        os.makedirs(gif_folder, exist_ok=True)
+
+        goal_img = goal.imgs[0]
+        curr_img = start.img.copy()
+        info_img = np.zeros_like(goal_img)
+        img = np.concatenate([info_img, curr_img, goal_img], axis=1)
+        putText(img, f"Start", (0, 8), color=(255, 255, 255))
+        gif = [np.concatenate([img] * obs.shape[0])]
+        for t in range(obs.shape[1]):
+            all_k_img = []
+            for k in range(obs.shape[0]):
+                curr_img = obs[k, t]
+                g = t if t < len(goal.imgs) else -1
+                goal_img = goal.imgs[g]
+                if goal.masks is not None:
+                    goal_img = zero_robot_region(goal.masks[g], goal_img)
+                info_img = np.zeros_like(goal_img)
+                img = np.concatenate([info_img, curr_img, goal_img], axis=1).copy()
+                if opt_traj is not None:
+                    if k == 0:
+                        putText(img, f"Opt", (0, 8), color=(255, 255, 255))
+                        # ac = opt_traj[t]
+                    else:
+                        putText(img, f"Rank {k-1}", (0, 8), color=(255, 255, 255))
+                        # ac = topk_act[k - 1, t]
+                else:
+                    putText(img, f"Rank {k}", (0, 8), color=(255, 255, 255))
+                    # ac = topk_act[k, t]
+
+                # putText(
+                #     img, f"X:{ac[0] * 100:.1f}cm", (0, 16), color=(255, 255, 255)
+                # )
+                # putText(
+                #     img, f"Y:{ac[1] * 100:.1f}cm", (0, 24), color=(255, 255, 255)
+                # )
+                putText(img, f"{t}", (64, 8), color=(255, 255, 255))
+                putText(img, "GOAL", (128, 8), color=(255, 255, 255))
+                all_k_img.append(img)
+            all_k_img = np.concatenate(all_k_img)
+            gif.append(all_k_img)
+
+        gif_path = os.path.join(gif_folder, f"step_{self.step}_top_k.gif")
+        imageio.mimwrite(gif_path, gif, fps=2)
 
 
 if __name__ == "__main__":

@@ -3,22 +3,18 @@ import os
 import pickle
 from collections import defaultdict
 from os.path import join
-from src.utils.image import zero_robot_region
 from src.cem.pick.cem import CEMPolicy
 from src.utils.mujoco import init_mjrender_device
-from typing import List
 import colorlog
 import h5py
 import imageio
 import numpy as np
 import torch
 import wandb
-from numpy.linalg import norm
 from tqdm import trange
 from src.utils.state import State, DemoGoalState
 from src.env.robotics.locobot_pick_env import LocobotPickEnv
 from src.prediction.losses import RobotWorldCost
-from src.utils.plot import putText
 
 
 class EpisodeRunner(object):
@@ -81,10 +77,10 @@ class EpisodeRunner(object):
         while True:
             curr_img = obs["observation"]
             curr_mask = obs["masks"]
+            curr_state = obs["states"]
             curr_sim_state = None
-            if cfg.use_env_dynamics:
-                curr_sim_state = env.get_flattened_state().copy()
-            start = State(img=curr_img, mask=curr_mask, sim_state=curr_sim_state)
+            curr_sim_state = env.get_flattened_state().copy()
+            start = State(img=curr_img, state=curr_state, mask=curr_mask, sim_state=curr_sim_state)
             # goal_imgs = demo["observations"][goal_timestep + 1:]
             goal_imgs = demo["obj_observations"][goal_timestep + 1:]
             # goal_masks = demo["masks"][goal_timestep + 1:]
@@ -261,17 +257,30 @@ if __name__ == "__main__":
 
     # env
     config.modified = True
-    config.object_demo_dir = "/home/ed/roboaware/demos/fetch_pick_demos"
+    config.object_demo_dir = "/home/pallab/roboaware/demos/fetch_pick_demos"
     # config.object_demo_dir = "/home/edward/roboaware/demos/fetch_pick_demos"
+
+    # model
+    config.dynamics_model_ckpt = "/home/pallab/roboaware/checkpoints/pick2_vfs_90000.pt"
+    config.action_dim = 5
+    # config.action_dim = 5
+    # config.robot_dim = 5
+    config.model_use_robot_state = True
+    # config.model_use_mask = True
+    # config.model_use_future_mask = False
+    # config.model_use_future_robot_state = False
+    # config.lstm_group_norm = True
+    # config.g_dim = 256
+    # config.z_dim  = 64
+
 
     # cem
     config.debug_cem = True
-    config.action_dim = 4
-    config.action_candidates = 5
-    config.use_env_dynamics = True
+    config.action_candidates = 500
+    config.use_env_dynamics = False
     config.cem_init_std = 0.5
-    config.horizon = 2
-    config.opt_iter = 2
+    config.horizon = 5
+    config.opt_iter = 5
 
     # cost
     config.reward_type = "dontcare"
