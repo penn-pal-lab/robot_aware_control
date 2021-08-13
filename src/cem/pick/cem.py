@@ -212,7 +212,8 @@ class CEMPolicy(object):
                 g = t if t < len(goal.imgs) else -1
                 goal_img = goal.imgs[g]
                 if goal.masks is not None:
-                    goal_img = zero_robot_region(goal.masks[g], goal_img)
+                    if self.cfg.reward_type == "dontcare":
+                        goal_img = zero_robot_region(goal.masks[g], goal_img)
                 info_img = np.zeros_like(goal_img)
                 img = np.concatenate([info_img, curr_img, goal_img], axis=1).copy()
                 if opt_traj is not None:

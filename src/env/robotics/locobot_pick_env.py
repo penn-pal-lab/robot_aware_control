@@ -383,12 +383,12 @@ class LocobotPickEnv(MaskEnv):
         above_block_xpos[2] += 0.05
         # move robot above slightly above block
         target = above_block_xpos
-        noise = 0.07
-        z_noise = 0.04
-        gripper_noise = 0.002
-        # noise = 0.00
-        # z_noise = 0.00
-        # gripper_noise = 0.000
+        # noise = 0.07
+        # z_noise = 0.04
+        # gripper_noise = 0.002
+        noise = 0.00
+        z_noise = 0.00
+        gripper_noise = 0.000
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -421,8 +421,8 @@ class LocobotPickEnv(MaskEnv):
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
         block_xpos[2] -= 0.01
         target = block_xpos
-        noise = 0.02
-        # noise = 0.0
+        # noise = 0.02
+        noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -454,8 +454,8 @@ class LocobotPickEnv(MaskEnv):
         # print("pick", step)
 
         # Place primitive
-        noise = 0.01
-        # noise = 0.0
+        # noise = 0.01
+        noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
@@ -491,8 +491,8 @@ class LocobotPickEnv(MaskEnv):
         total_steps += step
 
         # move it to a side.
-        noise = 0.01
-        # noise = 0.0
+        # noise = 0.01
+        noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
 

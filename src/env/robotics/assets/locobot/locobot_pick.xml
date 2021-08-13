@@ -102,70 +102,76 @@
             <site rgba="1 1 0 1" pos="0 0 0" size="0.01"  name="eef_pos"></site>
         </body> -->
         <!-- robot -->
-        <geom name="robot-geom-0" size="0.178 0.05469" pos="0 0 0.06969" type="cylinder" />
-        <geom name="robot-geom-1" size="0.017 0.0088" pos="0.115 0 0.0172" quat="0.707107 -0.707107 0 0" type="cylinder" />
-        <geom name="robot-geom-2" size="0.017 0.0088" pos="-0.135 0 0.0192" quat="0.707107 -0.707107 0 0" type="cylinder" />
-        <geom name="robot-geom-3" pos="0 0 0.102813" quat="0 0.707107 0.707107 0" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="plate_bottom" />
-        <geom name="robot-geom-4" pos="0 0 0.107563" quat="0 0.707107 0.707107 0" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="plate_top" />
-        <geom name="robot-geom-5" pos="0.00026679 -0.0217673 0.110563" quat="0.707107 0 0 0.707107" type="mesh" mesh="battery" />
-        <geom name="robot-geom-6" pos="0.001527 0 0.00191227" quat="0.5 0.5 0.5 0.5" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="mobile_base" />
-        <!-- <body name="wheel_left_link" pos="0 0.115 0.0352" quat="0.707107 -0.707107 0 0">
-            <inertial pos="0 0 0" mass="0.01" diaginertia="0.001 0.001 0.001" />
-            <joint name="wheel_left_joint" pos="0 0 0" axis="0 0 1" />
-            <geom size="0.0352 0.0103" type="cylinder" />
-        </body>
-        <body name="wheel_right_link" pos="0 -0.115 0.0352" quat="0.707107 -0.707107 0 0">
-            <inertial pos="0 0 0" mass="0.01" diaginertia="0.001 0.001 0.001" />
-            <joint name="wheel_right_joint" pos="0 0 0" axis="0 0 1" />
-            <geom size="0.035 0.0103" type="cylinder" />
-        </body> -->
-        <body name="shoulder_link" pos="0.0973 0 0.173063">
-            <inertial pos="-5.67969e-05 1.09785e-10 0.0228467" quat="0.70709 0.70709 0.00489782 -0.00489782" mass="0.119861" diaginertia="0.00016129 0.000150799 5.49697e-05" />
-            <joint name="joint_1" pos="0 0 0" axis="0 0 1" limited="true" range="-1.57 1.57" />
-            <geom name="shoulder_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="shoulder_link" />
-            <body name="elbow_link" pos="0 0 0.04125">
-                <inertial pos="0.00959756 -2.3093e-10 0.134297" quat="0.705844 0.0422381 0.0422381 0.705844" mass="0.212483" diaginertia="0.0012235 0.00119077 7.43429e-05" />
-                <joint name="joint_2" pos="0 0 0" axis="0 1 0" limited="true" range="-1.57 1.57" />
-                <geom name="elbow_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="elbow_link" />
-                <body name="forearm_link" pos="0.05 0 0.2">
-                    <inertial pos="0.11783 0 -1.26219e-08" quat="0 0.707107 0 0.707107" mass="0.187464" diaginertia="0.000737166 0.00072521 3.94143e-05" />
-                    <joint name="joint_3" pos="0 0 0" axis="0 1 0" limited="true" range="-1.57 1.57" />
-                    <geom name="forearm_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="forearm_link" />
-                    <body name="wrist_link" pos="0.2002 0 0">
-                        <inertial pos="0.042941 4.98645e-05 0.0114267" quat="0.0526331 0.462852 0.0284284 0.884415" mass="0.0605922" diaginertia="2.0979e-05 2.08943e-05 1.73078e-05" />
-                        <joint name="joint_4" pos="0 0 0" axis="0 1 0" limited="true" range="-1.57 1.57" />
-                        <geom name="wrist_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="wrist_link" />
-                        <geom conaffinity="0" contype="0" pos="0.02 0 0" size="0.02 0.02 0.005" type="box" name="wrist_hole_geom" rgba="0.792157 0.819608 0.933333 1"/>
+        <body name="locobot">
+            <joint armature="0.0001" axis="1 0 0" damping="1e+11" name="robot0:slide0" pos="0 0 0" type="slide"></joint>
+            <joint armature="0.0001" axis="0 1 0" damping="1e+11" name="robot0:slide1" pos="0 0 0" type="slide"></joint>
+            <joint armature="0.0001" axis="0 0 1" damping="1e+11" name="robot0:slide2" pos="0 0 0" type="slide"></joint>
 
-                        <body name="gripper_link" pos="0.063 0.0001 0">
-                            <site rgba="1 0 0 1" pos="0 0 0" size="0.01"  name="gripper_link_site"></site>
-                            <inertial pos="0.0303034 -1.00406e-05 0.0150805" quat="0.359874 0.610879 0.606151 0.360414" mass="0.0998368" diaginertia="6.24793e-05 6.16818e-05 4.76112e-05" />
-                            <joint name="joint_5" pos="0 0 0" axis="-1 0 0" limited="true" range="-1.57 1.57" />
-                            <geom name="gripper_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="gripper_link" />
-                            <site name="robot0:grip" pos="0.1 0.0 -0.005" rgba="1 1 0 0" size="0.01 0.01 0.01"></site>
-                            <!-- <geom name="ar_tag_geom" pos="0.02695 0 0.04315" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="ar_tag" /> -->
-                            <geom conaffinity="0" contype="0" pos="0.055 0 0" size="0.01 0.045 0.003" type="box" name="gripper_hole_geom" rgba="0.792157 0.819608 0.933333 1"/>
+            <geom name="robot-geom-0" size="0.178 0.05469" pos="0 0 0.06969" type="cylinder" />
+            <geom name="robot-geom-1" size="0.017 0.0088" pos="0.115 0 0.0172" quat="0.707107 -0.707107 0 0" type="cylinder" />
+            <geom name="robot-geom-2" size="0.017 0.0088" pos="-0.135 0 0.0192" quat="0.707107 -0.707107 0 0" type="cylinder" />
+            <geom name="robot-geom-3" pos="0 0 0.102813" quat="0 0.707107 0.707107 0" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="plate_bottom" />
+            <geom name="robot-geom-4" pos="0 0 0.107563" quat="0 0.707107 0.707107 0" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="plate_top" />
+            <geom name="robot-geom-5" pos="0.00026679 -0.0217673 0.110563" quat="0.707107 0 0 0.707107" type="mesh" mesh="battery" />
+            <geom name="robot-geom-6" pos="0.001527 0 0.00191227" quat="0.5 0.5 0.5 0.5" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="mobile_base" />
+            <!-- <body name="wheel_left_link" pos="0 0.115 0.0352" quat="0.707107 -0.707107 0 0">
+                <inertial pos="0 0 0" mass="0.01" diaginertia="0.001 0.001 0.001" />
+                <joint name="wheel_left_joint" pos="0 0 0" axis="0 0 1" />
+                <geom size="0.0352 0.0103" type="cylinder" />
+            </body>
+            <body name="wheel_right_link" pos="0 -0.115 0.0352" quat="0.707107 -0.707107 0 0">
+                <inertial pos="0 0 0" mass="0.01" diaginertia="0.001 0.001 0.001" />
+                <joint name="wheel_right_joint" pos="0 0 0" axis="0 0 1" />
+                <geom size="0.035 0.0103" type="cylinder" />
+            </body> -->
+            <body name="shoulder_link" pos="0.0973 0 0.173063">
+                <inertial pos="-5.67969e-05 1.09785e-10 0.0228467" quat="0.70709 0.70709 0.00489782 -0.00489782" mass="0.119861" diaginertia="0.00016129 0.000150799 5.49697e-05" />
+                <joint name="joint_1" pos="0 0 0" axis="0 0 1" limited="true" range="-1.57 1.57" />
+                <geom name="shoulder_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="shoulder_link" />
+                <body name="elbow_link" pos="0 0 0.04125">
+                    <inertial pos="0.00959756 -2.3093e-10 0.134297" quat="0.705844 0.0422381 0.0422381 0.705844" mass="0.212483" diaginertia="0.0012235 0.00119077 7.43429e-05" />
+                    <joint name="joint_2" pos="0 0 0" axis="0 1 0" limited="true" range="-1.57 1.57" />
+                    <geom name="elbow_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="elbow_link" />
+                    <body name="forearm_link" pos="0.05 0 0.2">
+                        <inertial pos="0.11783 0 -1.26219e-08" quat="0 0.707107 0 0.707107" mass="0.187464" diaginertia="0.000737166 0.00072521 3.94143e-05" />
+                        <joint name="joint_3" pos="0 0 0" axis="0 1 0" limited="true" range="-1.57 1.57" />
+                        <geom name="forearm_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="forearm_link" />
+                        <body name="wrist_link" pos="0.2002 0 0">
+                            <inertial pos="0.042941 4.98645e-05 0.0114267" quat="0.0526331 0.462852 0.0284284 0.884415" mass="0.0605922" diaginertia="2.0979e-05 2.08943e-05 1.73078e-05" />
+                            <joint name="joint_4" pos="0 0 0" axis="0 1 0" limited="true" range="-1.57 1.57" />
+                            <geom name="wrist_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="wrist_link" />
+                            <geom conaffinity="0" contype="0" pos="0.02 0 0" size="0.02 0.02 0.005" type="box" name="wrist_hole_geom" rgba="0.792157 0.819608 0.933333 1"/>
 
-                            <!-- <body name="finger_r" pos="0.07285 0 0.0050143"> -->
-                            <body childclass="robot0:fetchGripper" name="finger_r" pos="0.07285 0.0 0">
-                                <inertial pos="0.0100192 0.00643833 -0.0048328" quat="0.522879 0.523899 0.475677 0.475246" mass="0.0121931" diaginertia="3.13241e-06 2.77936e-06 6.51268e-07" />
-                                <joint axis="0 -1 0" name="joint_7" range="0 0.03"></joint>
-                                <geom name="finger_r_geom" type="mesh" rgba="1 0.819608 0.933333 1" mesh="finger_r" contype="0" conaffinity="0"/>
-                                <geom name="finger_r_contact_geom_1" pos="0.016 -0.009 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 0 0" friction="1 0.005 0.0001" />
-                            </body>
-                            <body childclass="robot0:fetchGripper" name="finger_l" pos="0.07285 0.0 0">
-                                <inertial pos="0.0100192 0.00643833 -0.0048328" quat="0.522879 0.523899 0.475677 0.475246" mass="0.0121931" diaginertia="3.13241e-06 2.77936e-06 6.51268e-07" />
-                                <joint axis="0 1 0" name="joint_6" range="0 0.03"></joint>
-                                <geom name="finger_l_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="finger_l" contype="0" conaffinity="0"/>
-                                <geom name="finger_l_contact_geom_1" pos="0.016 0.006 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 1 0"    friction="1 0.005 0.0001"/>
-                                <!-- <geom name="finger_l_contact_geom_1" pos="0.016 0.006 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 1 0" /> -->
-                                <!-- <site name="robot0:grip" pos="0.03 0 0" rgba="1 1 0 0" size="0.01 0.01 0.01"></site> -->
+                            <body name="gripper_link" pos="0.063 0.0001 0">
+                                <site rgba="1 0 0 1" pos="0 0 0" size="0.01"  name="gripper_link_site"></site>
+                                <inertial pos="0.0303034 -1.00406e-05 0.0150805" quat="0.359874 0.610879 0.606151 0.360414" mass="0.0998368" diaginertia="6.24793e-05 6.16818e-05 4.76112e-05" />
+                                <joint name="joint_5" pos="0 0 0" axis="-1 0 0" limited="true" range="-1.57 1.57" />
+                                <geom name="gripper_link_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="gripper_link" />
+                                <site name="robot0:grip" pos="0.1 0.0 -0.005" rgba="1 1 0 0" size="0.01 0.01 0.01"></site>
+                                <!-- <geom name="ar_tag_geom" pos="0.02695 0 0.04315" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="ar_tag" /> -->
+                                <geom conaffinity="0" contype="0" pos="0.055 0 0" size="0.01 0.045 0.003" type="box" name="gripper_hole_geom" rgba="0.792157 0.819608 0.933333 1"/>
+
+                                <!-- <body name="finger_r" pos="0.07285 0 0.0050143"> -->
+                                <body childclass="robot0:fetchGripper" name="finger_r" pos="0.07285 0.0 0">
+                                    <inertial pos="0.0100192 0.00643833 -0.0048328" quat="0.522879 0.523899 0.475677 0.475246" mass="0.0121931" diaginertia="3.13241e-06 2.77936e-06 6.51268e-07" />
+                                    <joint axis="0 -1 0" name="joint_7" range="0 0.03"></joint>
+                                    <geom name="finger_r_geom" type="mesh" rgba="1 0.819608 0.933333 1" mesh="finger_r" contype="0" conaffinity="0"/>
+                                    <geom name="finger_r_contact_geom_1" pos="0.016 -0.009 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 0 0" friction="1 0.005 0.0001" />
+                                </body>
+                                <body childclass="robot0:fetchGripper" name="finger_l" pos="0.07285 0.0 0">
+                                    <inertial pos="0.0100192 0.00643833 -0.0048328" quat="0.522879 0.523899 0.475677 0.475246" mass="0.0121931" diaginertia="3.13241e-06 2.77936e-06 6.51268e-07" />
+                                    <joint axis="0 1 0" name="joint_6" range="0 0.03"></joint>
+                                    <geom name="finger_l_geom" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="finger_l" contype="0" conaffinity="0"/>
+                                    <geom name="finger_l_contact_geom_1" pos="0.016 0.006 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 1 0"    friction="1 0.005 0.0001"/>
+                                    <!-- <geom name="finger_l_contact_geom_1" pos="0.016 0.006 -0.006" size="0.03 0.005 0.013" type="box" rgba="1 0 1 0" /> -->
+                                    <!-- <site name="robot0:grip" pos="0.03 0 0" rgba="1 1 0 0" size="0.01 0.01 0.01"></site> -->
+                                </body>
                             </body>
                         </body>
                     </body>
                 </body>
             </body>
-        </body>
+    </body>
     </worldbody>
     <actuator>
 		<position ctrllimited="true" ctrlrange="0 0.1" joint="joint_7" kp="30000" name="joint_7" user="1"></position>

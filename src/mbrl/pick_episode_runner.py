@@ -57,7 +57,7 @@ class EpisodeRunner(object):
         trajectory = defaultdict(list)
 
         demo = self._load_demo(demo_path)
-        start_timestep = 4
+        start_timestep = 2
         initial_state = {"qpos": demo["qpos"][start_timestep], "obj_qpos": demo["obj_qpos"][start_timestep]}
         goal_pos = demo["obj_qpos"][-1][:3]
         obs = env.reset(initial_state=initial_state)
@@ -81,10 +81,12 @@ class EpisodeRunner(object):
             curr_sim_state = None
             curr_sim_state = env.get_flattened_state().copy()
             start = State(img=curr_img, state=curr_state, mask=curr_mask, sim_state=curr_sim_state)
-            # goal_imgs = demo["observations"][goal_timestep + 1:]
-            goal_imgs = demo["obj_observations"][goal_timestep + 1:]
-            # goal_masks = demo["masks"][goal_timestep + 1:]
-            goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
+            goal_imgs = demo["observations"][goal_timestep + 1:]
+            # goal_imgs = demo["obj_observations"][goal_timestep + 1:]
+
+            goal_masks = None
+            goal_masks = demo["masks"][goal_timestep + 1:]
+            # goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
             goal_eef_states = demo["eef_states"][goal_timestep:]
             opt_traj = demo["actions"][goal_timestep:]
             goal = DemoGoalState(imgs=goal_imgs, masks=goal_masks, states=goal_eef_states)
@@ -250,14 +252,15 @@ class EpisodeRunner(object):
 if __name__ == "__main__":
     from src.config import argparser
 
-    # demo_path = "/home/ed/roboaware/demos/locobot_pick/pick_0_3_s.hdf5"
+    demo_path = "/home/pallab/roboaware/demos/locobot_pick_demos/pick_0_11_s.hdf5"
     # demo_path = "/home/ed/roboaware/demos/fetch_pick/pick_0_3_f.hdf5"
-    # demo_name = "pick_0_3_f"
+    demo_name = "pick_0_11_s"
     config, _ = argparser()
 
     # env
-    config.modified = True
-    config.object_demo_dir = "/home/pallab/roboaware/demos/fetch_pick_demos"
+    config.modified = False
+    config.object_demo_dir = "/home/pallab/roboaware/demos/locobot_pick_demos"
+    # config.object_demo_dir = "/home/pallab/roboaware/demos/fetch_pick_demos"
     # config.object_demo_dir = "/home/edward/roboaware/demos/fetch_pick_demos"
 
     # model
@@ -265,7 +268,7 @@ if __name__ == "__main__":
     config.action_dim = 5
     # config.action_dim = 5
     # config.robot_dim = 5
-    config.model_use_robot_state = True
+    # config.model_use_robot_state = True
     # config.model_use_mask = True
     # config.model_use_future_mask = False
     # config.model_use_future_robot_state = False
@@ -276,20 +279,18 @@ if __name__ == "__main__":
 
     # cem
     config.debug_cem = True
-    config.action_candidates = 500
+    config.action_candidates = 250
+    config.candidates_batch_size = 250
     config.use_env_dynamics = False
     config.cem_init_std = 0.5
     config.horizon = 5
     config.opt_iter = 5
 
     # cost
-    config.reward_type = "dontcare"
-    # config.reward_type = "weighted"
+    config.reward_type = "dense"
     config.sparse_cost = False
-    # config.robot_cost_weight = 1
-    config.robot_cost_weight = 1
-    # config.world_cost_weight = 0.0001
-    config.world_cost_weight = 0.3
+    config.robot_cost_weight = 0
+    config.world_cost_weight = 1
 
     runner = EpisodeRunner(config)
     runner.run()
