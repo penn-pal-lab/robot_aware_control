@@ -62,7 +62,9 @@ class EpisodeRunner(object):
         goal_pos = demo["obj_qpos"][-1][:3]
         obs = env.reset(initial_state=initial_state)
         trajectory["obs"].append(obs)
-        obj_dist = init_obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
+        initial_obj_z = obs["obj_qpos"][2]
+        init_obj_pos = obs["obj_qpos"][:3]
+        obj_dist = init_obj_dist = np.linalg.norm(init_obj_pos - goal_pos)
         gripper_dist = np.linalg.norm(obs["obj_qpos"][:3] - env.get_gripper_world_pos())
         print("initial obj-goal dist", obj_dist)
         print("initial obj-gripper dist", gripper_dist)
@@ -71,6 +73,7 @@ class EpisodeRunner(object):
 
         # begin policy rollout
         success = False
+        obj_picked = False
         ep_timestep = start_timestep
         # before_img = env._get_obs()["observation"]
         # imageio.imwrite("before_ac.png", before_img)
@@ -81,13 +84,13 @@ class EpisodeRunner(object):
             curr_sim_state = None
             curr_sim_state = env.get_flattened_state().copy()
             start = State(img=curr_img, state=curr_state, mask=curr_mask, sim_state=curr_sim_state)
-            goal_imgs = demo["observations"][goal_timestep + 1:]
-            # goal_imgs = demo["obj_observations"][goal_timestep + 1:]
+            # goal_imgs = demo["observations"][goal_timestep + 1:]
+            goal_imgs = demo["obj_observations"][goal_timestep + 1:]
 
             goal_masks = None
-            goal_masks = demo["masks"][goal_timestep + 1:]
-            # goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
-            goal_eef_states = demo["eef_states"][goal_timestep:]
+            # goal_masks = demo["masks"][goal_timestep + 1:]
+            goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
+            goal_eef_states = demo["eef_states"][goal_timestep + 1:]
             opt_traj = demo["actions"][goal_timestep:]
             goal = DemoGoalState(imgs=goal_imgs, masks=goal_masks, states=goal_eef_states)
 
@@ -100,7 +103,10 @@ class EpisodeRunner(object):
             trajectory["ac"].append(ac)
             obs, _, _, _ = env.step(ac)
             trajectory["obs"].append(obs)
-            after_img = env._get_obs()["observation"]
+            # if obs["obj_qpos"][2] > initial_obj_z + 0.02 and not obj_picked:
+            #     print("obj lifted")
+            #     obj_picked = True
+            # after_img = env._get_obs()["observation"]
             # imageio.imwrite("after_ac.png", after_img)
             # imageio.imwrite("after_ac_obs.png", obs["observation"])
 
@@ -112,10 +118,17 @@ class EpisodeRunner(object):
             obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
             print("step", ep_timestep, obj_dist)
             success = obj_dist < 0.01
-            # if object dist is larger than 3cm from the starting object dist, exit
-            if (obj_dist - 0.03) >= init_obj_dist:
-                print("early exiting")
+            if np.linalg.norm(init_obj_pos - obs["obj_qpos"][:3]) < 0.02 and ep_timestep > 8:
+                print("obj didn't move enough, early exiting")
                 break
+            if (obj_dist - 0.03) >= init_obj_dist:
+                print("obj moved away from goal, early exiting")
+                break
+            # if obj is dropped
+            # if obs["obj_qpos"][2] <= initial_obj_z and obj_picked:
+            #     print("obj dropped, early exiting")
+            #     break
+
             if ep_timestep >= 12 or obj_dist < 0.01:
                 break
         if success:
