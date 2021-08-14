@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from torch.tensor import Tensor
+from torch import Tensor
 
 def zero_robot_region(mask, image, inplace=False):
     """

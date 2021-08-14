@@ -1,5 +1,6 @@
 import time as timer
 from collections import defaultdict
+import ipdb
 
 import numpy as np
 import torch
@@ -252,7 +253,7 @@ class TrajectorySampler(object):
                 next_img = (1 - x_pred_mask) * curr_img + (x_pred_mask) * x_pred
                 if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input:
                     next_img = zero_robot_region(mask.unsqueeze(1), next_img)
-                curr_state = State(img=next_img, mask=mask)
+                curr_state = State(img=next_img, mask=mask, state=state.cpu())
 
                 # compute the state and mask for the next iteration using mujoco.
                 if cfg.model_use_mask or cfg.model_use_robot_state:
@@ -282,7 +283,7 @@ class TrajectorySampler(object):
                 goal_state = State(img=goal_img, mask=goal_mask, state=goal_state)
                 # sparse_cost only uses last frame of trajectory for cost
                 if not cfg.sparse_cost or (cfg.sparse_cost and t == T - 1):
-                    rew = cost(curr_state, goal_state)
+                    rew = cost(curr_state, goal_state, print_cost=False)
                 sum_cost[s:e] += rew
                 if ret_obs:
                     all_obs[s:e, t] = next_img.cpu()  # B x T x Obs

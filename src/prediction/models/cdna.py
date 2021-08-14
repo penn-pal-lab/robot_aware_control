@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-import tensorflow as tf
+# import tensorflow as tf
 
 def apply_cdna_kernels_torch(image, kernels):
     """

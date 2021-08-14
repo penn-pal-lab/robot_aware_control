@@ -180,14 +180,30 @@ class Cost:
 
 class RobotL2Cost(Cost):
     name="robot_l2"
-    def call(self, curr_robot, goal_robot):
+    def _call(self, curr_robot, goal_robot):
         if curr_robot is None or goal_robot is None:
-            return 0
-        # TODO: check for tensor vs np array
+            return 0.0
         return -norm(curr_robot - goal_robot)
 
+    def _call_tensor(self, curr_robot, goal_robot):
+        if curr_robot is None or goal_robot is None:
+            return 0.0
+        state_diff = (curr_robot - goal_robot) ** 2
+        if len(state_diff.shape) == 2:
+            # batch vector version
+            sum_diff = torch.sum(state_diff, (1))
+        elif len(state_diff.shape) == 1:
+            # single vector version
+            sum_diff = torch.sum(state_diff)
+        else:
+            raise NotImplementedError(f"Tensor shape {state_diff.shape} not supported")
+        dist = sum_diff.sqrt().cpu().numpy()
+        return -dist
+
     def __call__(self, curr: State, goal: State):
-        return self.call(curr.state, goal.state)
+        if isinstance(curr.state, Tensor) or isinstance(goal.state, Tensor):
+            return self._call_tensor(curr.state, goal.state)
+        return self._call(curr.state, goal.state)
 
 
 class ImgL2Cost(Cost):
@@ -299,7 +315,11 @@ class RobotWorldCost(Cost):
                 continue
             cost = w * c(curr, goal)
             if print_cost:
-                print_str += f"{c.name}: {cost:.2f} ,"
+                if type(cost) in [np.float64, float]:
+                    print_str += f"{c.name}: {cost:.4f} ,"
+                else:
+                    for cost_val in cost:
+                        print_str += f" {c.name}: {cost_val:.4f} ,"
             total_cost += cost
         if print_cost:
             print(print_str)
