@@ -195,6 +195,7 @@ class CEMPolicy(object):
             obs = np.concatenate([opt_obs, obs])
         obs = np.uint8(255 * obs)
         obs = obs.transpose((0, 1, 3, 4, 2))  # K x T x H x W x C
+        K, T, H, W, C  = obs.shape
         # topk_act = act_seq[rollouts["topk_idx"]]
         gif_folder = os.path.join(self.debug_cem_dir, f"ep_{ep_num}")
         os.makedirs(gif_folder, exist_ok=True)
@@ -202,12 +203,13 @@ class CEMPolicy(object):
         goal_img = goal.imgs[0]
         curr_img = start.img.copy()
         info_img = np.zeros_like(goal_img)
+        topk = min(K, 5)
         img = np.concatenate([info_img, curr_img, goal_img], axis=1)
         putText(img, f"Start", (0, 8), color=(255, 255, 255))
-        gif = [np.concatenate([img] * obs.shape[0])]
-        for t in range(obs.shape[1]):
+        gif = [np.concatenate([img] * topk)]
+        for t in range(T):
             all_k_img = []
-            for k in range(obs.shape[0]):
+            for k in range(topk):
                 curr_img = obs[k, t]
                 g = t if t < len(goal.imgs) else -1
                 goal_img = goal.imgs[g]
@@ -233,7 +235,7 @@ class CEMPolicy(object):
                 # putText(
                 #     img, f"Y:{ac[1] * 100:.1f}cm", (0, 24), color=(255, 255, 255)
                 # )
-                putText(img, f"{t}", (64, 8), color=(255, 255, 255))
+                putText(img, f"{t+1}", (64, 8), color=(255, 255, 255))
                 putText(img, "GOAL", (128, 8), color=(255, 255, 255))
                 all_k_img.append(img)
             all_k_img = np.concatenate(all_k_img)

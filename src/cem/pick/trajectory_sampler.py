@@ -251,10 +251,6 @@ class TrajectorySampler(object):
                 )[0]
                 x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
                 next_img = (1 - x_pred_mask) * curr_img + (x_pred_mask) * x_pred
-                if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input:
-                    next_img = zero_robot_region(mask.unsqueeze(1), next_img)
-                curr_state = State(img=next_img, mask=mask, state=state.cpu())
-
                 # compute the state and mask for the next iteration using mujoco.
                 if cfg.model_use_mask or cfg.model_use_robot_state:
                     for n in range(num_batch):
@@ -266,6 +262,10 @@ class TrajectorySampler(object):
                         sim_states[n] = env.get_flattened_state().copy()
                     mask = mask.float().to(dev)
                     state = state.float().to(dev)
+
+                if "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input:
+                    next_img = zero_robot_region(mask, next_img)
+                curr_state = State(img=next_img, mask=mask, state=state.cpu())
 
                 # compute the img costs
                 rew = 0

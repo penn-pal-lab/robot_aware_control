@@ -7,7 +7,6 @@ from src.env.robotics.utils import (
     reset_mocap_welds,
 )
 from src.env.robotics.masks.base_mask_env import MaskEnv
-from src.env.robotics.rotations import euler2mat, euler2quat
 from gym import spaces
 import numpy as np
 import os
@@ -567,7 +566,7 @@ if __name__ == "__main__":
     config, _ = argparser()
     init_mjrender_device(config)
     config.gpu = 0
-    # config.modified = False
+    config.modified = False
 
     DEBUG = True
     env = LocobotPickEnv(config)
