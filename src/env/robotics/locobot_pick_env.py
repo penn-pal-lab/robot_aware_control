@@ -84,7 +84,7 @@ class LocobotPickEnv(MaskEnv):
         # workspace boundaries for eef
         # self._ws_low = [0.24, -0.17, 0.05]
         self._ws_low = [0.24, -0.17, 0.05]
-        self._ws_high = [0.33, 0.17, 0.15]
+        self._ws_high = [0.33, 0.17, 0.3]
 
         # modify camera R
         # self.set_opencv_camera_pose("main_cam", CAMERA_CALIB)
@@ -139,7 +139,8 @@ class LocobotPickEnv(MaskEnv):
                 self.sim.data.qpos[self._joint_references] = [-0.25862757, -1.20163741,  0.32891832,  1.42506277, -0.10650079,  1.43468923, 0.06129823]
             else:
                 # first move the arm above to avoid object collision
-                robot_above_qpos = [0.0, 0.43050715, 0.2393125, 0.63018035, 0.0, 0, 0]
+                # robot_above_qpos = [0.0, 0.43050715, 0.2393125, 0.63018035, 0.0, 0, 0]
+                robot_above_qpos = [0.0, 0.1, 0.2393125, 0.63018035, 0.0, 0, 0]
                 self.sim.data.qpos[self._joint_references] = robot_above_qpos
                 self.sim.forward()
             self.initial_sim_state = copy.deepcopy(self.sim.get_state())
@@ -345,7 +346,7 @@ class LocobotPickEnv(MaskEnv):
                 d = target - object_xpos
             step += 1
 
-    def generate_demo(self):
+    def generate_demo(self, use_noise):
         """
         Runs a hard coded behavior and stores the episode
         Returns a dictionary with observation, action
@@ -362,11 +363,11 @@ class LocobotPickEnv(MaskEnv):
             self.render("human")
         history = defaultdict(list)
         history["obs"].append(obs)
-        self.pick_place(place_xpos, history)
+        self.pick_place(place_xpos, history, use_noise)
         return history
 
 
-    def pick_place(self, place_xpos, history, max_actions=14):
+    def pick_place(self, place_xpos, history, use_noise=True, max_actions=14):
         """first move robot gripper over random object,
         then grasp
         """
@@ -382,12 +383,14 @@ class LocobotPickEnv(MaskEnv):
         above_block_xpos[2] += 0.05
         # move robot above slightly above block
         target = above_block_xpos
-        # noise = 0.07
-        # z_noise = 0.04
-        # gripper_noise = 0.002
-        noise = 0.00
-        z_noise = 0.00
-        gripper_noise = 0.000
+        if use_noise:
+            noise = 0.05
+            z_noise = 0.04
+            gripper_noise = 0.005
+        else:
+            noise = 0.00
+            z_noise = 0.00
+            gripper_noise = 0.00
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -420,8 +423,10 @@ class LocobotPickEnv(MaskEnv):
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
         block_xpos[2] -= 0.01
         target = block_xpos
-        # noise = 0.02
-        noise = 0.0
+        if use_noise:
+            noise = 0.02
+        else:
+            noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         d = target - gripper_xpos
@@ -453,18 +458,22 @@ class LocobotPickEnv(MaskEnv):
         # print("pick", step)
 
         # Place primitive
-        # noise = 0.01
-        noise = 0.0
+        if use_noise:
+            noise = 0.04
+            gripper_noise = 0.05
+        else:
+            noise = 0.0
+            gripper_noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
 
         target = block_xpos.copy()
-        target[2] = 0.15
+        target[2] = 0.17
         d = target - gripper_xpos
         step = 0
         # first lift it up
-        while np.linalg.norm(d) > 0.01 and step < 2:
+        while np.linalg.norm(d) > 0.01 and step < 4:
             # add some random noise to ac
             if noise > 0:
                 d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
@@ -490,8 +499,10 @@ class LocobotPickEnv(MaskEnv):
         total_steps += step
 
         # move it to a side.
-        # noise = 0.01
-        noise = 0.0
+        if use_noise:
+            noise = 0.03
+        else:
+            noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
 
@@ -566,18 +577,19 @@ if __name__ == "__main__":
     config, _ = argparser()
     init_mjrender_device(config)
     config.gpu = 0
-    config.modified = False
+    config.modified = True
 
     DEBUG = True
     env = LocobotPickEnv(config)
-    env.reset()
     while True:
-        for i in range(15):
-            env.render("human")
-            env.step([1,0,-0, 0.005])
-        for i in range(15):
-            env.render("human")
-            env.step([-1,-0,0, -0.005])
+        env.reset()
+        env.render("human")
+        # for i in range(15):
+        #     env.render("human")
+        #     env.step([1,0,-0, 0.005])
+        # for i in range(15):
+        #     env.render("human")
+        #     env.step([-1,-0,0, -0.005])
     sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)

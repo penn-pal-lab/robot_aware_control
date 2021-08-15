@@ -74,11 +74,11 @@
         </body> -->
 
 
-        <body name="blockspawnboundary" pos="0.3 0.0 0.05">
+        <body name="blockspawnboundary" pos="0.32 0.0 0.05">
             <!-- <geom  pos="0 -0.2 0" size="0.2 0.005 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
             <!-- <geom  pos="-0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
             <!-- <geom pos="0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
-            <site name="blockspawn" pos="0 0 0" size="0.05 0.005" rgba="0.1 0 0 0" type="cylinder"></site>
+            <site name="blockspawn" pos="0 0 0" size="0.05 0.005" rgba="0.1 0 0 1" type="cylinder"></site>
         </body>
 
         <body name="arenaboundary" pos="0.3 0 0.05">
@@ -107,13 +107,14 @@
             <joint armature="0.0001" axis="0 1 0" damping="1e+11" name="robot0:slide1" pos="0 0 0" type="slide"></joint>
             <joint armature="0.0001" axis="0 0 1" damping="1e+11" name="robot0:slide2" pos="0 0 0" type="slide"></joint>
 
-            <geom name="robot-geom-0" size="0.178 0.05469" pos="0 0 0.06969" type="cylinder" />
-            <geom name="robot-geom-1" size="0.017 0.0088" pos="0.115 0 0.0172" quat="0.707107 -0.707107 0 0" type="cylinder" />
-            <geom name="robot-geom-2" size="0.017 0.0088" pos="-0.135 0 0.0192" quat="0.707107 -0.707107 0 0" type="cylinder" />
-            <geom name="robot-geom-3" pos="0 0 0.102813" quat="0 0.707107 0.707107 0" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="plate_bottom" />
-            <geom name="robot-geom-4" pos="0 0 0.107563" quat="0 0.707107 0.707107 0" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="plate_top" />
-            <geom name="robot-geom-5" pos="0.00026679 -0.0217673 0.110563" quat="0.707107 0 0 0.707107" type="mesh" mesh="battery" />
+            <!-- <geom name="robot-geom-0" size="0.178 0.05469" pos="0 0 0.06969" type="cylinder" /> -->
+            <!-- <geom name="robot-geom-1" size="0.017 0.0088" pos="0.115 0 0.0172" quat="0.707107 -0.707107 0 0" type="cylinder" /> -->
+            <!-- <geom name="robot-geom-2" size="0.017 0.0088" pos="-0.135 0 0.0192" quat="0.707107 -0.707107 0 0" type="cylinder" /> -->
+            <!-- <geom name="robot-geom-3" pos="0 0 0.102813" quat="0 0.707107 0.707107 0" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="plate_bottom" /> -->
+            <!-- <geom name="robot-geom-4" pos="0 0 0.107563" quat="0 0.707107 0.707107 0" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="plate_top" /> -->
+            <!-- <geom name="robot-geom-5" pos="0.00026679 -0.0217673 0.110563" quat="0.707107 0 0 0.707107" type="mesh" mesh="battery" /> -->
             <geom name="robot-geom-6" pos="0.001527 0 0.00191227" quat="0.5 0.5 0.5 0.5" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="mobile_base" />
+
             <!-- <body name="wheel_left_link" pos="0 0.115 0.0352" quat="0.707107 -0.707107 0 0">
                 <inertial pos="0 0 0" mass="0.01" diaginertia="0.001 0.001 0.001" />
                 <joint name="wheel_left_joint" pos="0 0 0" axis="0 0 1" />
