@@ -54,7 +54,7 @@ class LocobotPickEnv(MaskEnv):
             # "robot-geom-3",
             # "robot-geom-4",
             # "robot-geom-5",
-            # "robot-geom-6",
+            "robot-geom-6",
             "shoulder_link_geom",
             "elbow_link_geom",
             "forearm_link_geom",
