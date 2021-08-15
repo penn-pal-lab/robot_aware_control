@@ -78,7 +78,7 @@
             <!-- <geom  pos="0 -0.2 0" size="0.2 0.005 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
             <!-- <geom  pos="-0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
             <!-- <geom pos="0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
-            <site name="blockspawn" pos="0 0 0" size="0.05 0.005" rgba="0.1 0 0 1" type="cylinder"></site>
+            <site name="blockspawn" pos="0 0 0" size="0.05 0.005" rgba="0.1 0 0 0" type="cylinder"></site>
         </body>
 
         <body name="arenaboundary" pos="0.3 0 0.05">

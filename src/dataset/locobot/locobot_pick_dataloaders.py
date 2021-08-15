@@ -25,7 +25,7 @@ def create_loaders(config):
 
     # TODO: change dataset splitting
     n_test = 500
-    n_train = 10000
+    n_train = 100000
 
     X_test = files[:n_test]
     y_test = file_labels[:n_test]

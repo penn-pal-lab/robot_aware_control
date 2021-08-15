@@ -98,7 +98,7 @@
         </body> -->
 
 
-        <body name="blockspawnboundary" pos="0.3 0.0 0.05">
+        <body name="blockspawnboundary" pos="0.32 0.0 0.05">
             <!-- <geom  pos="0 -0.2 0" size="0.2 0.005 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
             <!-- <geom  pos="-0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
             <!-- <geom pos="0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
