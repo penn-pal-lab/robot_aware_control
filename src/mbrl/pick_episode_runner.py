@@ -57,7 +57,11 @@ class EpisodeRunner(object):
         trajectory = defaultdict(list)
 
         demo = self._load_demo(demo_path)
-        start_timestep = 2
+        goal_timesteps = [4,8,14]
+        goals = self._extract_goals_from_demo(goal_timesteps, demo)
+
+        max_timestep = 12
+        start_timestep = 0
         initial_state = {"qpos": demo["qpos"][start_timestep], "obj_qpos": demo["obj_qpos"][start_timestep]}
         goal_pos = demo["obj_qpos"][-1][:3]
         obs = env.reset(initial_state=initial_state)
@@ -69,12 +73,14 @@ class EpisodeRunner(object):
         print("initial obj-goal dist", obj_dist)
         print("initial obj-gripper dist", gripper_dist)
 
-        goal_timestep = start_timestep
+        goal_idx = 0
 
         # begin policy rollout
         success = False
         obj_picked = False
         ep_timestep = start_timestep
+        terminate_ep = False
+        steps_per_goal = cfg.horizon
         # before_img = env._get_obs()["observation"]
         # imageio.imwrite("before_ac.png", before_img)
         while True:
@@ -84,37 +90,32 @@ class EpisodeRunner(object):
             curr_sim_state = None
             curr_sim_state = env.get_flattened_state().copy()
             start = State(img=curr_img, state=curr_state, mask=curr_mask, sim_state=curr_sim_state)
+
+            goal_timestep = goal_timesteps[goal_idx]
+            curr_goal = goals[goal_idx]
+            goal_imgs = [curr_goal["observations"]]
             # goal_imgs = demo["observations"][goal_timestep + 1:]
-            goal_imgs = demo["obj_observations"][goal_timestep + 1:]
+            # goal_imgs = demo["obj_observations"][goal_timestep + 1:]
 
             goal_masks = None
-            # goal_masks = demo["masks"][goal_timestep + 1:]
-            goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
-            goal_eef_states = demo["eef_states"][goal_timestep + 1:]
-            opt_traj = demo["actions"][goal_timestep:]
+            goal_masks = [curr_goal["masks"]]
+            # goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
+
+            goal_eef_states = [curr_goal["eef_states"]]
+            opt_traj = demo["actions"][max(0, goal_timestep - cfg.horizon) : goal_timestep]
             goal = DemoGoalState(imgs=goal_imgs, masks=goal_masks, states=goal_eef_states)
 
+            # figure out horizon
+            self.policy.horizon = min(cfg.horizon, steps_per_goal)
+            print("setting horizon to", self.policy.horizon)
             ac = self.policy.get_action(start, goal, ep_num, ep_timestep, opt_traj)[0]
-            # ac = np.random.uniform(low=-1, high=1, size=4)
-            # ac = demo["actions"][ep_timestep, (0,1,2,4)]
-            # print("ac", ac)
-            # curr_eef_state = env.get_gripper_world_pos()
-            # print("obj-gripper dist", np.linalg.norm(curr_eef_state - obs["obj_qpos"][:3]))
+            print("executing", ac)
             trajectory["ac"].append(ac)
             obs, _, _, _ = env.step(ac)
             trajectory["obs"].append(obs)
-            # if obs["obj_qpos"][2] > initial_obj_z + 0.02 and not obj_picked:
-            #     print("obj lifted")
-            #     obj_picked = True
-            # after_img = env._get_obs()["observation"]
-            # imageio.imwrite("after_ac.png", after_img)
-            # imageio.imwrite("after_ac_obs.png", obs["observation"])
 
             ep_timestep += 1
-            # TODO: update goal timestep based on progress
-            goal_timestep += 1
-            if goal_timestep + 1 >= len(demo["observations"]):
-                goal_timestep -= 1
+            steps_per_goal -= 1
             obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
             print("step", ep_timestep, obj_dist)
             success = obj_dist < 0.01
@@ -124,13 +125,28 @@ class EpisodeRunner(object):
             if (obj_dist - 0.03) >= init_obj_dist:
                 print("obj moved away from goal, early exiting")
                 break
-            # if obj is dropped
-            # if obs["obj_qpos"][2] <= initial_obj_z and obj_picked:
-            #     print("obj dropped, early exiting")
-            #     break
-
-            if ep_timestep >= 12 or obj_dist < 0.01:
+            if ep_timestep >= max_timestep or obj_dist < 0.015:
                 break
+
+            # TODO: update goal timestep based on progress
+            curr_state = State(img=obs["observation"], mask=obs["masks"], state=obs["states"])
+            goal_state =  State(img=goal_imgs[0], mask=goal_masks[0], state=goal_eef_states[0])
+
+            if self._advance_to_next_goal(curr_state, goal_state):
+                if goal_idx < len(goals):
+                    goal_idx += 1
+                print("advancing to next goal", goal_idx)
+                steps_per_goal = 5
+
+            if goal_idx == len(goals):
+                success = True
+                print("done with all subgoals")
+                break
+
+            if steps_per_goal < 2:
+                print("ran out of steps for achieving goal", goal_idx)
+                break
+
         if success:
             logger.info("SUCCESS")
 
@@ -144,6 +160,36 @@ class EpisodeRunner(object):
         imageio.mimwrite(record_path, demo["observations"][start_timestep:], fps=4)
         ep_stats["success"] = success
         return ep_stats
+
+    def _advance_to_next_goal(self, curr: State, goal: State):
+        cfg = self._config
+        robot_success = True
+        print_str = "Checking goal, "
+        if cfg.robot_cost_weight != 0:
+            eef_dist = -1 * self.cost.robot_cost(curr, goal)
+            robot_success = eef_dist < cfg.robot_cost_success
+            print_str += f"eef dist: {eef_dist}, {robot_success}"
+
+        world_success = True
+        if cfg.world_cost_weight != 0:
+            img_dist = -1 * self.cost.world_cost(curr, goal)
+            world_success = img_dist < cfg.world_cost_success
+            print_str += f" , world dist: {img_dist}, {world_success}"
+
+        all_success = robot_success and world_success
+        print(print_str)
+        return all_success
+
+    def _extract_goals_from_demo(self, timesteps, demo):
+        """Get a specific subset of goals"""
+        goals = []
+        for t in timesteps:
+            goal = {}
+            for k, v in demo.items():
+                if k != "actions":
+                    goal[k] = v[t]
+            goals.append(goal)
+        return goals
 
     def run(self):
         """
@@ -261,23 +307,36 @@ class EpisodeRunner(object):
             entity=config.wandb_entity,
         )
 
+def visualize_demo(demo_path):
+    demo = {}
+    with h5py.File(demo_path, "r") as hf:
+        demo["obj_qpos"] = hf["obj_qpos"][:]
+        demo["qpos"] = hf["qpos"][:]
+        demo["eef_states"] = hf["states"][:]
+        demo["observations"] = hf["observations"][:]
+        demo["obj_observations"] = hf["obj_only_imgs"][:]
+        demo["masks"] = hf["masks"][:]
+        demo["actions"] = hf["actions"][:][:, (0,1,2,4)]
+
+    for i, obs in enumerate(demo["observations"]):
+        imageio.imwrite(f"obs_{i}.png", obs)
 
 if __name__ == "__main__":
     from src.config import argparser
 
-    demo_path = "/home/pallab/roboaware/demos/locobot_pick_demos/pick_0_11_s.hdf5"
+    demo_path = "/home/edward/roboaware/demos/locobot_pick_demos/pick_0_5_s.hdf5"
     # demo_path = "/home/ed/roboaware/demos/fetch_pick/pick_0_3_f.hdf5"
-    demo_name = "pick_0_11_s"
+    demo_name = "pick_0_5_s"
     config, _ = argparser()
 
     # env
     config.modified = False
-    config.object_demo_dir = "/home/pallab/roboaware/demos/locobot_pick_demos"
+    config.object_demo_dir = "/home/edward/roboaware/demos/locobot_pick_demos"
     # config.object_demo_dir = "/home/pallab/roboaware/demos/fetch_pick_demos"
     # config.object_demo_dir = "/home/edward/roboaware/demos/fetch_pick_demos"
 
     # model
-    config.dynamics_model_ckpt = "/home/pallab/roboaware/checkpoints/pick2_vfs_90000.pt"
+    # config.dynamics_model_ckpt = "/home/edward/roboaware/checkpoints/pick4_ranofuture_72300.pt"
     config.action_dim = 5
     # config.action_dim = 5
     # config.robot_dim = 5
@@ -292,19 +351,23 @@ if __name__ == "__main__":
 
     # cem
     config.debug_cem = True
-    config.action_candidates = 250
-    config.candidates_batch_size = 250
+    config.action_candidates = 500
+    config.candidates_batch_size = 500
     config.use_env_dynamics = False
     config.cem_init_std = 0.5
     config.horizon = 5
     config.opt_iter = 5
+    config.topk = 5
 
     # cost
-    config.reward_type = "dense"
+    config.reward_type = "dontcare"
     config.sparse_cost = False
-    config.robot_cost_weight = 0
-    config.world_cost_weight = 1
+    config.robot_cost_weight = 1
+    config.world_cost_weight = 0.1
+    config.robot_cost_success = 0.03
+    config.world_cost_success = 1
 
+    # visualize_demo(demo_path)
     runner = EpisodeRunner(config)
-    runner.run()
-    # runner.run_episode(0, demo_name, demo_path)
+    # runner.run()
+    runner.run_episode(0, demo_name, demo_path)

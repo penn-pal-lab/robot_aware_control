@@ -85,7 +85,7 @@ class CEMPolicy(object):
             #     act_seq[-1] = 0  # always have a "do nothing" action sequence in start
 
             act_seq.clamp_(-1, 1)  # clamp actions
-            act_seq[:,-1].clamp_(-0.01, 0)  # clamp gripper actions
+            act_seq[:,:,-1].clamp_(-0.01, 0)  # clamp gripper actions
             # Generate N rollouts of the N action trajectories
             if i == self.optimization_iter - 1:
                 rollouts = self._get_rollouts(
@@ -204,6 +204,8 @@ class CEMPolicy(object):
         curr_img = start.img.copy()
         info_img = np.zeros_like(goal_img)
         topk = min(K, 5)
+        if opt_traj is not None:
+            topk += 1
         img = np.concatenate([info_img, curr_img, goal_img], axis=1)
         putText(img, f"Start", (0, 8), color=(255, 255, 255))
         gif = [np.concatenate([img] * topk)]

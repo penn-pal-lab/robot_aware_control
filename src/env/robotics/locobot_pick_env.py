@@ -352,8 +352,8 @@ class LocobotPickEnv(MaskEnv):
         Returns a dictionary with observation, action
         """
         # initialize place pos
-        place_xpos = self.place_xpos = np.array([0.3, 0.11, 0.14])
-        place_noise = np.random.uniform([-0.05, -0.02], [0.05, 0.03], size=2)
+        place_xpos = self.place_xpos = np.array([0.3, 0.11, 0.17])
+        place_noise = np.random.uniform([-0.03, -0.02], [0.03, 0.03], size=2)
         place_xpos[:2] += place_noise
         body_idx = self.sim.model.body_name2id("placebody")
         self.sim.model.body_pos[body_idx] = place_xpos.copy()
@@ -469,7 +469,7 @@ class LocobotPickEnv(MaskEnv):
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
 
         target = block_xpos.copy()
-        target[2] = 0.17
+        target[2] = 0.2
         d = target - gripper_xpos
         step = 0
         # first lift it up
@@ -577,19 +577,22 @@ if __name__ == "__main__":
     config, _ = argparser()
     init_mjrender_device(config)
     config.gpu = 0
-    config.modified = True
+    config.modified = False
 
     DEBUG = True
     env = LocobotPickEnv(config)
+    env.reset()
     while True:
-        env.reset()
         env.render("human")
-        # for i in range(15):
+        # for i in range(5):
         #     env.render("human")
-        #     env.step([1,0,-0, 0.005])
-        # for i in range(15):
+        #     obs, *_ = env.step([0,0,-0, 0.005])
+        #     print(obs["states"][-2:])
+        # for i in range(5):
         #     env.render("human")
-        #     env.step([-1,-0,0, -0.005])
+        #     obs, *_ = env.step([-0,-0,0, -0.005])
+        #     print(obs["states"][-2:])
+        # break
     sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)

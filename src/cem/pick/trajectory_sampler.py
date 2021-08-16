@@ -276,7 +276,7 @@ class TrajectorySampler(object):
                     goal_mask = goal_masks[goal_idx] # (H, W)
                     goal_mask = goal_mask.unsqueeze(0).unsqueeze(0).repeat(num_batch,1,1,1) # (N, 1, H, W)
                     goal_img = goal_img.unsqueeze(0).repeat(num_batch, 1,1,1) # (N, 3, H, W)
-                    if cfg.reward_type == "dontcare":
+                    if cfg.reward_type == "dontcare" or "dontcare" in cfg.reconstruction_loss or cfg.black_robot_input:
                         goal_img = zero_robot_region(goal_mask, goal_img)
                 if goal.states is not None:
                     goal_state = goal.states[goal_idx]
