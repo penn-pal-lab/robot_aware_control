@@ -346,7 +346,7 @@ class LocobotPickEnv(MaskEnv):
                 d = target - object_xpos
             step += 1
 
-    def generate_demo(self, use_noise):
+    def generate_demo(self, noise_level):
         """
         Runs a hard coded behavior and stores the episode
         Returns a dictionary with observation, action
@@ -363,11 +363,11 @@ class LocobotPickEnv(MaskEnv):
             self.render("human")
         history = defaultdict(list)
         history["obs"].append(obs)
-        self.pick_place(place_xpos, history, use_noise)
+        self.pick_place(place_xpos, history, noise_level)
         return history
 
 
-    def pick_place(self, place_xpos, history, use_noise=True, max_actions=14):
+    def pick_place(self, place_xpos, history, noise_level="none", max_actions=14):
         """first move robot gripper over random object,
         then grasp
         """
@@ -383,11 +383,15 @@ class LocobotPickEnv(MaskEnv):
         above_block_xpos[2] += 0.05
         # move robot above slightly above block
         target = above_block_xpos
-        if use_noise:
+        if noise_level == "high":
             noise = 0.05
             z_noise = 0.04
             gripper_noise = 0.005
-        else:
+        elif noise_level == "med":
+            noise = 0.03
+            z_noise = 0.02
+            gripper_noise = 0.005
+        elif noise_level == "none":
             noise = 0.00
             z_noise = 0.00
             gripper_noise = 0.00
@@ -423,9 +427,11 @@ class LocobotPickEnv(MaskEnv):
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
         block_xpos[2] -= 0.01
         target = block_xpos
-        if use_noise:
+        if noise_level == "high":
             noise = 0.02
-        else:
+        elif noise_level == "med":
+            noise = 0.01
+        elif noise_level == "none":
             noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
@@ -458,10 +464,13 @@ class LocobotPickEnv(MaskEnv):
         # print("pick", step)
 
         # Place primitive
-        if use_noise:
+        if noise_level == "high":
             noise = 0.04
-            gripper_noise = 0.05
-        else:
+            gripper_noise = 0.02
+        elif noise_level == "med":
+            noise = 0.02
+            gripper_noise = 0.005
+        elif noise_level == "none":
             noise = 0.0
             gripper_noise = 0.0
         speed = 40
@@ -499,9 +508,11 @@ class LocobotPickEnv(MaskEnv):
         total_steps += step
 
         # move it to a side.
-        if use_noise:
+        if noise_level == "high":
             noise = 0.03
-        else:
+        elif noise_level == "med":
+            noise = 0.015
+        elif noise_level == "none":
             noise = 0.0
         speed = 40
         gripper_xpos = self.get_gripper_world_pos()
