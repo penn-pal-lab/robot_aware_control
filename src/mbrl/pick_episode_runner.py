@@ -57,14 +57,15 @@ class EpisodeRunner(object):
         trajectory = defaultdict(list)
 
         demo = self._load_demo(demo_path)
-        goal_timesteps = [4,8,14]
+        # goal_timesteps = [4,7,14]
+        goal_timesteps = [6,11,14]
         goals = self._extract_goals_from_demo(goal_timesteps, demo)
 
         max_timestep = 12
         start_timestep = 0
-        initial_state = {"qpos": demo["qpos"][start_timestep], "obj_qpos": demo["obj_qpos"][start_timestep]}
+        initial_state = {"qpos": demo["qpos"][start_timestep], "obj_qpos": demo["obj_qpos"][start_timestep], "states": demo["eef_states"][start_timestep]}
         goal_pos = demo["obj_qpos"][-1][:3]
-        obs = env.reset(initial_state=initial_state)
+        obs = env.reset(initial_state=initial_state, init_robot_qpos=True)
         trajectory["obs"].append(obs)
         initial_obj_z = obs["obj_qpos"][2]
         init_obj_pos = obs["obj_qpos"][:3]
@@ -93,12 +94,14 @@ class EpisodeRunner(object):
 
             goal_timestep = goal_timesteps[goal_idx]
             curr_goal = goals[goal_idx]
-            goal_imgs = [curr_goal["observations"]]
+            # goal_imgs = [curr_goal["observations"]]
+            goal_imgs = [curr_goal["obj_observations"]]
             # goal_imgs = demo["observations"][goal_timestep + 1:]
             # goal_imgs = demo["obj_observations"][goal_timestep + 1:]
 
             goal_masks = None
-            goal_masks = [curr_goal["masks"]]
+            # goal_masks = [curr_goal["masks"]]
+            goal_masks = [np.zeros_like(curr_goal["masks"])]
             # goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
 
             goal_eef_states = [curr_goal["eef_states"]]
@@ -136,10 +139,9 @@ class EpisodeRunner(object):
                 if goal_idx < len(goals):
                     goal_idx += 1
                 print("advancing to next goal", goal_idx)
-                steps_per_goal = 5
+                steps_per_goal = cfg.horizon
 
             if goal_idx == len(goals):
-                success = True
                 print("done with all subgoals")
                 break
 
@@ -324,14 +326,15 @@ def visualize_demo(demo_path):
 if __name__ == "__main__":
     from src.config import argparser
 
-    demo_path = "/home/edward/roboaware/demos/locobot_pick_demos/pick_0_5_s.hdf5"
-    # demo_path = "/home/ed/roboaware/demos/fetch_pick/pick_0_3_f.hdf5"
-    demo_name = "pick_0_5_s"
+    # demo_path = "/home/edward/roboaware/demos/fetch_pick_demos/none_pick_0_6_f.hdf5"
+    demo_path = "/home/edward/roboaware/demos/fetch_pick_demos/none_pick_0_8_s.hdf5"
+    # demo_path = "/home/edward/roboaware/demos/locobot_pick_demos/pick_0_5_s.hdf5"
+    demo_name = "pick_0_8_s"
     config, _ = argparser()
 
     # env
-    config.modified = False
-    config.object_demo_dir = "/home/edward/roboaware/demos/locobot_pick_demos"
+    config.modified = True
+    config.object_demo_dir = "/home/edward/roboaware/demos/fetch_pick_demos"
     # config.object_demo_dir = "/home/pallab/roboaware/demos/fetch_pick_demos"
     # config.object_demo_dir = "/home/edward/roboaware/demos/fetch_pick_demos"
 

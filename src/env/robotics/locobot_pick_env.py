@@ -133,7 +133,16 @@ class LocobotPickEnv(MaskEnv):
         masks = np.asarray(masks, dtype=np.bool)
         return masks
 
-    def reset(self, initial_state=None):
+    def reset(self, initial_state=None, init_robot_qpos=True):
+        """Reset the robot and block pose
+
+        Args:
+            initial_state ([type], optional): dictionary containing the robot / block poses. Defaults to None.
+            init_robot_qpos (bool, optional): initialize qpos from initial_state if true. else use eef pos.
+
+        Returns:
+            [type]: [description]
+        """
         if self.initial_sim_state is None:
             if self._config.modified:
                 self.sim.data.qpos[self._joint_references] = [-0.25862757, -1.20163741,  0.32891832,  1.42506277, -0.10650079,  1.43468923, 0.06129823]
@@ -158,7 +167,10 @@ class LocobotPickEnv(MaskEnv):
         self._move(eef_target_pos, threshold=0.01, max_time=100, speed=10)
 
         if initial_state is not None:
-            self.sim.data.qpos[self._joint_references] = initial_state["qpos"].copy()
+            if init_robot_qpos:
+                self.sim.data.qpos[self._joint_references] = initial_state["qpos"].copy()
+            else:
+                self._move(initial_state["states"][:3], threshold=0.01, max_time=100, speed=10)
             self.sim.data.set_joint_qpos("object1:joint", initial_state["obj_qpos"].copy())
             self.sim.forward()
         return self._get_obs()
