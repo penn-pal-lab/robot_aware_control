@@ -3,7 +3,6 @@ franka_test_imgs
 videos
 demos
 logs
-data
 *.out
 inpaintobs.gif
 *.pt
