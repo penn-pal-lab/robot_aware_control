@@ -20,7 +20,6 @@ src/prediction/obj_movement_histograms
 *.png
 franka_data
 *.pdf
-test.py
 human_demo
 tckn_data
 
