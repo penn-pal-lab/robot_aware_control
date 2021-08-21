@@ -58,7 +58,7 @@ class EpisodeRunner(object):
 
         demo = self._load_demo(demo_path)
         # goal_timesteps = [4,7,14]
-        goal_timesteps = [6,11,14]
+        goal_timesteps = DEMO_GOAL_LABELS[demo_name]
         goals = self._extract_goals_from_demo(goal_timesteps, demo)
 
         max_timestep = 12
@@ -161,6 +161,7 @@ class EpisodeRunner(object):
         record_path = join(cfg.log_dir, f"true_exec_{ep_num}.gif")
         imageio.mimwrite(record_path, demo["observations"][start_timestep:], fps=4)
         ep_stats["success"] = success
+        ep_stats["final_dist"] = obj_dist
         return ep_stats
 
     def _advance_to_next_goal(self, curr: State, goal: State):
@@ -201,6 +202,7 @@ class EpisodeRunner(object):
         files = self._load_demo_dataset(self._config)
         all_files = []
         success = 0
+        final_dist = 0
         all_stats = []
         for f in files:
             all_files.extend([f for _ in range(trials_per_demo)])
@@ -210,10 +212,12 @@ class EpisodeRunner(object):
             ep_stats = self.run_episode(i, demo_name, demo_path)
             all_stats.append(ep_stats)
             success += ep_stats["success"]
-            print(f"running success {success}/{i+1}",  success / (i + 1))
+            final_dist += ep_stats["final_dist"]
+            print(f"running success {success}/{i+1}",  success / (i + 1), f" dist", final_dist / (i+1))
 
         self._logger.info("\n\n### Summary ###")
         self._logger.info(f"Success {success}/{len(all_files)},   {(success / len(all_files)):.2f}%")
+        self._logger.info(f"Final Dist {(final_dist / len(all_files)):.2f}")
 
         with open(join(self._config.log_dir, "stats.pkl"), "wb") as f:
             pickle.dump(all_stats, f)
@@ -327,16 +331,29 @@ if __name__ == "__main__":
     from src.config import argparser
 
     # demo_path = "/home/edward/roboaware/demos/fetch_pick_demos/none_pick_0_6_f.hdf5"
-    demo_path = "/home/edward/roboaware/demos/fetch_pick_demos/none_pick_0_8_s.hdf5"
-    # demo_path = "/home/edward/roboaware/demos/locobot_pick_demos/pick_0_5_s.hdf5"
-    demo_name = "pick_0_8_s"
+    # demo_path = "/home/edward/roboaware/demos/fetch_pick/none_pick_0_5_f.hdf5"
+    demo_path = "/home/edward/roboaware/demos/locobot_pick_demos/none_pick_0_2_s.hdf5"
+    demo_name = "none_pick_0_5_f"
     config, _ = argparser()
 
     # env
-    config.modified = True
-    config.object_demo_dir = "/home/edward/roboaware/demos/fetch_pick_demos"
+    config.modified = False
+    config.object_demo_dir = "/home/edward/roboaware/demos/labeled_fetch_pick_demos"
     # config.object_demo_dir = "/home/pallab/roboaware/demos/fetch_pick_demos"
-    # config.object_demo_dir = "/home/edward/roboaware/demos/fetch_pick_demos"
+    # config.object_demo_dir = "/home/edward/roboaware/demos/locobot_pick_demos"
+
+    # Fetch Pick demos
+    DEMO_GOAL_LABELS = {
+        "none_pick_0_5_f.hdf5": [3,5,9],
+        "none_pick_0_6_f.hdf5": [3,8,10],
+        "none_pick_0_7_f.hdf5": [4,9,12],
+        "none_pick_0_8_s.hdf5": [6,11,14],
+    }
+
+    # Locobot Pick demos
+    # DEMO_GOAL_LABELS = {
+    #     "none_pick_0_2_s.hdf5": [4,9,13],
+    # }
 
     # model
     # config.dynamics_model_ckpt = "/home/edward/roboaware/checkpoints/pick4_ranofuture_72300.pt"
