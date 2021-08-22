@@ -144,6 +144,8 @@ def add_locobot_table_arguments(parser: ArgumentParser):
 def add_locobot_pick_arguments(parser: ArgumentParser):
     parser.add_argument("--modified", type=str2bool, default=False)
     parser.add_argument("--demo_dir", type=str, default="demos/locobot_pick")
+    parser.add_argument("--cyclegan", type=str2bool, default=False)
+    parser.add_argument("--goal_image_type", type=str, default="image", choices=["object_only", "image"])
 
 # Video Prediction arguments from SVG
 def add_prediction_arguments(parser):
