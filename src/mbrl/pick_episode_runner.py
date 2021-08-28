@@ -57,15 +57,26 @@ class EpisodeRunner(object):
         trajectory = defaultdict(list)
 
         demo = self._load_demo(demo_path)
-        # goal_timesteps = [4,7,14]
-        goal_timesteps = DEMO_GOAL_LABELS[demo_name]
-        goals = self._extract_goals_from_demo(goal_timesteps, demo)
+        if cfg.cyclegan: # load goals from source robot
+            source_demo_path = "/home/edward/roboaware/demos/locobot_pick_demos/none_pick_0_2_s.hdf5"
+            source_demo = self._load_demo(source_demo_path)
+            goal_timesteps = DEMO_GOAL_LABELS["none_pick_0_2_s.hdf5"]
+            goals = self._extract_goals_from_demo(goal_timesteps, source_demo)
+        else:
+            goal_timesteps = DEMO_GOAL_LABELS[demo_name]
+            goals = self._extract_goals_from_demo(goal_timesteps, demo)
 
         max_timestep = 12
         start_timestep = 0
         initial_state = {"qpos": demo["qpos"][start_timestep], "obj_qpos": demo["obj_qpos"][start_timestep], "states": demo["eef_states"][start_timestep]}
         goal_pos = demo["obj_qpos"][-1][:3]
+
+        if cfg.cyclegan:
+            initial_state["obj_qpos"] = source_demo["obj_qpos"][start_timestep]
         obs = env.reset(initial_state=initial_state, init_robot_qpos=True)
+        if cfg.cyclegan:
+            obs["real_observation"] = obs["observation"]
+            obs["observation"] = self._cyclegan_forward(obs["observation"])
         trajectory["obs"].append(obs)
         initial_obj_z = obs["obj_qpos"][2]
         init_obj_pos = obs["obj_qpos"][:3]
@@ -94,15 +105,13 @@ class EpisodeRunner(object):
 
             goal_timestep = goal_timesteps[goal_idx]
             curr_goal = goals[goal_idx]
-            # goal_imgs = [curr_goal["observations"]]
-            goal_imgs = [curr_goal["obj_observations"]]
-            # goal_imgs = demo["observations"][goal_timestep + 1:]
-            # goal_imgs = demo["obj_observations"][goal_timestep + 1:]
-
             goal_masks = None
-            # goal_masks = [curr_goal["masks"]]
-            goal_masks = [np.zeros_like(curr_goal["masks"])]
-            # goal_masks = np.zeros_like(demo["masks"][goal_timestep + 1:])
+            if cfg.goal_image_type == "image":
+                goal_imgs = [curr_goal["observations"]]
+                goal_masks = [curr_goal["masks"]]
+            elif cfg.goal_image_type == "object_only":
+                goal_imgs = [curr_goal["obj_observations"]]
+                goal_masks = [np.zeros_like(curr_goal["masks"])]
 
             goal_eef_states = [curr_goal["eef_states"]]
             opt_traj = demo["actions"][max(0, goal_timestep - cfg.horizon) : goal_timestep]
@@ -115,6 +124,9 @@ class EpisodeRunner(object):
             print("executing", ac)
             trajectory["ac"].append(ac)
             obs, _, _, _ = env.step(ac)
+            if cfg.cyclegan:
+                obs["real_observation"] = obs["observation"]
+                obs["observation"] = self._cyclegan_forward(obs["observation"])
             trajectory["obs"].append(obs)
 
             ep_timestep += 1
@@ -153,9 +165,8 @@ class EpisodeRunner(object):
             logger.info("SUCCESS")
 
         record_path = join(cfg.log_dir, f"exec_{ep_num}.gif")
-        if cfg.reward_type == "dontcare":
-            # imageio.mimwrite(record_path, [zero_robot_region(x["masks"], x["observation"]) for x in trajectory["obs"]])
-            imageio.mimwrite(record_path, [x["observation"] for x in trajectory["obs"]], fps=4)
+        if cfg.cyclegan:
+            imageio.mimwrite(record_path, [np.concatenate([x["observation"], x["real_observation"]], 1) for x in trajectory["obs"]], fps=4)
         else:
             imageio.mimwrite(record_path, [x["observation"] for x in trajectory["obs"]], fps=4)
         record_path = join(cfg.log_dir, f"true_exec_{ep_num}.gif")
@@ -242,6 +253,33 @@ class EpisodeRunner(object):
             demo["masks"] = hf["masks"][:]
             demo["actions"] = hf["actions"][:][:, (0,1,2,4)]
         return demo
+
+    def load_cyclegan(self, opt):
+        from src.cyclegan.models import create_model
+        self.cyclegan = create_model(opt)
+        self.cyclegan.setup(opt)
+        self.cyclegan.eval()
+
+    def _cyclegan_forward(self, input_img):
+        """
+        Assumes img is a np.uint8 numpy array of dim [64, 48, 3] .
+        """
+        import torchvision.transforms as transforms
+        oh, ow, = input_img.shape[:2]
+        transform_A = get_transform(opt, grayscale=False)
+        input_img = Image.fromarray(np.uint8(input_img)).convert("RGB")
+        img = transform_A(input_img).unsqueeze(0) # becomes [1,256, 256, 3]
+        with torch.no_grad():
+            output = self.cyclegan.netG(img).cpu()
+        # output is (1,3, 64, 48) and normalized between -1 and 1. scale back to [0,1]
+        output_img = (output[0] + 1) / 2
+        # then resize img back to (64, 48)
+        resize = transforms.Resize((oh, ow), Image.BICUBIC)
+        output_img = resize(output_img)
+        # then make image between [0, 255] and uint8
+        output_img = np.uint8(255 * output_img.numpy())
+        output_img = output_img.transpose((1,2,0)) # put Channel dim at back
+        return output_img
 
     def _setup_loggers(self, config):
         # make folder for exp logs
@@ -337,23 +375,23 @@ if __name__ == "__main__":
     config, _ = argparser()
 
     # env
-    config.modified = False
+    config.modified = True
     config.object_demo_dir = "/home/edward/roboaware/demos/labeled_fetch_pick_demos"
     # config.object_demo_dir = "/home/pallab/roboaware/demos/fetch_pick_demos"
     # config.object_demo_dir = "/home/edward/roboaware/demos/locobot_pick_demos"
 
     # Fetch Pick demos
-    DEMO_GOAL_LABELS = {
-        "none_pick_0_5_f.hdf5": [3,5,9],
-        "none_pick_0_6_f.hdf5": [3,8,10],
-        "none_pick_0_7_f.hdf5": [4,9,12],
-        "none_pick_0_8_s.hdf5": [6,11,14],
-    }
+    # DEMO_GOAL_LABELS = {
+    #     "none_pick_0_5_f.hdf5": [3,5,9],
+    #     "none_pick_0_6_f.hdf5": [3,8,10],
+    #     "none_pick_0_7_f.hdf5": [4,9,12],
+    #     "none_pick_0_8_s.hdf5": [6,11,14],
+    # }
 
     # Locobot Pick demos
-    # DEMO_GOAL_LABELS = {
-    #     "none_pick_0_2_s.hdf5": [4,9,13],
-    # }
+    DEMO_GOAL_LABELS = {
+        "none_pick_0_2_s.hdf5": [4,9,13],
+    }
 
     # model
     # config.dynamics_model_ckpt = "/home/edward/roboaware/checkpoints/pick4_ranofuture_72300.pt"
@@ -380,14 +418,29 @@ if __name__ == "__main__":
     config.topk = 5
 
     # cost
-    config.reward_type = "dontcare"
-    config.sparse_cost = False
-    config.robot_cost_weight = 1
-    config.world_cost_weight = 0.1
+    config.goal_image_type = "image" # object only or robot image
+    config.reward_type = "dense"
+    config.sparse_cost = True
+    config.robot_cost_weight = 0
+    config.world_cost_weight = 1
     config.robot_cost_success = 0.03
-    config.world_cost_success = 1
+    config.world_cost_success = 1000
 
+    # load cyclegan stuff
+    from src.cyclegan.data.base_dataset import get_transform
+    from PIL import Image
+
+    with open("src/cyclegan/test_config.pkl", "rb") as f:
+        opt = pickle.load(f)
+    opt.checkpoints_dir = "/home/edward/projects/pytorch-CycleGAN-and-pix2pix/checkpoints"
+    opt.gpu_ids = [1]
+    opt.model = "test" # load only one model
+    opt.model_suffix = "_A"
+    opt.name = "ra_cyclegan_v2"
     # visualize_demo(demo_path)
     runner = EpisodeRunner(config)
-    # runner.run()
-    runner.run_episode(0, demo_name, demo_path)
+    runner.load_cyclegan(opt)
+    # img = np.zeros((64, 48, 3))
+    # runner._cyclegan_forward(img)
+    runner.run()
+    # runner.run_episode(0, demo_name, demo_path)

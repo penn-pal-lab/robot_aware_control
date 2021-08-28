@@ -1,0 +1,201 @@
+<mujoco model="locobot">
+    <compiler angle="radian" meshdir="../stls/fetch" texturedir="../textures"/>
+    <size njmax="500" nconmax="100" />
+    <asset>
+        <texture name="skybox" type="skybox" builtin="gradient" rgb1=".4 .6 .8" rgb2="0 0 0" width="800" height="800" mark="random" markrgb="1 1 1"/>
+
+        <!-- <texture type="skybox" builtin="gradient" rgb1="0.44 0.85 0.56" rgb2="0.46 0.87 0.58" width="32" height="32"></texture> -->
+        <material name="table_mat" specular="0" shininess="0.5" reflectance="0" rgba="0.93 0.93 0.93 1"></material>
+        <material name="block_mat" specular="0" shininess="0.5" reflectance="0" rgba="0.05 0.6 0.6 1"></material>
+        <material name="robot0:geomMat" shininess="0.03" specular="0.4"></material>
+        <material name="robot0:gripper_finger_mat" shininess="0.03" specular="0.4" reflectance="0"></material>
+        <material name="robot0:gripper_mat" shininess="0.03" specular="0.4" reflectance="0"></material>
+        <material name="robot0:arm_mat" shininess="0.03" specular="0.4" reflectance="0"></material>
+        <material name="robot0:head_mat" shininess="0.03" specular="0.4" reflectance="0"></material>
+        <material name="robot0:torso_mat" shininess="0.03" specular="0.4" reflectance="0"></material>
+        <material name="robot0:base_mat" shininess="0.03" specular="0.4" reflectance="0"></material>
+
+        <mesh file="base_link_collision.stl" name="robot0:base_link" scale="0.5 0.5 0.5"></mesh>
+        <mesh file="elbow_flex_link_collision.stl" name="robot0:elbow_flex_link" scale="0.5 0.5 0.5"></mesh>
+        <mesh file="estop_link.stl" name="robot0:estop_link" scale="0.5 0.5 0.5"></mesh>
+        <mesh file="forearm_roll_link_collision.stl" name="robot0:forearm_roll_link" scale="0.5 0.5 0.5"></mesh>
+        <mesh file="gripper_link.stl" name="robot0:gripper_link" scale="0.5 0.2 0.5"></mesh>
+        <mesh file="head_pan_link_collision.stl" name="robot0:head_pan_link"></mesh>
+        <mesh file="head_tilt_link_collision.stl" name="robot0:head_tilt_link"></mesh>
+        <mesh file="l_wheel_link_collision.stl" name="robot0:l_wheel_link"></mesh>
+        <mesh file="laser_link.stl" name="robot0:laser_link"></mesh>
+        <mesh file="r_wheel_link_collision.stl" name="robot0:r_wheel_link"></mesh>
+        <mesh file="torso_lift_link_collision.stl" name="robot0:torso_lift_link" scale="0.5 0.5 0.5"></mesh>
+        <mesh file="shoulder_pan_link_collision.stl" name="robot0:shoulder_pan_link" scale="0.5 0.5 0.5"></mesh>
+        <mesh file="shoulder_lift_link_collision.stl" name="robot0:shoulder_lift_link" scale="0.5 0.5 0.5"></mesh>
+        <mesh file="upperarm_roll_link_collision.stl" name="robot0:upperarm_roll_link" scale="0.5 0.5 0.5"></mesh>
+        <mesh file="wrist_flex_link_collision.stl" name="robot0:wrist_flex_link" scale="0.5 0.5 0.5"></mesh>
+        <mesh file="wrist_roll_link_collision.stl" name="robot0:wrist_roll_link" scale="0.5 0.5 0.5"></mesh>
+        <mesh file="torso_fixed_link.stl" name="robot0:torso_fixed_link" scale="0.5 0.5 0.5"></mesh>
+    </asset>
+    <equality>
+        <weld body1="robot0:mocap" body2="robot0:gripper_link" solimp="0.9 0.95 0.001" solref="0.02 1"></weld>
+    </equality>
+
+    <contact>
+        <exclude body1="robot0:r_gripper_finger_link" body2="robot0:l_gripper_finger_link"></exclude>
+        <exclude body1="robot0:torso_lift_link" body2="robot0:torso_fixed_link"></exclude>
+        <exclude body1="robot0:torso_lift_link" body2="robot0:shoulder_pan_link"></exclude>
+        <exclude body1="robot0:torso_lift_link" body2="table0"></exclude>
+        <exclude body1="table0" body2="robot0:torso_fixed_link"></exclude>
+        <exclude body1="table0" body2="robot0:base_link"></exclude>
+    </contact>
+
+    <default>
+        <default class="robot0:fetch">
+            <geom margin="0.001" material="robot0:geomMat" rgba="1 1 1 1" solimp="0.99 0.99 0.01" solref="0.01 1" type="mesh" user="0"></geom>
+            <joint armature="1" damping="50" frictionloss="0" stiffness="0"></joint>
+
+            <default class="robot0:fetchGripper">
+                <geom condim="4" margin="0.001" type="box" user="0" rgba="0.356 0.361 0.376 1.0"></geom>
+                <joint armature="100" damping="1000" limited="true" solimplimit="0.99 0.999 0.01" solreflimit="0.01 1" type="slide"></joint>
+            </default>
+
+            <default class="robot0:grey">
+                <geom rgba="0.356 0.361 0.376 1.0"></geom>
+            </default>
+            <default class="robot0:blue">
+                <geom rgba="0.086 0.506 0.767 1.0"></geom>
+            </default>
+        </default>
+    </default>
+
+    <worldbody>
+		<light directional="true" ambient="0.1 0.1 0.1" diffuse="0.3 0.3 0.3" specular="0.3 0.3 0.3" castshadow="false" pos="0 0 4" dir="0 0 -1" name="light0"></light>
+		<body pos="0 0 -0.05" name="table0">
+			<geom size="5 5 0.1" type="box" mass="2000" rgba="0.75 0.6 0.42 1"></geom>
+		</body>
+
+		<body mocap="true" name="robot0:mocap" pos="0 0 0">
+            <geom conaffinity="0" contype="0" pos="0 0 0" rgba="0 1 1 0" size="0.005 0.005 0.005" type="box"></geom>
+            <geom conaffinity="0" contype="0" pos="0 0 0" rgba="1 0 0 0" size="1 0.005 0.005" type="box"></geom>
+            <geom conaffinity="0" contype="0" pos="0 0 0" rgba="1 0 0 0" size="0.005 1 0.001" type="box"></geom>
+            <geom conaffinity="0" contype="0" pos="0 0 0" rgba="1 0 0 0" size="0.005 0.005 1" type="box"></geom>
+        </body>
+
+        <!-- Objects and tray -->
+        <!-- <body name="object0" pos="0.3 0.1 0.075">
+			<joint name="object0:joint" type="free" damping="0.01"></joint>
+			<geom size="0.025 0.025 0.02" type="box" condim="4" name="object0" material="block_mat" mass="0.2"  quat="1 0 0 0"></geom>
+			<site name="object0" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
+        </body> -->
+
+        <body name="object1" pos="0.4 0 0.075">
+            <joint name="object1:joint" type="free" damping="0.01"></joint>
+            <geom size="0.025 0.025 0.02" type="box" condim="4" solref="0.001 1" name="object1" rgba="1 0 0 1" material="block_mat" mass="0.2" ></geom>
+            <site name="object1" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
+		</body>
+
+        <!-- <body name="object2" pos="0.5 0 0.075">
+            <joint name="object2:joint" type="free" damping="0.01"></joint>
+            <geom size="0.025 0.025 0.02" type="box" condim="4" name="object2" rgba="0 1 0 1" material="block_mat" solref="0.001 1" mass="0.1"></geom>
+            <site name="object2" pos="0 0 0" size="0.02 0.02 0.02" rgba="1 0 0 0" type="sphere"></site>
+        </body> -->
+
+
+        <body name="blockspawnboundary" pos="0.32 0.0 0.05">
+            <!-- <geom  pos="0 -0.2 0" size="0.2 0.005 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
+            <!-- <geom  pos="-0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
+            <!-- <geom pos="0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
+            <site name="blockspawn" pos="0 0 0" size="0.1 0.005" rgba="0.1 0 0 0" type="cylinder"></site>
+        </body>
+
+        <body name="arenaboundary" pos="0.3 0 0.05">
+            <!-- <geom  pos="0 0.15 0" size="0.07 0.07 0.07" rgba="0.0 1 1 1" type="box" ></geom> -->
+            <!-- <geom  pos="0 -0.25 0" size="0.2 0.12 0.03" rgba="0.2 0.2 0.2 1" type="box" ></geom> -->
+            <!-- <geom  pos="0 -0.2 0" size="0.2 0.005 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
+            <!-- <geom  pos="-0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
+            <!-- <geom pos="0.2 0 0" size="0.005 0.2 0.05" rgba="0.2 0.2 0.2 1" type="box"></geom> -->
+            <site name="spawn" pos="0 0 0" size="0.05 0.005" rgba="0.1 0 0 0" type="cylinder"></site>
+        </body>
+        <body name="placebody" pos="0.3 0 0.05">
+            <site name="place_site" pos="0 0 0" size="0.01 0.01 0.01" rgba="1 1 0 0" type="sphere"></site>
+        </body>
+
+
+        <!-- camera -->
+        <camera fovy="43.3" name="main_cam" pos="0.75 0  0.32" mode="targetbody" target="arenaboundary" ></camera>
+        <!-- <site rgba="1 0 0 1" name="main_cam_site" pos="0.81822263 -0.05511966  0.45810006" quat="-0.3351224   0.6429879   0.61176364 -0.31623533" type="box" size="0.02 0.05 0.1"></site> -->
+        <site rgba="1 0 0 1" name="origin_site" pos="0 0 0" quat="1 0 0 0" size="0.02"></site>
+        <body childclass="robot0:fetch" name="robot0:base_link" pos="0.05 0 -0.1">
+            <joint armature="0.0001" axis="1 0 0" damping="1e+11" name="robot0:slide0" pos="0 0 0" type="slide"></joint>
+            <joint armature="0.0001" axis="0 1 0" damping="1e+11" name="robot0:slide1" pos="0 0 0" type="slide"></joint>
+            <joint armature="0.0001" axis="0 0 1" damping="1e+11" name="robot0:slide2" pos="0 0 0" type="slide"></joint>
+            <inertial diaginertia="1.2869 1.2236 0.9868" mass="70.1294" pos="-0.0018 0 0.0007" quat="0.7605 -0.0133 -0.0061 0.6491"></inertial>
+            <!-- <geom mesh="robot0:base_link" name="robot0:base_link" material="robot0:base_mat" class="robot0:grey"></geom> -->
+            <body name="robot0:torso_lift_link" pos="-0.04345 0 0.1887">
+                <inertial diaginertia="0.3365 0.3354 0.0943" mass="10.7796" pos="-0.00065 -0.00045 0.14675" quat="0.9993 -0.0006 0.0336 0.0185"></inertial>
+                <joint axis="0 0 1" damping="1e+07" name="robot0:torso_lift_joint" range="0.0386 0.3861" type="slide"></joint>
+                <geom mesh="robot0:torso_lift_link" name="robot0:torso_lift_link" material="robot0:torso_mat"></geom>
+                <body name="robot0:shoulder_pan_link" pos="0.05975 0 0.1743">
+                    <inertial diaginertia="0.009 0.0086 0.0041" mass="2.5587" pos="0.04635 -0.0028 0.0282" quat="-0.1364 0.7624 -0.1562 0.613"></inertial>
+                    <joint axis="0 0 1" name="joint_1" range="-1.6056 1.6056"></joint>
+                    <geom mesh="robot0:shoulder_pan_link" name="robot0:shoulder_pan_link" material="robot0:arm_mat"></geom>
+                    <body name="robot0:shoulder_lift_link" pos="0.0585 0 0.03">
+                        <inertial diaginertia="0.0116 0.0112 0.0023" mass="2.6615" pos="0.0716 0.0036 -0.00005" quat="0.4382 0.4382 0.555 0.555"></inertial>
+                        <joint axis="0 1 0" name="joint_2" range="-1.221 1.518"></joint>
+                        <geom mesh="robot0:shoulder_lift_link" name="robot0:shoulder_lift_link" material="robot0:arm_mat" class="robot0:blue"></geom>
+                        <body name="robot0:upperarm_roll_link" pos="0.1095 0 0">
+                            <inertial diaginertia="0.0047 0.0045 0.0019" mass="2.3311" pos="0.05825 0.0007 0" quat="-0.0136 0.707 0.0136 0.707"></inertial>
+                            <joint axis="1 0 0" limited="false" name="joint_3"></joint>
+                            <geom mesh="robot0:upperarm_roll_link" name="robot0:upperarm_roll_link" material="robot0:arm_mat"></geom>
+                            <body name="robot0:elbow_flex_link" pos="0.0665 0 0">
+                                <inertial diaginertia="0.0086 0.0084 0.002" mass="2.1299" pos="0.06395 0.00365 0" quat="0.4332 0.4332 0.5589 0.5589"></inertial>
+                                <joint axis="0 1 0" name="joint_4" range="-2.251 2.251"></joint>
+                                <geom mesh="robot0:elbow_flex_link" name="robot0:elbow_flex_link" material="robot0:arm_mat" class="robot0:blue"></geom>
+                                <body name="robot0:forearm_roll_link" pos="0.0985 0 0">
+                                    <inertial diaginertia="0.0035 0.0031 0.0015" mass="1.6563" pos="0.05485 -0.0133 0" quat="-0.0715 0.7035 0.0715 0.7035"></inertial>
+                                    <joint armature="2.7538" axis="1 0 0" damping="3.5247" frictionloss="0" limited="false" name="joint_5" stiffness="10"></joint>
+                                    <geom mesh="robot0:forearm_roll_link" name="robot0:forearm_roll_link" material="robot0:arm_mat"></geom>
+                                    <body name="robot0:wrist_flex_link" pos="0.06225 0 0">
+                                        <inertial diaginertia="0.0042 0.0042 0.0018" mass="1.725" pos="0.0441 0.00045 -0.00005" quat="0.4895 0.4895 0.5103 0.5103"></inertial>
+                                        <joint axis="0 1 0" name="joint_6" range="-2.16 2.16"></joint>
+                                        <geom mesh="robot0:wrist_flex_link" name="robot0:wrist_flex_link" material="robot0:arm_mat" class="robot0:blue"></geom>
+                                        <body name="robot0:wrist_roll_link" pos="0.06925 0 0">
+                                            <inertial diaginertia="0.0001 0.0001 0.0001" mass="0.1354" pos="0.00475 0.0002 -0.0001"></inertial>
+                                            <joint axis="1 0 0" limited="false" name="joint_7"></joint>
+                                            <geom mesh="robot0:wrist_roll_link" name="robot0:wrist_roll_link" material="robot0:arm_mat"></geom>
+                                            <body euler="0 0 0" name="robot0:gripper_link" pos="0.0832 0 0">
+                                                <inertial diaginertia="0.0024 0.0019 0.0013" mass="1.5175" pos="-0.045 -0.00005 -0.00085" quat="0 0.7071 0 0.7071"></inertial>
+                                                <geom mesh="robot0:gripper_link" name="robot0:gripper_link" material="robot0:gripper_mat"></geom>
+                                                <geom pos="-0.02 0 0" size="0.005 0.025 0.02" type="box" name="robot0:gripper_link_1" material="robot0:gripper_finger_mat"></geom>
+                                                <body childclass="robot0:fetchGripper" name="robot0:r_gripper_finger_link" pos="0 0.0195 0">
+                                                    <inertial diaginertia="0.1 0.1 0.1" mass="4" pos="-0.005 0 0"></inertial>
+                                                    <joint axis="0 1 0" name="robot0:r_gripper_finger_joint" range="0 0.02"></joint>
+                                                    <geom pos="0 -0.004 0" size="0.01925 0.0035 0.01175" type="box" name="robot0:r_gripper_finger_link" material="robot0:gripper_finger_mat" friction="1 0.005 0.0001"></geom>
+                                                </body>
+                                                <body childclass="robot0:fetchGripper" name="robot0:l_gripper_finger_link" pos="0 -0.0195 0">
+                                                    <inertial diaginertia="0.1 0.1 0.1" mass="4" pos="-0.005 0 0"></inertial>
+                                                    <joint axis="0 -1 0" name="robot0:l_gripper_finger_joint" range="0 0.02"></joint>
+                                                    <geom pos="0 0.004 0" size="0.01925 0.0035 0.01175" type="box" name="robot0:l_gripper_finger_link" material="robot0:gripper_finger_mat" friction="1 0.005 0.0001"></geom>
+                                                </body>
+                                                <site name="robot0:grip" pos="0.02 0 0" rgba="1 1 0 0" size="0.005 0.005 0.005"></site>
+                                            </body>
+                                        </body>
+                                    </body>
+                                </body>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+            <body name="robot0:estop_link" pos="-0.623 0.11945 0.15565" quat="0.7071 0.7071 0 0">
+                <inertial diaginertia="0 0 0" mass="0.002" pos="0.0012 -0.00165 0.00335" quat="0.3774 -0.1814 0.1375 0.8977"></inertial>
+                <geom mesh="robot0:estop_link" rgba="0.8 0 0 1" name="robot0:estop_link"></geom>
+            </body>
+            <body name="robot0:torso_fixed_link" pos="-0.04345 0 0.1887">
+                <inertial diaginertia="0.3865 0.3394 0.1009" mass="13.2775" pos="-0.0361 0.00285 0.1328" quat="0.9995 0.0249 0.0177 0.011"></inertial>
+                <geom mesh="robot0:torso_fixed_link" name="robot0:torso_fixed_link" class="robot0:blue"></geom>
+            </body>
+        </body>
+    </worldbody>
+    <actuator>
+		<position ctrllimited="true" ctrlrange="0 0.2" joint="robot0:l_gripper_finger_joint" kp="30000" name="robot0:l_gripper_finger_joint" user="1"></position>
+		<position ctrllimited="true" ctrlrange="0 0.2" joint="robot0:r_gripper_finger_joint" kp="30000" name="robot0:r_gripper_finger_joint" user="1"></position>
+	</actuator>
+</mujoco>
