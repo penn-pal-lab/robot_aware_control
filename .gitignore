@@ -1,4 +1,6 @@
 # project artifacts
+.DS_Store
+data/
 franka_test_imgs
 videos
 demos
