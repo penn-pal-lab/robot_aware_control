@@ -10,10 +10,14 @@ from src.env.fetch.collision import CollisionSphere
 from src.env.fetch.fetch_env import FetchEnv
 from src.env.fetch.inverse_transform import getHomogenousT, get_camera_matrix, get_camera_pose, get_pixel_coord, get_world_to_cam, pixel_coord_np
 from src.env.fetch.planar_rrt import PlanarRRT
-from src.env.fetch.rotations import mat2euler
+from src.env.fetch.rotations import mat2euler, quat2euler, euler2quat, mat2quat
 from src.env.fetch.utils import reset_mocap2body_xpos, reset_mocap_welds, robot_get_obs
 
-MODEL_XML_PATH = os.path.join("fetch", "clutterpush.xml")
+
+from src.env.fetch.depth_to_cloud import PointCloudGenerator
+import open3d as o3d
+
+MODEL_XML_PATH = os.path.join("fetch", "clutterpush_invisible_robot.xml")
 RED_MODEL_XML_PATH = os.path.join("fetch", "red_clutterpush.xml")
 
 
@@ -156,6 +160,11 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 remove_robot=self._norobot_pixels_ob,
                 get_depth_map=self._depth_ob,
             )
+            seg_mask = self.render(
+                "rgb_array",
+                segmentation=True
+            )
+
             if self._depth_ob:
                 img, world_coord = img
             robot = np.concatenate([grip_pos, grip_velp])
@@ -163,10 +172,14 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                 "observation": img.copy(),
                 "robot": robot.copy().astype(np.float32),
                 "state": self.get_flattened_state(),
+                "segmentation_mask" : seg_mask.copy()
             }
             if not hasattr(self, "camera_matrices"):
                 self._init_camera_calibration()
             for cam_id in self._camera_ids:
+                #print("inside")
+                #print(cam_id)
+                #print(self.sim.model.camera_id2name(cam_id))
                 u, v = self.world_to_pixel(grip_pos, cam_id, self._img_dim, self._img_dim)
                 obs[f"{cam_id}_eef_keypoint"] = [u, v]
                 # annotate the img with a white keypoint
@@ -290,6 +303,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         Gets called by goal env's reset right before sampling new goal.
         spawn_info will have the poses of the objects and the robot spawn point
         """
+
         self.sim.set_state(self.initial_state)
 
         # Randomize start position of object.
@@ -310,6 +324,16 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         else:
             self._sample_objects()
         self.sim.forward()
+
+        gripper_xpos = self.sim.data.get_site_xpos("robot0:grip").copy()
+        target_xpos = gripper_xpos
+        target_xpos[:2] = gripper_xpos[:2] + self.np_random.uniform(-0.05, 0.05, size=2)
+        target_xpos[2] = gripper_xpos[2] + self.np_random.uniform(-0.01, 0.01, size=1)
+
+        history_dict = defaultdict(list)
+
+        self._move(target_xpos, history_dict)
+
         return True
 
     def reset(self, init_state=None):
@@ -516,7 +540,13 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             pose = self.sim.data.get_joint_qpos(joint)
             z = pose[2]
             if no_overlap:
-                obj_quat = pose[3:]
+                obj_quat = pose[3:]#w x y z
+
+                obj_euler = quat2euler(obj_quat)
+                obj_euler[2] += self.np_random.uniform(-0.3,0.3,size=1)
+
+                obj_quat = euler2quat(obj_euler)
+
                 obj_pose = [xy[0], xy[1], z, *obj_quat]
                 self.sim.data.set_joint_qpos(joint, obj_pose)
             else:
@@ -689,6 +719,7 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
             imgs = []
             mv_world_coords = []
             for cam_id in self._camera_ids:
+                #print(self._camera_ids)
                 camera_name = self.sim.model.camera_id2name(cam_id)
                 if not get_depth_map:
                     img = super().render(
@@ -725,8 +756,14 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
                     """
                     pixel_coords = pixel_coord_np(width=width, height=height)
                     cam_coords = K_inv[:3, :3] @ pixel_coords * depth.flatten()
-                    cam_quat = self.sim.model.cam_quat[cam_id]
-                    cam_pos = self.sim.model.cam_pos[cam_id]
+                    ###cam_quat = self.sim.model.cam_quat[cam_id]
+                    ###cam_pos = self.sim.model.cam_pos[cam_id]
+                    """
+                    Use self.sim.model.cam_quat if the quaternion is set in the xml.
+                    Use self.sim.data.cam_xmat if the quaternion is dynamically set.
+                    """
+                    cam_quat = mat2quat(self.sim.data.cam_xmat[cam_id].reshape(3,3))#self.sim.data.cam_xmat[cam_id]
+                    cam_pos = self.sim.data.cam_xpos[cam_id]
                     r = R.from_quat(
                         [cam_quat[1], cam_quat[2], cam_quat[3], cam_quat[0]]
                     )
@@ -1146,6 +1183,9 @@ class ClutterPushEnv(FetchEnv, utils.EzPickle):
         """
         self._behavior = behavior
         obs = self.reset()
+        ##pc_gen = PointCloudGenerator(self.sim, min_bound=(-10., -10., -10.), max_bound=(10., 10., 10.))
+        ##cloud_with_normals = pc_gen.generateCroppedPointCloud(save_img_dir="/home/jianingq/roboaware/src/env/fetch/clouds/")
+        ##world_origin_axes = o3d.geometry.TriangleMesh.create_coordinate_frame()
         # self.render("human")
         history = defaultdict(list)
         history["obs"].append(obs)

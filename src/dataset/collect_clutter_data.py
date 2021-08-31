@@ -42,7 +42,7 @@ def generate_demos(rank, config, behavior, record, num_trajectories, ep_len):
         it = tqdm(it)
     for i in it:
         record = rank == 0 and record
-        name = f"{behavior}_{rank}_{i}.hdf5"
+        name = f"{behavior}_{rank}_{i}_eval.hdf5"
         path = os.path.join(config.demo_dir, name)
         history = env.generate_demo(behavior)
         record_path = f"videos/{behavior}_{config.seed}_{i}.gif"
@@ -241,7 +241,7 @@ def collect_camera_calibration_data():
     ground truth 3d eef position
     ground truth 2d eef position
     """
-    num_demo = 100  # per worker
+    num_demo = 500  # per worker
     num_workers = 1
     record = True
     behavior = "straight_push"
@@ -273,24 +273,60 @@ def collect_multiview_trajectory(
     all_world_coord = []
     all_keypoints = []
     all_pushed_obj = []
+    all_actions = []
+    all_object = []
+    all_seg_masks = []
+    all_obj_poses = []
     if rank == 0:
         it = tqdm(it)
     for i in it:
         # only record first episode for sanity check
         record = rank == 0 and i == 0 and record
-        name = f"{behavior}_{rank}_{i}.hdf5"
+        name = f"{behavior}_{rank}_{i}_4_cameras_invisible_robot.hdf5"#_mask_eval.hdf5"
         path = os.path.join(config.demo_dir, name)
         history = env.generate_demo(behavior)
         obs = history["obs"]  # array of observation dictionaries
+        actions = history["ac"]
+        #print(len(obs))
+        #print(len(actions))
+        #print(actions)
+        #import sys
+        #sys.stdout.flush()
         len_stats.append(len(obs))
         frames = []
-        robot = []
+        seg_masks = []
+        robot = [history["pushed_obj"]]
         world_coord = []
         keypoints = [] # dimension T x C x 4 x 2
+        obj_poses = defaultdict(list)
+        #actions = []
         for ob in obs:
+            for obj in env._objects:
+                obj_poses[obj + ":joint"].append(ob[obj + ":joint"])
             world_coord.append(ob["world_coord"].transpose(1,2,0))
             frames.append(ob["observation"])
-            robot.append(ob["robot"])
+            seg = ob["segmentation_mask"]
+            seg_mask_img = np.zeros((128*len(config.camera_ids), 128, 4))
+            
+            types = seg[:, :, 0]
+            ids = seg[:, :, 1]
+            #print(np.shape(ids))
+            geoms = types == 5#const.OBJ_GEOM
+            geoms_ids = np.unique(ids[geoms])
+            for i in geoms_ids:
+                name = env.sim.model.geom_id2name(i)
+                #print(i)
+                #print(name)
+
+                if "robot" in name and (i in [5,15,16]):
+                    seg_mask_img[:,:,0][ids == i] = 1
+                elif "object0" == name:
+                    seg_mask_img[:,:,1][ids == i] = 1
+                elif "object1" == name:
+                    seg_mask_img[:,:,2][ids == i] = 1
+                elif "object2" == name:
+                    seg_mask_img[:,:,3][ids == i] = 1
+            seg_masks.append(seg_mask_img)
             # for each viewpoint: [robot, obj1, obj2, obj3]
             camera_keypoints = [] # C x 4 x 2
             for cam_id in config.camera_ids:
@@ -302,21 +338,42 @@ def collect_multiview_trajectory(
             keypoints.append(camera_keypoints) # T x C x 4 x 2
 
         frames = np.asarray(frames)
+        seg_masks = np.asarray(seg_masks)
         world_coord = np.asarray(world_coord)
         keypoints = np.asarray(keypoints)
+        actions = np.asarray(actions)
+        robot = np.asarray(robot)
 
         all_world_coord.append(world_coord)
         all_frames.append(frames)
         all_keypoints.append(keypoints)
         all_pushed_obj.append(history["pushed_obj"])
+        all_actions.append(actions)
+        all_object.append(robot)
+        all_seg_masks.append(seg_masks)
+        all_obj_poses.append(obj_poses)
         # robot = np.asarray(robot)
         # actions = history["ac"]
         # assert len(frames) - 1 == len(actions)
     with h5py.File(path, "w") as hf:
-        for i, (frame, world_coord, kp) in tqdm(enumerate(zip(all_frames, all_world_coord, all_keypoints))):
+        for i, (frame, world_coord, kp, action, rb, sm, op) in tqdm(enumerate(zip(all_frames, all_world_coord, all_keypoints, all_actions, all_object, all_seg_masks, all_obj_poses))):
             hf.create_dataset(f"frame_{i}", data=frame, compression="gzip")
+            hf.create_dataset(f"sm_{i}", data=sm, compression="gzip")
             hf.create_dataset(f"world_coord_{i}", data=world_coord, compression="gzip")
             hf.create_dataset(f"keypoints_{i}", data=kp, compression="gzip")
+            #print(np.shape(kp))
+            hf.create_dataset(f"actions_{i}", data=action, compression="gzip")
+            asciiList = [n.encode("ascii", "ignore") for n in rb]
+            hf.create_dataset(f"object_{i}", data=asciiList, compression="gzip")
+            list_of_p = []
+            for obj in env._objects:
+                p = np.array(op[obj + ":joint"])[:,:3]
+                #hf.create_dataset(f"{obj}:pose_{i}", data=, compression="gzip")
+                #print(np.shape(p[:,np.newaxis]))#[14,1,3]
+                list_of_p.append(p[:,np.newaxis])
+            ops = np.concatenate(list_of_p, axis=1)
+            #print(np.shape(ops))
+            hf.create_dataset(f"pose_{i}", data=ops, compression="gzip")
 
         hf.attrs["pushed_obj"] = all_pushed_obj
         # hf.create_dataset(f"pushed_obj", data=all_pushed_obj, compression="gzip")
@@ -341,7 +398,7 @@ def collect_multiview_trajectories():
     """
     from multiprocessing import Process
 
-    num_trajectories = 2000  # per worker
+    num_trajectories = 500  # per worker
     num_workers = 1
     record = False
     behavior = "straight_push"
@@ -349,12 +406,12 @@ def collect_multiview_trajectories():
 
     config, _ = argparser()
     config.large_block = True
-    config.demo_dir = "/Datasets/tckn_data"
+    config.demo_dir = "/home/jianingq/roboaware"
     config.multiview = True
     config.norobot_pixels_ob = False
     config.reward_type = "dense"
     config.img_dim = 128
-    config.camera_ids = [0, 2]
+    config.camera_ids = [0,2,3,4]
     config.depth_ob = True
     os.makedirs(config.demo_dir, exist_ok=True)
 
