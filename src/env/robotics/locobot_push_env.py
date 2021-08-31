@@ -134,7 +134,7 @@ class LocobotPushEnv(MaskEnv):
                 # robot_above_qpos = [0.0, 0.43050715, 0.2393125, 0.63018035, 0.0, 0, 0]
                 robot_above_qpos = [0.0, 0.1, 0.2393125, 0.63018035, 0, 0, 0]
                 self.sim.data.qpos[self._joint_references] = robot_above_qpos
-                self.sim.forward()
+            self.sim.forward()
             self.initial_sim_state = copy.deepcopy(self.sim.get_state())
         else:
             self.sim.set_state(self.initial_sim_state)
@@ -362,10 +362,31 @@ class LocobotPushEnv(MaskEnv):
         beta = self._config.temporal_beta
         if behavior == "temporal_random_robot":
             self.temporal_random_robot(history, ep_len, beta)
+        elif behavior == "straight_push":
+            self.straight_push(history)
         else:
             raise ValueError(behavior)
 
         return history
+
+    def straight_push(self, history, object="object1", noise=0):
+        # move gripper behind the block and oriented for a goal push
+        block_xpos = self.sim.data.get_site_xpos(object).copy()
+        spawn_xpos = self.sim.data.get_site_xpos("spawn").copy()
+        goal_dir = (block_xpos - spawn_xpos) / np.linalg.norm(block_xpos - spawn_xpos)
+        gripper_target = block_xpos - 0.05 * goal_dir
+        self._move(gripper_target, history, speed=20, max_time=3)
+        # push the block
+        obj_target = block_xpos + 0.12 * goal_dir
+        self._move(
+            obj_target,
+            history,
+            target_type=object,
+            speed=5,
+            threshold=0.025,
+            max_time=10,
+            noise=noise,
+        )
 
     def temporal_random_robot(self, history, ep_len, beta=1):
         """
@@ -452,8 +473,7 @@ if __name__ == "__main__":
     # imageio.imwrite("side.png", img)
     # sys.exit(0)
     for i in range(10):
-        # obs = env.reset()
-        history = env.generate_demo("temporal_random_robot")
+        history = env.generate_demo("straight_push")
         gif = []
         for o in history["obs"]:
             img = o["observation"]

@@ -27,7 +27,7 @@ def generate_demos(rank, config, record, num_trajectories, noise_level="none"):
         it = tqdm(it)
     for i in it:
         record = rank == 0 and record
-        history = env.generate_demo("temporal_random_robot")
+        history = env.generate_demo("straight_push")
         history['success'] = False
         name = f"{noise_level}_push_{rank}_{i}_{'s' if history['success'] else 'f'}.hdf5"
         path = os.path.join(config.demo_dir, name)
@@ -120,9 +120,9 @@ def collect_svg_data():
     Generate video dataset for SVG model training
     """
     num_workers = 1
-    num_demos = 1000 // num_workers
-    record = False
-    MODIFIED = False
+    num_demos = 10 // num_workers
+    record = True
+    MODIFIED = True
 
     config, _ = argparser()
     init_mjrender_device(config)
@@ -131,7 +131,7 @@ def collect_svg_data():
     # config.demo_dir = f"/scratch/edward/Robonet/locobot_pick{'_fetch' if MODIFIED else ''}_views/c0"
     # config.demo_dir = f"/home/pallab/locobot_ws/src/roboaware/demos/locobot_pick"
     # config.demo_dir = f"/home/edward/projects/pytorch-CycleGAN-and-pix2pix/roboaware_data/fetchpush"
-    config.demo_dir = f"/home/edward/roboaware/demos/locobot_push"
+    config.demo_dir = f"/home/edward/roboaware/demos/fetch_push"
     # create_demo_dataset(config, num_demos, num_workers, record, noise_level="high")
 
     # num_demos = 1000
