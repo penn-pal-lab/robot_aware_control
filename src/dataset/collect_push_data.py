@@ -122,7 +122,7 @@ def collect_svg_data():
     num_workers = 1
     num_demos = 10 // num_workers
     record = True
-    MODIFIED = True
+    MODIFIED = False
 
     config, _ = argparser()
     init_mjrender_device(config)
@@ -131,7 +131,7 @@ def collect_svg_data():
     # config.demo_dir = f"/scratch/edward/Robonet/locobot_pick{'_fetch' if MODIFIED else ''}_views/c0"
     # config.demo_dir = f"/home/pallab/locobot_ws/src/roboaware/demos/locobot_pick"
     # config.demo_dir = f"/home/edward/projects/pytorch-CycleGAN-and-pix2pix/roboaware_data/fetchpush"
-    config.demo_dir = f"/home/edward/roboaware/demos/fetch_push"
+    config.demo_dir = f"/home/edward/roboaware/demos/locobot_push"
     # create_demo_dataset(config, num_demos, num_workers, record, noise_level="high")
 
     # num_demos = 1000

@@ -14,13 +14,13 @@ from src.utils.state import State
 
 DEBUG = False
 
-class LocobotPickEnv(MaskEnv):
+class LocobotPushEnv(MaskEnv):
     def __init__(self, config):
         self._config = config
         modified =  config.modified
-        model_path = f"locobot_pick.xml"
+        model_path = f"locobot_push.xml"
         if modified:
-            model_path = "locobot_pick_fetch.xml"
+            model_path = "locobot_push_fetch.xml"
         model_path = os.path.join("locobot", model_path)
 
         initial_qpos = None
@@ -28,8 +28,8 @@ class LocobotPickEnv(MaskEnv):
         n_substeps = 20
         seed = config.seed
         np.random.seed(seed)
-        self._img_width = 64
-        self._img_height = 48
+        self._img_width = 84
+        self._img_height = 84
         self._render_device = config.render_device
         if modified:
             self._joints = [f"joint_{i}" for i in range(1, 8)]
@@ -74,19 +74,17 @@ class LocobotPickEnv(MaskEnv):
         # workspace boundaries for eef
         # self._ws_low = [0.24, -0.17, 0.05]
         self._ws_low = [0.24, -0.17, 0.05]
-        self._ws_high = [0.33, 0.17, 0.3]
-
+        self._ws_high = [0.42, 0.17, 0.3]
         self.initial_sim_state = None
         # TODO: change this depending on the robot
-        self.demo = self._load_fetch_pick_demo()
-        goal_timesteps = [4, 9, 13]
+        self.demo = self._load_fetch_push_demo()
+        goal_timesteps = [len(self.demo) - 1]
         self.goals = self._extract_goals_from_demo(goal_timesteps, self.demo)
 
         # cost function
         self.cost: RobotWorldCost = RobotWorldCost(config)
 
-        self.time_limit = 20 # number of states
-
+        self.time_limit = 10 # number of states
 
 
     def get_robot_mask(self, width=None, height=None):
@@ -155,7 +153,7 @@ class LocobotPickEnv(MaskEnv):
             demo["actions"] = hf["actions"][:][:, (0,1,2,4)]
         return demo
 
-    def _load_fetch_pick_demo(self):
+    def _load_fetch_push_demo(self):
         return self._load_demo(self.demo_path)
 
     def reset(self):
@@ -168,16 +166,15 @@ class LocobotPickEnv(MaskEnv):
         Returns:
             [type]: [description]
         """
-        self.steps_taken = 0
         if self.initial_sim_state is None:
             if self._config.modified:
                 self.sim.data.qpos[self._joint_references] = [-0.25862757, -1.20163741,  0.32891832,  1.42506277, -0.10650079,  1.43468923, 0.06129823]
             else:
                 # first move the arm above to avoid object collision
                 # robot_above_qpos = [0.0, 0.43050715, 0.2393125, 0.63018035, 0.0, 0, 0]
-                robot_above_qpos = [0.0, 0.1, 0.2393125, 0.63018035, 0.0, 0, 0]
+                robot_above_qpos = [0.0, 0.1, 0.2393125, 0.63018035, 0, 0, 0]
                 self.sim.data.qpos[self._joint_references] = robot_above_qpos
-                self.sim.forward()
+            self.sim.forward()
             self.initial_sim_state = copy.deepcopy(self.sim.get_state())
         else:
             self.sim.set_state(self.initial_sim_state)
@@ -194,7 +191,7 @@ class LocobotPickEnv(MaskEnv):
         self.subgoal_idx = 0
         self.subgoal = self._get_subgoal(self.subgoal_idx)
         return self._get_obs()
-    
+
     def _get_subgoal(self, idx):
         goal = self.goals[idx]
         if self._config.goal_image_type == "image":
@@ -209,6 +206,9 @@ class LocobotPickEnv(MaskEnv):
         action = np.asarray(action)
         action = np.clip(action, self.action_space.low, self.action_space.high)
         if clip:
+            # disable z and gripper action space for pushing
+            action[2] = 0
+            action[3] = 0
             # check if applying action will violate the workspace boundary, if so, clip it.
             curr_eef_state = self.get_gripper_world_pos()
             next_eef_state = curr_eef_state + (action[:3] * 0.05)
@@ -227,23 +227,13 @@ class LocobotPickEnv(MaskEnv):
         self.steps_taken += 1
         # action steps taken == states + 1
         done = self.steps_taken >= self.time_limit - 1
-        info = {"success": False}
-        # compute reward function
-        curr_state = State(img=obs['observation'], mask=obs['masks'], state=obs['states'])
-        reward, rew_info = self.cost(curr_state, self.subgoal, print_cost=False, return_info=True)
-        info.update(rew_info)
-        # if we achieve the goal state, update the goal state
-        advance_to_next_goal, goal_info =  self._advance_to_next_goal(curr_state, self.subgoal)
-        info.update(goal_info)
-        if advance_to_next_goal:
-            if self.subgoal_idx < len(self.goals) - 1:
-                self.subgoal_idx += 1
-                info["subgoal_success"] = True
-                print("advancing to next goal", self.subgoal_idx)
-                self.subgoal = self._get_subgoal(self.subgoal_idx)
-                reward += self._config.subgoal_completion_bonus
-            else:
-                print("finished all subgoals")
+        info = {}
+        reward = 0
+        # use sparse image cost at end of episode
+        if self.steps_taken >= self.time_limit - 1:
+            curr_state = State(img=obs['observation'], mask=obs['masks'], state=obs['states'])
+            reward, rew_info = self.cost(curr_state, self.subgoal, print_cost=False, return_info=True)
+            info.update(rew_info)
 
         # check for task completion 
         goal_pos = self.goals[-1]["obj_qpos"][:3]
@@ -256,31 +246,6 @@ class LocobotPickEnv(MaskEnv):
 
         info["reward"] = reward
         return obs, reward, done, info
-
-    def _advance_to_next_goal(self, curr: State, goal: State):
-        info = {}
-        cfg = self._config
-        robot_success = True
-        # print_str = "Checking goal, "
-        if cfg.robot_cost_weight != 0:
-            eef_dist = -1 * self.cost.robot_cost(curr, goal)
-            robot_success = eef_dist < cfg.robot_cost_success
-            # print_str += f"eef dist: {eef_dist}, {robot_success}"
-            info['eef_dist'] = eef_dist
-            info['robot_success'] = robot_success
-
-        world_success = True
-        if cfg.world_cost_weight != 0:
-            img_dist = -1 * self.cost.world_cost(curr, goal)
-            world_success = img_dist < cfg.world_cost_success
-            # print_str += f" , world dist: {img_dist}, {world_success}"
-            info['world_dist'] = img_dist
-            info['world_success'] = robot_success
-
-        all_success = robot_success and world_success
-        info['all_success'] = all_success
-        # print(print_str)
-        return all_success, info
 
     def _set_action(self, action):
         # TODO: set joint action from end effector action using IK
@@ -326,8 +291,8 @@ class LocobotPickEnv(MaskEnv):
             img = self.render("rgb_array")
             masks = self.get_robot_mask()
         gripper_xpos = self.get_gripper_world_pos()
-        # assume 0 for rotation, gripper force
-        states = np.array([*gripper_xpos, 0, 0])
+        # assume 0 for z, rotation, gripper force
+        states = np.array([*gripper_xpos[:2],0, 0, 0])
         qpos = self.sim.data.qpos[self._joint_references].copy()
         # object qpos
         obj_qpos = self.sim.data.get_joint_qpos("object1:joint").copy()
@@ -364,8 +329,8 @@ class LocobotPickEnv(MaskEnv):
             for i in range(1000):
                 no_overlap = True
                 xy = self._sample_from_circle(center, radius)
-                # if np.linalg.norm(xy - center) < 0.08:
-                #     continue
+                if np.linalg.norm(xy - center) < 0.08:
+                    continue
 
                 for other_xy in sampled_points:
                     if np.linalg.norm(xy - other_xy) < 0.07:
@@ -407,7 +372,7 @@ class LocobotPickEnv(MaskEnv):
         threshold=0.01,
         speed=10,
         noise=0,
-        gripper=0.05,
+        gripper=0.0,
         clip=True
     ):
         if target_type == "gripper":
@@ -422,7 +387,10 @@ class LocobotPickEnv(MaskEnv):
             if noise > 0:
                 d[:3] = d[:3] + np.random.uniform(-noise, noise, size=2)
             ac = np.clip(d[:3] * speed, -1, 1)
-            pad_ac = [*ac, gripper]
+            if clip:
+                pad_ac = [*ac[:2], 0, gripper]
+            else:
+                pad_ac = [*ac, gripper]
             if history is not None:
                 history["ac"].append(pad_ac)
 
@@ -439,215 +407,77 @@ class LocobotPickEnv(MaskEnv):
                 d = target - object_xpos
             step += 1
 
-    def generate_demo(self, noise_level):
+    def generate_demo(self, behavior):
         """
         Runs a hard coded behavior and stores the episode
         Returns a dictionary with observation, action
         """
-        # initialize place pos
-        place_xpos = self.place_xpos = np.array([0.3, 0.11, 0.17])
-        place_noise = np.random.uniform([-0.03, -0.02], [0.03, 0.03], size=2)
-        place_xpos[:2] += place_noise
-        body_idx = self.sim.model.body_name2id("placebody")
-        self.sim.model.body_pos[body_idx] = place_xpos.copy()
-        # initialize the place  marker
+        self._behavior = behavior
         obs = self.reset()
-        if DEBUG:
-            self.render("human")
+        # self.render("human")
         history = defaultdict(list)
         history["obs"].append(obs)
-        self.pick_place(place_xpos, history, noise_level)
+        ep_len = self._config.demo_length
+        beta = self._config.temporal_beta
+        if behavior == "temporal_random_robot":
+            self.temporal_random_robot(history, ep_len, beta)
+        elif behavior == "straight_push":
+            self.straight_push(history)
+        else:
+            raise ValueError(behavior)
+
         return history
 
+    def straight_push(self, history, object="object1", noise=0):
+        # move gripper behind the block and oriented for a goal push
+        block_xpos = self.sim.data.get_site_xpos(object).copy()
+        spawn_xpos = self.sim.data.get_site_xpos("spawn").copy()
+        goal_dir = (block_xpos - spawn_xpos) / np.linalg.norm(block_xpos - spawn_xpos)
+        gripper_target = block_xpos - 0.05 * goal_dir
+        self._move(gripper_target, history, speed=20, max_time=3)
+        # push the block
+        obj_target = block_xpos + 0.12 * goal_dir
+        self._move(
+            obj_target,
+            history,
+            target_type=object,
+            speed=5,
+            threshold=0.025,
+            max_time=10,
+            noise=noise,
+        )
 
-    def pick_place(self, place_xpos, history, noise_level="none", max_actions=14):
-        """first move robot gripper over random object,
-        then grasp
+    def temporal_random_robot(self, history, ep_len, beta=1):
         """
-        total_steps = 0
-        max_actions = 14
-
+        first moves robot near a random object, then
+        generate temporally correlated actions
+        """
         obj = np.random.choice(self._objects)
         history["pushed_obj"] = obj
-
         # move gripper behind the block and oriented for a goal push
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
-        above_block_xpos = block_xpos.copy()
-        above_block_xpos[2] += 0.05
-        # move robot above slightly above block
-        target = above_block_xpos
-        if noise_level == "high":
-            noise = 0.05
-            z_noise = 0.04
-            gripper_noise = 0.005
-        elif noise_level == "med":
-            noise = 0.03
-            z_noise = 0.02
-            gripper_noise = 0.005
-        elif noise_level == "none":
-            noise = 0.00
-            z_noise = 0.00
-            gripper_noise = 0.00
-        speed = 40
-        gripper_xpos = self.get_gripper_world_pos()
-        d = target - gripper_xpos
-        step = 0
-        while np.linalg.norm(d[:2]) > 0.01 and step < 3:
-            # add some random noise to ac
-            if noise > 0:
-                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
-                d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
-            ac = np.clip(d[:3] * speed, -1, 1)
-            gripper_ac = -0.002  + np.random.uniform(-gripper_noise, gripper_noise) # start closing
-            pad_ac = [*ac, gripper_ac]
-            pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
-            if history is not None:
-                history["ac"].append(pad_ac)
+        spawn_xpos = self.sim.data.get_site_xpos("spawn").copy()
+        goal_dir = (block_xpos - spawn_xpos) / np.linalg.norm(block_xpos - spawn_xpos)
+        gripper_target = block_xpos - 0.05 * goal_dir
+        # move robot near an object, record the actions
+        self._move(gripper_target, history, speed=100, max_time=3, clip=True)
+        past_acs = len(history["ac"])
+        # generate temporally correlated noise
+        u = np.zeros((ep_len - 1, *self.action_space.shape))
+        actions = np.zeros_like(u)
+        if past_acs > 0:
+            actions[:past_acs] = history["ac"]
+        for i in range(past_acs, ep_len - 1):
+            u[i] = self.action_space.sample()
+            u[i][2:4] = 0
+            actions[i] = beta * u[i] + (1 - beta) * actions[i - 1]
+        history["ac"] = actions
 
-            obs, _, _, info = self.step(pad_ac)
-            if DEBUG:
-                self.render("human")
-            if history is not None:
-                history["obs"].append(obs)
-                for k, v in info.items():
-                    history[k].append(v)
-            gripper_xpos = self.get_gripper_world_pos()
-            d = target - gripper_xpos
-            step += 1
-        total_steps += step
-        # print("move above", step)
-        # descend onto block, and close gripper
-        block_xpos = self.sim.data.get_site_xpos(obj).copy()
-        block_xpos[2] -= 0.01
-        target = block_xpos
-        if noise_level == "high":
-            noise = 0.02
-        elif noise_level == "med":
-            noise = 0.01
-        elif noise_level == "none":
-            noise = 0.0
-        speed = 40
-        gripper_xpos = self.get_gripper_world_pos()
-        d = target - gripper_xpos
-        step = 0
-        while np.linalg.norm(d) > 0.01 and step < 3:
-            # add some random noise to ac
-            if noise > 0:
-                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
-                d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
-            ac = np.clip(d[:3] * speed, -1, 1)
-            gripper_ac = -0.01 + np.random.uniform(-gripper_noise, gripper_noise)# close
-            pad_ac = [*ac, gripper_ac]
-            pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
-            if history is not None:
-                history["ac"].append(pad_ac)
-
-            obs, _, _, info = self.step(pad_ac)
-            if DEBUG:
-                self.render("human")
-            if history is not None:
-                history["obs"].append(obs)
-                for k, v in info.items():
-                    history[k].append(v)
-            gripper_xpos = self.get_gripper_world_pos()
-            d = target - gripper_xpos
-            step += 1
-
-        total_steps += step
-        # print("pick", step)
-
-        # Place primitive
-        if noise_level == "high":
-            noise = 0.04
-            gripper_noise = 0.02
-        elif noise_level == "med":
-            noise = 0.02
-            gripper_noise = 0.005
-        elif noise_level == "none":
-            noise = 0.0
-            gripper_noise = 0.0
-        speed = 40
-        gripper_xpos = self.get_gripper_world_pos()
-        block_xpos = self.sim.data.get_site_xpos(obj).copy()
-
-        target = block_xpos.copy()
-        target[2] = 0.2
-        d = target - gripper_xpos
-        step = 0
-        # first lift it up
-        while np.linalg.norm(d) > 0.01 and step < 4:
-            # add some random noise to ac
-            if noise > 0:
-                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
-                d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
-            ac = np.clip(d[:3] * speed, -1, 1)
-            gripper_ac = -0.01 + np.random.uniform(-gripper_noise, gripper_noise)# close
-            pad_ac = [*ac, gripper_ac]
-            pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
-            if history is not None:
-                history["ac"].append(pad_ac)
-
-            obs, _, _, info = self.step(pad_ac)
-            if DEBUG:
-                self.render("human")
-            if history is not None:
-                history["obs"].append(obs)
-                for k, v in info.items():
-                    history[k].append(v)
-            gripper_xpos = self.get_gripper_world_pos()
-            d = target - gripper_xpos
-            step += 1
-        # print("lift", step)
-        total_steps += step
-
-        # move it to a side.
-        if noise_level == "high":
-            noise = 0.03
-        elif noise_level == "med":
-            noise = 0.015
-        elif noise_level == "none":
-            noise = 0.0
-        speed = 40
-        gripper_xpos = self.get_gripper_world_pos()
-
-        # move it on top of the platform
-        target = place_xpos
-        d = target - gripper_xpos
-        step = 0
-        while total_steps < max_actions:
-
-            if np.linalg.norm(d) > 0.01:
-                # add some random noise to ac
-                if noise > 0:
-                    d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
-                    d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
-                ac = np.clip(d[:3] * speed, -1, 1)
-                gripper_ac = -0.01 + np.random.uniform(-gripper_noise, gripper_noise)# close
-                pad_ac = [*ac, gripper_ac]
-                pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
-            else:
-                pad_ac = np.zeros(4)
-
-            if history is not None:
-                history["ac"].append(pad_ac)
-
-            obs, _, _, info = self.step(pad_ac)
-            if DEBUG:
-                self.render("human")
-            if history is not None:
-                history["obs"].append(obs)
-                for k, v in info.items():
-                    history[k].append(v)
-            gripper_xpos = self.get_gripper_world_pos()
-            d = target - gripper_xpos
-            total_steps += 1
-
-        block_xpos = self.sim.data.get_site_xpos(obj).copy()
-        # print(block_xpos[2])
-        success =  np.linalg.norm(block_xpos - place_xpos) < 0.02
-        history["success"] = success
-        # print("total", len(history["ac"]), total_steps)
-        # print("success", success)
+        for i in range(past_acs, ep_len - 1):
+            obs, _, _, info = self.step(actions[i])
+            history["obs"].append(obs)
+            for k, v in info.items():
+                history[k].append(v)
 
     def get_gripper_world_pos(self):
         return self.sim.data.get_site_xpos("robot0:grip").copy()
@@ -670,7 +500,7 @@ class LocobotPickEnv(MaskEnv):
         self.sim.data.set_joint_qpos(gripper_joints[1], values[1])
         self.sim.forward()
 
-class GymLocobotPickEnv(LocobotPickEnv):
+class GymLocobotPushEnv(LocobotPushEnv):
     def __init__(self):
         # load config file to set everything
         config_path = "/home/edward/roboaware/src/env/robotics/locobot_pick_env_gym_config.pkl"
@@ -684,57 +514,33 @@ class GymLocobotPickEnv(LocobotPickEnv):
         config.goal_image_type = "image" # object only or robot image
         config.reward_type = "dense"
         config.robot_cost_weight = 1
-        config.world_cost_weight = 0.05
+        config.world_cost_weight = 0.0001
         config.robot_cost_success = 0.02
         config.world_cost_success = 1000
         config.subgoal_completion_bonus = 0
-        self.demo_path = "/home/edward/roboaware/demos/locobot_pick_demos/none_pick_0_2_s.hdf5"
+        demo_name = "med_push_0_1_f.hdf5"
+        self.demo_path = f"/home/edward/roboaware/demos/locobot_push/{demo_name}"
         super().__init__(config)
 
-# class DMLocobotPickEnv(GymLocobotPickEnv):
-#     def reset(self):
-#         obs = self.reset()
-#         return dm_env.restart(obs)
-    
-#     def step(self, ac):
-#         obs, reward, done, info = self.step(ac)
-#         if done:
-#             return dm_env.termination(reward, obs)
-
-#     def observation_spec(self):
-#         return { 
-#             "pixels": specs.BoundedArray(
-#                 shape=(64,48,3),
-#                 dtype=np.float32,
-#                 minimum=0,
-#                 maximum=255,
-#             )
-#         }
-    
-#     def action_spec(self):
-#         return specs.BoundedArray(
-#             shape=(4,),
-#             minimum=-1.0,
-#             maximum=1.0,
-#             dtype=np.float32,
-#         )
 
 
-        
 if __name__ == "__main__":
+
     import sys
+
     import imageio
     from src.config import argparser
-    from src.utils.mujoco import init_mjrender_device
     from src.env.robotics.dmc_env import Gym2DMControl
-    env = GymLocobotPickEnv
+    from src.utils.mujoco import init_mjrender_device
+
+    env = GymLocobotPushEnv
     env = Gym2DMControl(env)
     # print(env.observation_spec())
     # print(env.action_spec())
     ts = env.reset()
     gif = [np.uint8(ts.observation['pixels'])]
     # print(ts)
-    demo = env._gym_env._load_fetch_pick_demo()
+    demo = env._gym_env._load_fetch_push_demo()
     import ipdb; ipdb.set_trace()
     actions = demo['actions']
     for i, ac in enumerate(actions):
@@ -742,58 +548,4 @@ if __name__ == "__main__":
         gif.append(np.uint8(ts.observation['pixels']))
         print(i, ts.step_type)
     imageio.mimwrite("dm.gif", gif)
-    sys.exit(0)
-
-    env = GymLocobotPickEnv()
-    obs = env.reset()
-    gif = [np.uint8(obs['observation'])]
-    # load oracle actions
-    demo = env._load_fetch_pick_demo()
-    actions = demo['actions']
-    # for ac in actions:
-    #     obs, reward, done, info = env.step(ac)
-    #     print(done)
-    #     gif.append(np.uint8(obs['observation']))
-
-    for i, ac in enumerate(actions):
-        obs, reward, done, info = env.step(ac)
-        gif.append(np.uint8(obs['observation']))
-
-    imageio.mimwrite("episode.gif", gif)
-    sys.exit(0)
-    config, _ = argparser()
-    init_mjrender_device(config)
-    config.gpu = 0
-    config.modified = False
-    # cost
-    config.goal_image_type = "image" # object only or robot image
-    config.reward_type = "dense"
-    config.sparse_cost = False
-    config.robot_cost_weight = 1
-    config.world_cost_weight = 0.05
-    config.robot_cost_success = 0.02
-    config.world_cost_success = 1000
-    config.subgoal_completion_bonus = 0
-
-    with open("test_config.pkl", "wb") as f:
-        pickle.dump(config, f)
-    sys.exit(0)
-
-    DEBUG = False
-    env = LocobotPickEnv(config)
-    obs = env.reset()
-    gif = [np.uint8(obs['observation'])]
-    # load oracle actions
-    demo = env._load_fetch_pick_demo()
-    actions = demo['actions']
-    # for ac in actions:
-    #     obs, reward, done, info = env.step(ac)
-    #     print(done)
-    #     gif.append(np.uint8(obs['observation']))
-
-    for i, ac in enumerate(actions):
-        obs, reward, done, info = env.step(ac)
-        gif.append(np.uint8(obs['observation']))
-
-    imageio.mimwrite("episode.gif", gif)
     sys.exit(0)
