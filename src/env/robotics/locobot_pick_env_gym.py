@@ -28,8 +28,8 @@ class LocobotPickEnv(MaskEnv):
         n_substeps = 20
         seed = config.seed
         np.random.seed(seed)
-        self._img_width = 64
-        self._img_height = 48
+        self._img_width = 84
+        self._img_height = 84
         self._render_device = config.render_device
         if modified:
             self._joints = [f"joint_{i}" for i in range(1, 8)]
@@ -684,7 +684,7 @@ class GymLocobotPickEnv(LocobotPickEnv):
         config.goal_image_type = "image" # object only or robot image
         config.reward_type = "dense"
         config.robot_cost_weight = 1
-        config.world_cost_weight = 0.05
+        config.world_cost_weight = 0.0001
         config.robot_cost_success = 0.02
         config.world_cost_success = 1000
         config.subgoal_completion_bonus = 0
