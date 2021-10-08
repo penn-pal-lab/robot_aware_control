@@ -166,6 +166,7 @@ class LocobotPushEnv(MaskEnv):
         Returns:
             [type]: [description]
         """
+        self.steps_taken = 0
         if self.initial_sim_state is None:
             if self._config.modified:
                 self.sim.data.qpos[self._joint_references] = [-0.25862757, -1.20163741,  0.32891832,  1.42506277, -0.10650079,  1.43468923, 0.06129823]

@@ -11,6 +11,7 @@ from src.env.robotics.utils import (ctrl_set_action, mocap_set_action,
                                     reset_mocap2body_xpos, reset_mocap_welds)
 from src.prediction.losses import RobotWorldCost
 from src.utils.state import State
+from src.utils.mujoco import init_mjrender_device
 
 DEBUG = False
 
