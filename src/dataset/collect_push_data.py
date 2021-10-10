@@ -27,7 +27,7 @@ def generate_demos(rank, config, record, num_trajectories, noise_level="none"):
         it = tqdm(it)
     for i in it:
         record = rank == 0 and record
-        history = env.generate_demo("temporal_random_robot")
+        history = env.generate_demo("straight_push")
         history['success'] = False
         name = f"{noise_level}_push_{rank}_{i}_{'s' if history['success'] else 'f'}.hdf5"
         path = os.path.join(config.demo_dir, name)
@@ -120,8 +120,8 @@ def collect_svg_data():
     Generate video dataset for SVG model training
     """
     num_workers = 1
-    num_demos = 1000 // num_workers
-    record = False
+    num_demos = 10 // num_workers
+    record = True
     MODIFIED = False
 
     config, _ = argparser()

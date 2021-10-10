@@ -1,12 +1,16 @@
 import copy
 import os
+import pickle
 from collections import defaultdict
 
+import h5py
 import numpy as np
 from gym import spaces
 from src.env.robotics.masks.base_mask_env import MaskEnv
 from src.env.robotics.utils import (ctrl_set_action, mocap_set_action,
                                     reset_mocap2body_xpos, reset_mocap_welds)
+from src.prediction.losses import RobotWorldCost
+from src.utils.state import State
 
 DEBUG = False
 
@@ -72,6 +76,15 @@ class LocobotPushEnv(MaskEnv):
         self._ws_low = [0.24, -0.17, 0.05]
         self._ws_high = [0.42, 0.17, 0.3]
         self.initial_sim_state = None
+        # TODO: change this depending on the robot
+        self.demo = self._load_fetch_push_demo()
+        goal_timesteps = [len(self.demo) - 1]
+        self.goals = self._extract_goals_from_demo(goal_timesteps, self.demo)
+
+        # cost function
+        self.cost: RobotWorldCost = RobotWorldCost(config)
+
+        self.time_limit = 10 # number of states
 
 
     def get_robot_mask(self, width=None, height=None):
@@ -116,7 +129,34 @@ class LocobotPushEnv(MaskEnv):
         masks = np.asarray(masks, dtype=np.bool)
         return masks
 
-    def reset(self, initial_state=None, init_robot_qpos=True):
+    def _extract_goals_from_demo(self, timesteps, demo):
+        """Get a specific subset of goals"""
+        goals = []
+        for t in timesteps:
+            goal = {}
+            for k, v in demo.items():
+                if k != "actions":
+                    goal[k] = v[t]
+            goals.append(goal)
+        return goals
+    
+    def _load_demo(self, path):
+        # load start,
+        demo = {}
+        with h5py.File(path, "r") as hf:
+            demo["obj_qpos"] = hf["obj_qpos"][:]
+            demo["qpos"] = hf["qpos"][:]
+            demo["eef_states"] = hf["states"][:]
+            demo["observations"] = hf["observations"][:]
+            demo["obj_observations"] = hf["obj_only_imgs"][:]
+            demo["masks"] = hf["masks"][:]
+            demo["actions"] = hf["actions"][:][:, (0,1,2,4)]
+        return demo
+
+    def _load_fetch_push_demo(self):
+        return self._load_demo(self.demo_path)
+
+    def reset(self):
         """Reset the robot and block pose
 
         Args:
@@ -126,6 +166,7 @@ class LocobotPushEnv(MaskEnv):
         Returns:
             [type]: [description]
         """
+        self.steps_taken = 0
         if self.initial_sim_state is None:
             if self._config.modified:
                 self.sim.data.qpos[self._joint_references] = [-0.25862757, -1.20163741,  0.32891832,  1.42506277, -0.10650079,  1.43468923, 0.06129823]
@@ -140,24 +181,27 @@ class LocobotPushEnv(MaskEnv):
             self.sim.set_state(self.initial_sim_state)
         reset_mocap_welds(self.sim)
         reset_mocap2body_xpos(self.sim)
-        # then sample object initialization
-        self._sample_objects()
 
-        eef_target_pos = [0.3, 0.0, 0.05]
-        # some noise to the x/y of the eef initial pos
-        noise = np.random.uniform(-0.03, 0.03, size = 2)
-        eef_target_pos[:2] += noise
-        self._move(eef_target_pos, threshold=0.01, max_time=100, speed=10, clip=False)
-        self.set_gripper_val([0,0])
+        start_timestep = 0
+        initial_state = {"qpos": self.demo["qpos"][start_timestep], "obj_qpos": self.demo["obj_qpos"][start_timestep], "states": self.demo["eef_states"][start_timestep]}
 
-        if initial_state is not None:
-            if init_robot_qpos:
-                self.sim.data.qpos[self._joint_references] = initial_state["qpos"].copy()
-            else:
-                self._move(initial_state["states"][:3], threshold=0.01, max_time=100, speed=10, clip=False)
-            self.sim.data.set_joint_qpos("object1:joint", initial_state["obj_qpos"].copy())
-            self.sim.forward()
+        self.sim.data.qpos[self._joint_references] = initial_state["qpos"].copy()
+        self.sim.data.set_joint_qpos("object1:joint", initial_state["obj_qpos"].copy())
+        self.sim.forward()
+
+        self.subgoal_idx = 0
+        self.subgoal = self._get_subgoal(self.subgoal_idx)
         return self._get_obs()
+
+    def _get_subgoal(self, idx):
+        goal = self.goals[idx]
+        if self._config.goal_image_type == "image":
+            goal_img = goal["observations"]
+            goal_mask = goal["masks"]
+        elif self._config.goal_image_type == "object_only":
+            goal_img = goal["obj_observations"]
+            goal_mask = np.zeros_like(goal["masks"])
+        return State(img=goal_img, mask=goal_mask, state=goal['eef_states'] )
 
     def step(self, action, clip=True):
         action = np.asarray(action)
@@ -181,10 +225,26 @@ class LocobotPushEnv(MaskEnv):
         self.sim.step()
         self._step_callback()
         obs = self._get_obs()
-
-        done = False
+        self.steps_taken += 1
+        # action steps taken == states + 1
+        done = self.steps_taken >= self.time_limit - 1
         info = {}
         reward = 0
+        # use sparse image cost at end of episode
+        if self.steps_taken >= self.time_limit - 1:
+            curr_state = State(img=obs['observation'], mask=obs['masks'], state=obs['states'])
+            reward, rew_info = self.cost(curr_state, self.subgoal, print_cost=False, return_info=True)
+            info.update(rew_info)
+
+        # check for task completion 
+        goal_pos = self.goals[-1]["obj_qpos"][:3]
+        obj_dist = np.linalg.norm(obs["obj_qpos"][:3] - goal_pos)
+        info["obj_dist"] = obj_dist
+        if obj_dist < 0.02:
+            done = True
+            info["success"] = True
+            reward += 100
+
         info["reward"] = reward
         return obs, reward, done, info
 
@@ -441,70 +501,52 @@ class LocobotPushEnv(MaskEnv):
         self.sim.data.set_joint_qpos(gripper_joints[1], values[1])
         self.sim.forward()
 
+class GymLocobotPushEnv(LocobotPushEnv):
+    def __init__(self):
+        # load config file to set everything
+        config_path = "/home/edward/roboaware/src/env/robotics/locobot_pick_env_gym_config.pkl"
+        with open(config_path, "rb") as f:
+            config = pickle.load(f)
+        init_mjrender_device(config)
+        # overwrite saved pickle file
+        config.gpu = 0
+        config.modified = False
+        # cost
+        config.goal_image_type = "image" # object only or robot image
+        config.reward_type = "dense"
+        config.robot_cost_weight = 1
+        config.world_cost_weight = 0.0001
+        config.robot_cost_success = 0.02
+        config.world_cost_success = 1000
+        config.subgoal_completion_bonus = 0
+        demo_name = "med_push_0_1_f.hdf5"
+        self.demo_path = f"/home/edward/roboaware/demos/locobot_push/{demo_name}"
+        super().__init__(config)
+
 
 
 if __name__ == "__main__":
+
     import sys
 
     import imageio
     from src.config import argparser
+    from src.env.robotics.dmc_env import Gym2DMControl
     from src.utils.mujoco import init_mjrender_device
 
-    config, _ = argparser()
-    init_mjrender_device(config)
-    config.gpu = 0
-    config.modified = False
-
-    DEBUG = False
-    env = LocobotPushEnv(config)
-    obs  = env.reset()
-    # while True:
-    #     env.render("human")
-        # for i in range(5):
-        #     env.render("human")
-        #     obs, *_ = env.step([0,0,-0, 0.005])
-        #     print(obs["states"][-2:])
-        # for i in range(5):
-        #     env.render("human")
-        #     obs, *_ = env.step([-0,-0,0, -0.005])
-        #     print(obs["states"][-2:])
-        # break
-    # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
-    # imageio.imwrite("side.png", img)
-    # sys.exit(0)
-    for i in range(10):
-        history = env.generate_demo("straight_push")
-        gif = []
-        for o in history["obs"]:
-            img = o["observation"]
-            # mask = o["masks"]
-            # img[mask] = (0, 255, 255)
-            gif.append(img)
-        imageio.mimwrite(f"test{i}.gif", gif)
+    env = GymLocobotPushEnv
+    env = Gym2DMControl(env)
+    # print(env.observation_spec())
+    # print(env.action_spec())
+    ts = env.reset()
+    gif = [np.uint8(ts.observation['pixels'])]
+    # print(ts)
+    demo = env._gym_env._load_fetch_push_demo()
+    import ipdb; ipdb.set_trace()
+    actions = demo['actions']
+    for i, ac in enumerate(actions):
+        ts = env.step(ac)
+        gif.append(np.uint8(ts.observation['pixels']))
+        print(i, ts.step_type)
+    imageio.mimwrite("dm.gif", gif)
     sys.exit(0)
-
-    # env.get_robot_mask()
-    # try locobot analytical ik
-    env.reset()
-    # while True:
-    # #     x, y, z = np.random.uniform(low=-1, high=1, size=3)
-    # #     # x, y = 0, 0
-    # #     # print(x,y,z)
-    # #     obs = env.step([x, y, 0])
-    #     env.render("human")
-    # env.render("human")
-    # gif = []
-    # obs = env.reset()
-    # print(env.get_gripper_world_pos())
-    # gif.append(obs["observation"])
-    # for i in range(20):
-    #     x,y,z = [0,1,0]
-    #     obs, _, _, _ = env.step([x, y, z])
-    #     gif.append(obs["observation"])
-    # # for i in range(10):
-    # #     x,y,z = [0,0,1]
-    # #     obs, _, _, _ = env.step([x, y, z])
-    # #     gif.append(obs["observation"])
-
-    # print(env.get_gripper_world_pos())
-    # imageio.mimwrite("test2.gif", gif)

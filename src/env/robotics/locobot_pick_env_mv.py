@@ -10,13 +10,13 @@ from src.env.robotics.utils import (ctrl_set_action, mocap_set_action,
 
 DEBUG = False
 
-class LocobotPushEnv(MaskEnv):
+class LocobotPickEnv(MaskEnv):
     def __init__(self, config):
         self._config = config
         modified =  config.modified
-        model_path = f"locobot_push.xml"
+        model_path = f"locobot_pick_mv.xml"
         if modified:
-            model_path = "locobot_push_fetch.xml"
+            model_path = "locobot_pick_fetch_mv.xml"
         model_path = os.path.join("locobot", model_path)
 
         initial_qpos = None
@@ -24,8 +24,8 @@ class LocobotPushEnv(MaskEnv):
         n_substeps = 20
         seed = config.seed
         np.random.seed(seed)
-        self._img_width = 84
-        self._img_height = 84
+        self._img_width = 64
+        self._img_height = 48
         self._render_device = config.render_device
         if modified:
             self._joints = [f"joint_{i}" for i in range(1, 8)]
@@ -52,6 +52,7 @@ class LocobotPushEnv(MaskEnv):
             "finger_r_geom",
             "finger_l_geom",
         }
+        self._cameras = ["main_cam", "aux_cam"]
 
         super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
 
@@ -70,7 +71,8 @@ class LocobotPushEnv(MaskEnv):
         # workspace boundaries for eef
         # self._ws_low = [0.24, -0.17, 0.05]
         self._ws_low = [0.24, -0.17, 0.05]
-        self._ws_high = [0.42, 0.17, 0.3]
+        self._ws_high = [0.33, 0.17, 0.3]
+
         self.initial_sim_state = None
 
 
@@ -88,7 +90,7 @@ class LocobotPushEnv(MaskEnv):
         geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
         if width is None or height is None:
-            mask_dim = [self._img_height, self._img_width]
+            mask_dim = [self._img_height, self._img_width * len(self._cameras)]
         else:
             mask_dim = [height, width]
         mask = np.zeros(mask_dim, dtype=bool)
@@ -132,9 +134,9 @@ class LocobotPushEnv(MaskEnv):
             else:
                 # first move the arm above to avoid object collision
                 # robot_above_qpos = [0.0, 0.43050715, 0.2393125, 0.63018035, 0.0, 0, 0]
-                robot_above_qpos = [0.0, 0.1, 0.2393125, 0.63018035, 0, 0, 0]
+                robot_above_qpos = [0.0, 0.1, 0.2393125, 0.63018035, 0.0, 0, 0]
                 self.sim.data.qpos[self._joint_references] = robot_above_qpos
-            self.sim.forward()
+                self.sim.forward()
             self.initial_sim_state = copy.deepcopy(self.sim.get_state())
         else:
             self.sim.set_state(self.initial_sim_state)
@@ -143,18 +145,17 @@ class LocobotPushEnv(MaskEnv):
         # then sample object initialization
         self._sample_objects()
 
-        eef_target_pos = [0.3, 0.0, 0.05]
+        eef_target_pos = [0.3, 0.0, 0.15]
         # some noise to the x/y of the eef initial pos
         noise = np.random.uniform(-0.03, 0.03, size = 2)
         eef_target_pos[:2] += noise
-        self._move(eef_target_pos, threshold=0.01, max_time=100, speed=10, clip=False)
-        self.set_gripper_val([0,0])
+        self._move(eef_target_pos, threshold=0.01, max_time=100, speed=10)
 
         if initial_state is not None:
             if init_robot_qpos:
                 self.sim.data.qpos[self._joint_references] = initial_state["qpos"].copy()
             else:
-                self._move(initial_state["states"][:3], threshold=0.01, max_time=100, speed=10, clip=False)
+                self._move(initial_state["states"][:3], threshold=0.01, max_time=100, speed=10)
             self.sim.data.set_joint_qpos("object1:joint", initial_state["obj_qpos"].copy())
             self.sim.forward()
         return self._get_obs()
@@ -163,9 +164,6 @@ class LocobotPushEnv(MaskEnv):
         action = np.asarray(action)
         action = np.clip(action, self.action_space.low, self.action_space.high)
         if clip:
-            # disable z and gripper action space for pushing
-            action[2] = 0
-            action[3] = 0
             # check if applying action will violate the workspace boundary, if so, clip it.
             curr_eef_state = self.get_gripper_world_pos()
             next_eef_state = curr_eef_state + (action[:3] * 0.05)
@@ -232,8 +230,8 @@ class LocobotPushEnv(MaskEnv):
             img = self.render("rgb_array")
             masks = self.get_robot_mask()
         gripper_xpos = self.get_gripper_world_pos()
-        # assume 0 for z, rotation, gripper force
-        states = np.array([*gripper_xpos[:2],0, 0, 0])
+        # assume 0 for rotation, gripper force
+        states = np.array([*gripper_xpos, 0, 0])
         qpos = self.sim.data.qpos[self._joint_references].copy()
         # object qpos
         obj_qpos = self.sim.data.get_joint_qpos("object1:joint").copy()
@@ -243,17 +241,22 @@ class LocobotPushEnv(MaskEnv):
         if width is None or height is None:
             width, height = self._img_width, self._img_height
         if camera_name is None:
-            camera_name = "main_cam"
+            camera_names = self._cameras
         if mode == "rgb_array":
-            data = self.sim.render(
-                width,
-                height,
-                camera_name=camera_name,
-                segmentation=segmentation,
-                device_id=self._render_device,
-            )
-            # original image is upside-down, so flip it
-            return data[::-1]
+            full_img = np.zeros((self._img_height, self._img_width * len(self._cameras), 2 if segmentation else 3), dtype=np.uint8)
+            for i, camera_name in enumerate(camera_names):
+                img = self.sim.render(
+                    width,
+                    height,
+                    camera_name=camera_name,
+                    segmentation=segmentation,
+                    device_id=self._render_device,
+                )
+                # original image is upside-down, so flip it
+                img = img[::-1]
+                full_img[:, i * self._img_width : (i+1) * self._img_width, :] = img
+
+            return full_img
         elif mode == "human":
             self._get_viewer(mode).render()
 
@@ -270,8 +273,8 @@ class LocobotPushEnv(MaskEnv):
             for i in range(1000):
                 no_overlap = True
                 xy = self._sample_from_circle(center, radius)
-                if np.linalg.norm(xy - center) < 0.08:
-                    continue
+                # if np.linalg.norm(xy - center) < 0.08:
+                #     continue
 
                 for other_xy in sampled_points:
                     if np.linalg.norm(xy - other_xy) < 0.07:
@@ -313,7 +316,7 @@ class LocobotPushEnv(MaskEnv):
         threshold=0.01,
         speed=10,
         noise=0,
-        gripper=0.0,
+        gripper=0.05,
         clip=True
     ):
         if target_type == "gripper":
@@ -328,10 +331,7 @@ class LocobotPushEnv(MaskEnv):
             if noise > 0:
                 d[:3] = d[:3] + np.random.uniform(-noise, noise, size=2)
             ac = np.clip(d[:3] * speed, -1, 1)
-            if clip:
-                pad_ac = [*ac[:2], 0, gripper]
-            else:
-                pad_ac = [*ac, gripper]
+            pad_ac = [*ac, gripper]
             if history is not None:
                 history["ac"].append(pad_ac)
 
@@ -348,77 +348,215 @@ class LocobotPushEnv(MaskEnv):
                 d = target - object_xpos
             step += 1
 
-    def generate_demo(self, behavior):
+    def generate_demo(self, noise_level):
         """
         Runs a hard coded behavior and stores the episode
         Returns a dictionary with observation, action
         """
-        self._behavior = behavior
+        # initialize place pos
+        place_xpos = self.place_xpos = np.array([0.3, 0.11, 0.17])
+        place_noise = np.random.uniform([-0.03, -0.02], [0.03, 0.03], size=2)
+        place_xpos[:2] += place_noise
+        body_idx = self.sim.model.body_name2id("placebody")
+        self.sim.model.body_pos[body_idx] = place_xpos.copy()
+        # initialize the place  marker
         obs = self.reset()
-        # self.render("human")
+        if DEBUG:
+            self.render("human")
         history = defaultdict(list)
         history["obs"].append(obs)
-        ep_len = self._config.demo_length
-        beta = self._config.temporal_beta
-        if behavior == "temporal_random_robot":
-            self.temporal_random_robot(history, ep_len, beta)
-        elif behavior == "straight_push":
-            self.straight_push(history)
-        else:
-            raise ValueError(behavior)
-
+        self.pick_place(place_xpos, history, noise_level)
         return history
 
-    def straight_push(self, history, object="object1", noise=0):
-        # move gripper behind the block and oriented for a goal push
-        block_xpos = self.sim.data.get_site_xpos(object).copy()
-        spawn_xpos = self.sim.data.get_site_xpos("spawn").copy()
-        goal_dir = (block_xpos - spawn_xpos) / np.linalg.norm(block_xpos - spawn_xpos)
-        gripper_target = block_xpos - 0.05 * goal_dir
-        self._move(gripper_target, history, speed=20, max_time=3)
-        # push the block
-        obj_target = block_xpos + 0.12 * goal_dir
-        self._move(
-            obj_target,
-            history,
-            target_type=object,
-            speed=5,
-            threshold=0.025,
-            max_time=10,
-            noise=noise,
-        )
 
-    def temporal_random_robot(self, history, ep_len, beta=1):
+    def pick_place(self, place_xpos, history, noise_level="none", max_actions=14):
+        """first move robot gripper over random object,
+        then grasp
         """
-        first moves robot near a random object, then
-        generate temporally correlated actions
-        """
+        total_steps = 0
+        max_actions = 14
+
         obj = np.random.choice(self._objects)
         history["pushed_obj"] = obj
+
         # move gripper behind the block and oriented for a goal push
         block_xpos = self.sim.data.get_site_xpos(obj).copy()
-        spawn_xpos = self.sim.data.get_site_xpos("spawn").copy()
-        goal_dir = (block_xpos - spawn_xpos) / np.linalg.norm(block_xpos - spawn_xpos)
-        gripper_target = block_xpos - 0.05 * goal_dir
-        # move robot near an object, record the actions
-        self._move(gripper_target, history, speed=100, max_time=3, clip=True)
-        past_acs = len(history["ac"])
-        # generate temporally correlated noise
-        u = np.zeros((ep_len - 1, *self.action_space.shape))
-        actions = np.zeros_like(u)
-        if past_acs > 0:
-            actions[:past_acs] = history["ac"]
-        for i in range(past_acs, ep_len - 1):
-            u[i] = self.action_space.sample()
-            u[i][2:4] = 0
-            actions[i] = beta * u[i] + (1 - beta) * actions[i - 1]
-        history["ac"] = actions
+        above_block_xpos = block_xpos.copy()
+        above_block_xpos[2] += 0.05
+        # move robot above slightly above block
+        target = above_block_xpos
+        if noise_level == "high":
+            noise = 0.05
+            z_noise = 0.04
+            gripper_noise = 0.005
+        elif noise_level == "med":
+            noise = 0.03
+            z_noise = 0.02
+            gripper_noise = 0.005
+        elif noise_level == "none":
+            noise = 0.00
+            z_noise = 0.00
+            gripper_noise = 0.00
+        speed = 40
+        gripper_xpos = self.get_gripper_world_pos()
+        d = target - gripper_xpos
+        step = 0
+        while np.linalg.norm(d[:2]) > 0.01 and step < 3:
+            # add some random noise to ac
+            if noise > 0:
+                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
+                d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
+            ac = np.clip(d[:3] * speed, -1, 1)
+            gripper_ac = -0.002  + np.random.uniform(-gripper_noise, gripper_noise) # start closing
+            pad_ac = [*ac, gripper_ac]
+            pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
+            if history is not None:
+                history["ac"].append(pad_ac)
 
-        for i in range(past_acs, ep_len - 1):
-            obs, _, _, info = self.step(actions[i])
-            history["obs"].append(obs)
-            for k, v in info.items():
-                history[k].append(v)
+            obs, _, _, info = self.step(pad_ac)
+            if DEBUG:
+                self.render("human")
+            if history is not None:
+                history["obs"].append(obs)
+                for k, v in info.items():
+                    history[k].append(v)
+            gripper_xpos = self.get_gripper_world_pos()
+            d = target - gripper_xpos
+            step += 1
+        total_steps += step
+        # print("move above", step)
+        # descend onto block, and close gripper
+        block_xpos = self.sim.data.get_site_xpos(obj).copy()
+        block_xpos[2] -= 0.01
+        target = block_xpos
+        if noise_level == "high":
+            noise = 0.02
+        elif noise_level == "med":
+            noise = 0.01
+        elif noise_level == "none":
+            noise = 0.0
+        speed = 40
+        gripper_xpos = self.get_gripper_world_pos()
+        d = target - gripper_xpos
+        step = 0
+        while np.linalg.norm(d) > 0.01 and step < 3:
+            # add some random noise to ac
+            if noise > 0:
+                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
+                d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
+            ac = np.clip(d[:3] * speed, -1, 1)
+            gripper_ac = -0.01 + np.random.uniform(-gripper_noise, gripper_noise)# close
+            pad_ac = [*ac, gripper_ac]
+            pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
+            if history is not None:
+                history["ac"].append(pad_ac)
+
+            obs, _, _, info = self.step(pad_ac)
+            if DEBUG:
+                self.render("human")
+            if history is not None:
+                history["obs"].append(obs)
+                for k, v in info.items():
+                    history[k].append(v)
+            gripper_xpos = self.get_gripper_world_pos()
+            d = target - gripper_xpos
+            step += 1
+
+        total_steps += step
+        # print("pick", step)
+
+        # Place primitive
+        if noise_level == "high":
+            noise = 0.04
+            gripper_noise = 0.02
+        elif noise_level == "med":
+            noise = 0.02
+            gripper_noise = 0.005
+        elif noise_level == "none":
+            noise = 0.0
+            gripper_noise = 0.0
+        speed = 40
+        gripper_xpos = self.get_gripper_world_pos()
+        block_xpos = self.sim.data.get_site_xpos(obj).copy()
+
+        target = block_xpos.copy()
+        target[2] = 0.2
+        d = target - gripper_xpos
+        step = 0
+        # first lift it up
+        while np.linalg.norm(d) > 0.01 and step < 4:
+            # add some random noise to ac
+            if noise > 0:
+                d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
+                d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
+            ac = np.clip(d[:3] * speed, -1, 1)
+            gripper_ac = -0.01 + np.random.uniform(-gripper_noise, gripper_noise)# close
+            pad_ac = [*ac, gripper_ac]
+            pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
+            if history is not None:
+                history["ac"].append(pad_ac)
+
+            obs, _, _, info = self.step(pad_ac)
+            if DEBUG:
+                self.render("human")
+            if history is not None:
+                history["obs"].append(obs)
+                for k, v in info.items():
+                    history[k].append(v)
+            gripper_xpos = self.get_gripper_world_pos()
+            d = target - gripper_xpos
+            step += 1
+        # print("lift", step)
+        total_steps += step
+
+        # move it to a side.
+        if noise_level == "high":
+            noise = 0.03
+        elif noise_level == "med":
+            noise = 0.015
+        elif noise_level == "none":
+            noise = 0.0
+        speed = 40
+        gripper_xpos = self.get_gripper_world_pos()
+
+        # move it on top of the platform
+        target = place_xpos
+        d = target - gripper_xpos
+        step = 0
+        while total_steps < max_actions:
+
+            if np.linalg.norm(d) > 0.01:
+                # add some random noise to ac
+                if noise > 0:
+                    d[:2] = d[:2] + np.random.uniform(-noise, noise, size=2)
+                    d[2] = d[2] + np.random.uniform(-z_noise, z_noise)
+                ac = np.clip(d[:3] * speed, -1, 1)
+                gripper_ac = -0.01 + np.random.uniform(-gripper_noise, gripper_noise)# close
+                pad_ac = [*ac, gripper_ac]
+                pad_ac = np.clip(pad_ac, self.action_space.low, self.action_space.high)
+            else:
+                pad_ac = np.zeros(4)
+
+            if history is not None:
+                history["ac"].append(pad_ac)
+
+            obs, _, _, info = self.step(pad_ac)
+            if DEBUG:
+                self.render("human")
+            if history is not None:
+                history["obs"].append(obs)
+                for k, v in info.items():
+                    history[k].append(v)
+            gripper_xpos = self.get_gripper_world_pos()
+            d = target - gripper_xpos
+            total_steps += 1
+
+        block_xpos = self.sim.data.get_site_xpos(obj).copy()
+        # print(block_xpos[2])
+        success =  np.linalg.norm(block_xpos - place_xpos) < 0.02
+        history["success"] = success
+        # print("total", len(history["ac"]), total_steps)
+        # print("success", success)
 
     def get_gripper_world_pos(self):
         return self.sim.data.get_site_xpos("robot0:grip").copy()
@@ -456,10 +594,10 @@ if __name__ == "__main__":
     config.modified = False
 
     DEBUG = False
-    env = LocobotPushEnv(config)
-    obs  = env.reset()
+    env = LocobotPickEnv(config)
+    # obs = env.reset()
     # while True:
-    #     env.render("human")
+        # env.render("human")
         # for i in range(5):
         #     env.render("human")
         #     obs, *_ = env.step([0,0,-0, 0.005])
@@ -469,18 +607,22 @@ if __name__ == "__main__":
         #     obs, *_ = env.step([-0,-0,0, -0.005])
         #     print(obs["states"][-2:])
         # break
+    # sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
-    # sys.exit(0)
+    num_success = 0
     for i in range(10):
-        history = env.generate_demo("straight_push")
+        # obs = env.reset()
+        history = env.generate_demo(noise_level="none")
+        num_success += int(history["success"])
         gif = []
         for o in history["obs"]:
             img = o["observation"]
-            # mask = o["masks"]
-            # img[mask] = (0, 255, 255)
+            mask = o["masks"]
+            img[mask] = (0, 255, 255)
             gif.append(img)
         imageio.mimwrite(f"test{i}.gif", gif)
+    print("success", num_success)
     sys.exit(0)
 
     # env.get_robot_mask()

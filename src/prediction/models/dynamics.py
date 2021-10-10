@@ -467,7 +467,7 @@ class SVGConvModel(nn.Module):
 
     def _init_models(self):
         cf = self._config
-        if cf.image_width == 64:
+        if cf.image_width in [64, 128]:
             from src.prediction.models.vgg_64 import ConvDecoder, ConvEncoder
         else:
             raise ValueError

@@ -353,6 +353,7 @@ def add_cost_arguments(parser):
     parser.add_argument("--img_cost_threshold", type=float, default=None)
     # only used by img don't care cost, divide by number of world pixels
     parser.add_argument("--img_cost_world_norm", type=str2bool, default=True)
+    parser.add_argument("--subgoal_completion_bonus", type=float, default=0)
 
 
 def argparser():

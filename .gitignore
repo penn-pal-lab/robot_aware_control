@@ -12,7 +12,6 @@ robonet_images/
 visualize_actions.pkl
 figures/
 MUJOCO_LOG.TXT
-*.pkl
 pixel_changes.npy
 widowx1_c2_calibration
 widowx_configurations

@@ -283,8 +283,7 @@ class ImgDontcareCost(Cost):
         return -non_robot_loss
 
     def __call__(self, curr: State, goal: State):
-        if isinstance(curr.img, Tensor) or isinstance(goal.img, Tensor):
-            return self._call_tensor(curr.img, goal.img, curr.mask, goal.mask)
+        if isinstance(curr.img, Tensor) or isinstance(goal.img, Tensor): return self._call_tensor(curr.img, goal.img, curr.mask, goal.mask)
         return self._call(curr.img, goal.img, curr.mask, goal.mask)
 
 
@@ -305,15 +304,22 @@ class RobotWorldCost(Cost):
         if config.reward_type == "dontcare":
             self.world_cost = ImgDontcareCost(config)
 
-    def __call__(self, curr: State, goal: State, print_cost=False):
+    def __call__(self, curr: State, goal: State, print_cost=False, return_info=False):
         weights = [self.robot_cost_weight, self.world_cost_weight]
         costs = [self.robot_cost, self.world_cost]
         total_cost = 0
         print_str = ""
+        info = {}
         for w, c in zip(weights, costs):
             if w == 0:
                 continue
             cost = w * c(curr, goal)
+            if return_info:
+                if type(cost) in [np.float64, float]:
+                    info[c.name] = cost
+                else:
+                    # batched version
+                    raise NotImplementedError()
             if print_cost:
                 if type(cost) in [np.float64, float]:
                     print_str += f"{c.name}: {cost:.4f} ,"
@@ -323,5 +329,7 @@ class RobotWorldCost(Cost):
             total_cost += cost
         if print_cost:
             print(print_str)
+        if return_info:
+            return total_cost, info
 
         return total_cost

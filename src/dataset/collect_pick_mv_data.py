@@ -6,7 +6,7 @@ import h5py
 import imageio
 import numpy as np
 from src.config import argparser
-from src.env.robotics.locobot_pick_env import LocobotPickEnv
+from src.env.robotics.locobot_pick_env_mv import LocobotPickEnv
 from tqdm import tqdm
 
 
@@ -120,7 +120,7 @@ def collect_svg_data():
     """
     num_workers = 1
     num_demos = 10 // num_workers
-    record = True
+    record = False
     MODIFIED = False
 
     config, _ = argparser()
@@ -130,13 +130,13 @@ def collect_svg_data():
     config.modified = MODIFIED
     # config.demo_dir = f"/scratch/edward/Robonet/locobot_pick{'_fetch' if MODIFIED else ''}_views/c0"
     # config.demo_dir = f"/home/pallab/locobot_ws/src/roboaware/demos/locobot_pick"
-    config.demo_dir = f"/home/edward/roboaware/demos/locobot_pick"
+    config.demo_dir = f"/home/edward/roboaware/demos/locobot_pick_mv"
     # create_demo_dataset(config, num_demos, num_workers, record, noise_level="high")
 
     # num_demos = 10
     # create_demo_dataset(config, num_demos, num_workers, record, noise_level="med")
 
-    num_demos = 10
+    num_demos = 100
     create_demo_dataset(config, num_demos, num_workers, record, noise_level="none")
 
 
