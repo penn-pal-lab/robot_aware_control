@@ -14,9 +14,9 @@ class LocobotPickEnv(MaskEnv):
     def __init__(self, config):
         self._config = config
         modified =  config.modified
-        model_path = f"locobot_pick.xml"
+        model_path = f"locobot_pick_mv.xml"
         if modified:
-            model_path = "locobot_pick_fetch.xml"
+            model_path = "locobot_pick_fetch_mv.xml"
         model_path = os.path.join("locobot", model_path)
 
         initial_qpos = None
@@ -52,6 +52,7 @@ class LocobotPickEnv(MaskEnv):
             "finger_r_geom",
             "finger_l_geom",
         }
+        self._cameras = ["main_cam", "aux_cam"]
 
         super().__init__(model_path, initial_qpos, n_actions, n_substeps, seed=seed)
 
@@ -72,7 +73,6 @@ class LocobotPickEnv(MaskEnv):
         self._ws_low = [0.24, -0.17, 0.05]
         self._ws_high = [0.33, 0.17, 0.3]
 
-        # modify camera R
         self.initial_sim_state = None
 
 
@@ -90,7 +90,7 @@ class LocobotPickEnv(MaskEnv):
         geoms = types == self.mj_const.OBJ_GEOM
         geoms_ids = np.unique(ids[geoms])
         if width is None or height is None:
-            mask_dim = [self._img_height, self._img_width]
+            mask_dim = [self._img_height, self._img_width * len(self._cameras)]
         else:
             mask_dim = [height, width]
         mask = np.zeros(mask_dim, dtype=bool)
@@ -241,17 +241,22 @@ class LocobotPickEnv(MaskEnv):
         if width is None or height is None:
             width, height = self._img_width, self._img_height
         if camera_name is None:
-            camera_name = "main_cam"
+            camera_names = self._cameras
         if mode == "rgb_array":
-            data = self.sim.render(
-                width,
-                height,
-                camera_name=camera_name,
-                segmentation=segmentation,
-                device_id=self._render_device,
-            )
-            # original image is upside-down, so flip it
-            return data[::-1]
+            full_img = np.zeros((self._img_height, self._img_width * len(self._cameras), 2 if segmentation else 3), dtype=np.uint8)
+            for i, camera_name in enumerate(camera_names):
+                img = self.sim.render(
+                    width,
+                    height,
+                    camera_name=camera_name,
+                    segmentation=segmentation,
+                    device_id=self._render_device,
+                )
+                # original image is upside-down, so flip it
+                img = img[::-1]
+                full_img[:, i * self._img_width : (i+1) * self._img_width, :] = img
+
+            return full_img
         elif mode == "human":
             self._get_viewer(mode).render()
 
@@ -588,11 +593,11 @@ if __name__ == "__main__":
     config.gpu = 0
     config.modified = False
 
-    DEBUG = True
+    DEBUG = False
     env = LocobotPickEnv(config)
-    env.reset()
-    while True:
-        env.render("human")
+    # obs = env.reset()
+    # while True:
+        # env.render("human")
         # for i in range(5):
         #     env.render("human")
         #     obs, *_ = env.step([0,0,-0, 0.005])
@@ -602,21 +607,21 @@ if __name__ == "__main__":
         #     obs, *_ = env.step([-0,-0,0, -0.005])
         #     print(obs["states"][-2:])
         # break
-    sys.exit(0)
+    # sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)
     num_success = 0
-    for i in range(100):
+    for i in range(10):
         # obs = env.reset()
-        history = env.generate_demo()
+        history = env.generate_demo(noise_level="none")
         num_success += int(history["success"])
         gif = []
-        # for o in history["obs"]:
-        #     img = o["observation"]
-        #     mask = o["masks"]
-        #     img[mask] = (0, 255, 255)
-        #     gif.append(img)
-        # imageio.mimwrite(f"test{i}.gif", gif)
+        for o in history["obs"]:
+            img = o["observation"]
+            mask = o["masks"]
+            img[mask] = (0, 255, 255)
+            gif.append(img)
+        imageio.mimwrite(f"test{i}.gif", gif)
     print("success", num_success)
     sys.exit(0)
 
