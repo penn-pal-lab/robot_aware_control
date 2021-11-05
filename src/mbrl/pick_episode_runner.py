@@ -3,6 +3,7 @@ import os
 import pickle
 from collections import defaultdict
 from os.path import join
+
 from src.cem.pick.cem import CEMPolicy
 from src.utils.mujoco import init_mjrender_device
 import colorlog
@@ -13,7 +14,8 @@ import torch
 import wandb
 from tqdm import trange
 from src.utils.state import State, DemoGoalState
-from src.env.robotics.locobot_pick_env import LocobotPickEnv
+# from src.env.robotics.locobot_pick_env import LocobotPickEnv
+from src.env.robotics.locobot_pick_env_mv import LocobotPickEnv
 from src.prediction.losses import RobotWorldCost
 
 
@@ -66,8 +68,8 @@ class EpisodeRunner(object):
             goal_timesteps = DEMO_GOAL_LABELS[demo_name]
             goals = self._extract_goals_from_demo(goal_timesteps, demo)
 
-        max_timestep = 12
-        start_timestep = 0
+        max_timestep = 16
+        start_timestep = 2
         initial_state = {"qpos": demo["qpos"][start_timestep], "obj_qpos": demo["obj_qpos"][start_timestep], "states": demo["eef_states"][start_timestep]}
         goal_pos = demo["obj_qpos"][-1][:3]
 
@@ -147,7 +149,7 @@ class EpisodeRunner(object):
             curr_state = State(img=obs["observation"], mask=obs["masks"], state=obs["states"])
             goal_state =  State(img=goal_imgs[0], mask=goal_masks[0], state=goal_eef_states[0])
 
-            if self._advance_to_next_goal(curr_state, goal_state):
+            if self._advance_to_next_goal(curr_state, goal_state, goal_idx):
                 if goal_idx < len(goals):
                     goal_idx += 1
                 print("advancing to next goal", goal_idx)
@@ -175,12 +177,18 @@ class EpisodeRunner(object):
         ep_stats["final_dist"] = obj_dist
         return ep_stats
 
-    def _advance_to_next_goal(self, curr: State, goal: State):
+    def _advance_to_next_goal(self, curr: State, goal: State, goal_idx=None):
         cfg = self._config
+        if not hasattr(self, "_old_robot_cost_success"):
+            self._old_robot_cost_success = cfg.robot_cost_success
         robot_success = True
         print_str = "Checking goal, "
         if cfg.robot_cost_weight != 0:
             eef_dist = -1 * self.cost.robot_cost(curr, goal)
+            if goal_idx == 1: # relax lift subgoal
+                cfg.robot_cost_success = 0.025
+            else:
+                cfg.robot_cost_success = self._old_robot_cost_success
             robot_success = eef_dist < cfg.robot_cost_success
             print_str += f"eef dist: {eef_dist}, {robot_success}"
 
@@ -366,32 +374,35 @@ def visualize_demo(demo_path):
         imageio.imwrite(f"obs_{i}.png", obs)
 
 if __name__ == "__main__":
+    import sys
     from src.config import argparser
 
     # demo_path = "/home/edward/roboaware/demos/fetch_pick_demos/none_pick_0_6_f.hdf5"
-    # demo_path = "/home/edward/roboaware/demos/fetch_pick/none_pick_0_5_f.hdf5"
-    demo_path = "/home/edward/roboaware/demos/locobot_pick_demos/none_pick_0_2_s.hdf5"
-    demo_name = "none_pick_0_5_f"
+    demo_path = "/home/edward/roboaware/demos/labeled_fetch_pick_mv_demos/none_pick_0_9_f.hdf5"
+    # demo_path = "/home/edward/roboaware/demos/locobot_pick_demos/none_pick_0_2_s.hdf5"
+    demo_name = "none_pick_0_9_f"
     config, _ = argparser()
+    # visualize_demo(demo_path)
+    # sys.exit(0)
 
     # env
     config.modified = True
-    config.object_demo_dir = "/home/edward/roboaware/demos/labeled_fetch_pick_demos"
+    config.object_demo_dir = "/home/edward/roboaware/demos/labeled_fetch_pick_mv_demos"
     # config.object_demo_dir = "/home/pallab/roboaware/demos/fetch_pick_demos"
     # config.object_demo_dir = "/home/edward/roboaware/demos/locobot_pick_demos"
 
     # Fetch Pick demos
-    # DEMO_GOAL_LABELS = {
-    #     "none_pick_0_5_f.hdf5": [3,5,9],
-    #     "none_pick_0_6_f.hdf5": [3,8,10],
-    #     "none_pick_0_7_f.hdf5": [4,9,12],
-    #     "none_pick_0_8_s.hdf5": [6,11,14],
-    # }
+    DEMO_GOAL_LABELS = {
+        "none_pick_0_5_s.hdf5": [3,9,12],
+        "none_pick_0_6_f.hdf5": [3,8,12],
+        "none_pick_0_8_s.hdf5": [6,11,14],
+        "none_pick_0_9_f.hdf5": [4,9,12],
+    }
 
     # Locobot Pick demos
-    DEMO_GOAL_LABELS = {
-        "none_pick_0_2_s.hdf5": [4,9,13],
-    }
+    # DEMO_GOAL_LABELS = {
+    #     "none_pick_0_2_s.hdf5": [4,9,13],
+    # }
 
     # model
     # config.dynamics_model_ckpt = "/home/edward/roboaware/checkpoints/pick4_ranofuture_72300.pt"
@@ -417,30 +428,42 @@ if __name__ == "__main__":
     config.opt_iter = 5
     config.topk = 5
 
-    # cost
-    config.goal_image_type = "image" # object only or robot image
-    config.reward_type = "dense"
+    # RA cost
+    config.goal_image_type = "object_only" # object only or robot image
+    config.reward_type = "dontcare"
     config.sparse_cost = True
-    config.robot_cost_weight = 0
-    config.world_cost_weight = 1
-    config.robot_cost_success = 0.03
-    config.world_cost_success = 1000
+    config.robot_cost_weight = 1
+    config.world_cost_weight = 0.5
+    config.robot_cost_success = 0.015
+    config.world_cost_success = 0.5
+
+    # Pixel cost
+    # config.goal_image_type = "image" # object only or robot image
+    # config.reward_type = "dense"
+    # config.sparse_cost = False
+    # config.robot_cost_weight = 0
+    # config.world_cost_weight = 0.0001
+    # config.robot_cost_success = 0.015
+    # config.world_cost_success = 1000
+
+    runner = EpisodeRunner(config)
+    runner.run()
 
     # load cyclegan stuff
-    from src.cyclegan.data.base_dataset import get_transform
-    from PIL import Image
+    # from src.cyclegan.data.base_dataset import get_transform
+    # from PIL import Image
 
-    with open("src/cyclegan/test_config.pkl", "rb") as f:
-        opt = pickle.load(f)
-    opt.checkpoints_dir = "/home/edward/projects/pytorch-CycleGAN-and-pix2pix/checkpoints"
-    opt.gpu_ids = [1]
-    opt.model = "test" # load only one model
-    opt.model_suffix = "_A"
-    opt.name = "ra_cyclegan_v2"
-    # visualize_demo(demo_path)
-    runner = EpisodeRunner(config)
-    runner.load_cyclegan(opt)
-    # img = np.zeros((64, 48, 3))
-    # runner._cyclegan_forward(img)
-    runner.run()
-    # runner.run_episode(0, demo_name, demo_path)
+    # with open("src/cyclegan/test_config.pkl", "rb") as f:
+    #     opt = pickle.load(f)
+    # opt.checkpoints_dir = "/home/edward/projects/pytorch-CycleGAN-and-pix2pix/checkpoints"
+    # opt.gpu_ids = [1]
+    # opt.model = "test" # load only one model
+    # opt.model_suffix = "_A"
+    # opt.name = "ra_cyclegan_v2"
+    # # visualize_demo(demo_path)
+    # runner = EpisodeRunner(config)
+    # runner.load_cyclegan(opt)
+    # # img = np.zeros((64, 48, 3))
+    # # runner._cyclegan_forward(img)
+    # runner.run()
+    # # runner.run_episode(0, demo_name, demo_path)

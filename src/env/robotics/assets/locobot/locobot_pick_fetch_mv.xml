@@ -132,15 +132,15 @@
             <body name="robot0:torso_lift_link" pos="-0.04345 0 0.1887">
                 <inertial diaginertia="0.3365 0.3354 0.0943" mass="10.7796" pos="-0.00065 -0.00045 0.14675" quat="0.9993 -0.0006 0.0336 0.0185"></inertial>
                 <joint axis="0 0 1" damping="1e+07" name="robot0:torso_lift_joint" range="0.0386 0.3861" type="slide"></joint>
-                <geom mesh="robot0:torso_lift_link" name="robot0:torso_lift_link" material="robot0:torso_mat"></geom>
+                <geom mesh="robot0:torso_lift_link" name="robot0:torso_lift_link" material="robot0:torso_mat" rgba="0 0 0 0"></geom>
                 <body name="robot0:shoulder_pan_link" pos="0.05975 0 0.1743">
                     <inertial diaginertia="0.009 0.0086 0.0041" mass="2.5587" pos="0.04635 -0.0028 0.0282" quat="-0.1364 0.7624 -0.1562 0.613"></inertial>
                     <joint axis="0 0 1" name="joint_1" range="-1.6056 1.6056"></joint>
-                    <geom mesh="robot0:shoulder_pan_link" name="robot0:shoulder_pan_link" material="robot0:arm_mat"></geom>
+                    <geom mesh="robot0:shoulder_pan_link" name="robot0:shoulder_pan_link" material="robot0:arm_mat" rgba="0 0 0 0"></geom>
                     <body name="robot0:shoulder_lift_link" pos="0.0585 0 0.03">
                         <inertial diaginertia="0.0116 0.0112 0.0023" mass="2.6615" pos="0.0716 0.0036 -0.00005" quat="0.4382 0.4382 0.555 0.555"></inertial>
                         <joint axis="0 1 0" name="joint_2" range="-1.221 1.518"></joint>
-                        <geom mesh="robot0:shoulder_lift_link" name="robot0:shoulder_lift_link" material="robot0:arm_mat" class="robot0:blue"></geom>
+                        <geom mesh="robot0:shoulder_lift_link" name="robot0:shoulder_lift_link" material="robot0:arm_mat" class="robot0:blue" rgba="0 0 0 0"></geom>
                         <body name="robot0:upperarm_roll_link" pos="0.1095 0 0">
                             <inertial diaginertia="0.0047 0.0045 0.0019" mass="2.3311" pos="0.05825 0.0007 0" quat="-0.0136 0.707 0.0136 0.707"></inertial>
                             <joint axis="1 0 0" limited="false" name="joint_3"></joint>

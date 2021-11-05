@@ -586,22 +586,26 @@ if __name__ == "__main__":
     config, _ = argparser()
     init_mjrender_device(config)
     config.gpu = 0
-    config.modified = False
+    config.modified = True
 
-    DEBUG = True
+    DEBUG = False
     env = LocobotPickEnv(config)
-    env.reset()
-    while True:
-        env.render("human")
-        # for i in range(5):
-        #     env.render("human")
-        #     obs, *_ = env.step([0,0,-0, 0.005])
-        #     print(obs["states"][-2:])
-        # for i in range(5):
-        #     env.render("human")
-        #     obs, *_ = env.step([-0,-0,0, -0.005])
-        #     print(obs["states"][-2:])
+    obs = env.reset()
+    gif = [obs["observation"]]
+    for j in range(100):
+        # env.render("human")
+        for i in range(5):
+            # env.render("human")
+            obs, *_ = env.step([0,0,-0, 0.005])
+            gif.append(obs["observation"])
+            # print(obs["states"][-2:])
+        for i in range(5):
+            # env.render("human")
+            obs, *_ = env.step([-0,-0,0, -0.005])
+            gif.append(obs["observation"])
+            # print(obs["states"][-2:])
         # break
+    imageio.mimwrite("test.gif", gif)
     sys.exit(0)
     # img = env.render("rgb_array", camera_name="main_cam", width=640, height=480)
     # imageio.imwrite("side.png", img)

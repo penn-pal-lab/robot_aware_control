@@ -7,7 +7,7 @@ from src.prediction.losses import RobotWorldCost
 from src.prediction.models.dynamics import SVGConvModel
 from src.utils.state import DemoGoalState, State
 from src.utils.image import zero_robot_region
-from src.env.robotics.locobot_pick_env import LocobotPickEnv
+from src.env.robotics.locobot_pick_env_mv import LocobotPickEnv
 
 
 class TrajectorySampler(object):
@@ -217,7 +217,7 @@ class TrajectorySampler(object):
         ac_per_batch = cfg.candidates_batch_size
         B = max(N // ac_per_batch, 1)  # number of candidate batches per GPU pass
         sum_cost = np.zeros(N)
-        all_obs = torch.zeros((N, T, 3, 48, 64))  # N x T x obs
+        all_obs = torch.zeros((N, T, 3, 48, 64 * 2))  # N x T x obs
         all_step_cost = np.zeros((N, T))  # N x T x 1
         goal_imgs = torch.stack(
             [torch.from_numpy(g).permute(2, 0, 1).float() / 255 for g in goal.imgs]

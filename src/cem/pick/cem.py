@@ -85,7 +85,7 @@ class CEMPolicy(object):
             #     act_seq[-1] = 0  # always have a "do nothing" action sequence in start
 
             act_seq.clamp_(-1, 1)  # clamp actions
-            act_seq[:,:,-1].clamp_(-0.01, 0)  # clamp gripper actions
+            act_seq[:,:,-1].clamp_(-0.05, 0)  # clamp gripper actions
             # Generate N rollouts of the N action trajectories
             if i == self.optimization_iter - 1:
                 rollouts = self._get_rollouts(

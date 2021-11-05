@@ -120,8 +120,8 @@ def collect_svg_data():
     """
     num_workers = 1
     num_demos = 10 // num_workers
-    record = False
-    MODIFIED = False
+    record = True
+    MODIFIED = True
 
     config, _ = argparser()
     config.gpu = 0
@@ -130,13 +130,13 @@ def collect_svg_data():
     config.modified = MODIFIED
     # config.demo_dir = f"/scratch/edward/Robonet/locobot_pick{'_fetch' if MODIFIED else ''}_views/c0"
     # config.demo_dir = f"/home/pallab/locobot_ws/src/roboaware/demos/locobot_pick"
-    config.demo_dir = f"/home/edward/roboaware/demos/locobot_pick_mv"
+    config.demo_dir = f"/home/edward/roboaware/demos/fetch_pick_mv_demos"
     # create_demo_dataset(config, num_demos, num_workers, record, noise_level="high")
 
     # num_demos = 10
     # create_demo_dataset(config, num_demos, num_workers, record, noise_level="med")
 
-    num_demos = 100
+    num_demos = 10
     create_demo_dataset(config, num_demos, num_workers, record, noise_level="none")
 
 
