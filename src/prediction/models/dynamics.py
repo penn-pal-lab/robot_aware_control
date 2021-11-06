@@ -73,7 +73,7 @@ class DynamicsModel:
 
 
 class DeterministicModel(nn.Module):
-    def __init__(self, config, input_dim=None):
+    def __init__(self, config, input_dim=None, use_skip=True):
         super().__init__()
         self._config = cf = config
         self._device = config.device
@@ -81,9 +81,9 @@ class DeterministicModel(nn.Module):
             input_dim = cf.action_enc_dim + cf.g_dim
             if cf.model_use_robot_state:
                 input_dim += cf.robot_enc_dim
-        self._init_models(input_dim)
+        self._init_models(input_dim, use_skip)
 
-    def _init_models(self, input_dim):
+    def _init_models(self, input_dim, use_skip):
         cf = self._config
         self.frame_predictor = frame_pred = LSTM(
             input_dim,
@@ -104,8 +104,8 @@ class DeterministicModel(nn.Module):
             channels += 1
             if cf.model_use_future_mask:
                 channels += 1
-        self.encoder = enc = Encoder(cf.g_dim, channels, cf.multiview, cf.dropout)
-        self.decoder = dec = Decoder(cf.g_dim, cf.channels, cf.multiview)
+        self.encoder = enc = Encoder(cf.g_dim, channels, cf.multiview, cf.dropout, use_skip=use_skip)
+        self.decoder = dec = Decoder(cf.g_dim, cf.channels, cf.multiview, use_skip=use_skip)
         self.action_enc = ac = MLPEncoder(cf.action_dim, cf.action_enc_dim, 32)
         self.all_models = [frame_pred, enc, dec, ac]
         if cf.model_use_robot_state:
@@ -168,7 +168,7 @@ class SVGModel(DeterministicModel):
             input_dim += cf.robot_enc_dim
             post_dim += cf.robot_enc_dim
             prior_dim += cf.robot_enc_dim
-        super().__init__(config, input_dim)
+        super().__init__(config, input_dim, use_skip=cf.use_skip)
 
         self.posterior = post = GaussianLSTM(
             post_dim,

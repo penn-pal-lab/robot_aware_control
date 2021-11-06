@@ -222,6 +222,13 @@ def add_prediction_arguments(parser):
     )
 
     parser.add_argument(
+        "--use_skip",
+        type=str2bool,
+        default=True,
+        help="use skip connections for svg",
+    )
+
+    parser.add_argument(
         "--model", default="svg", choices=["svg", "det", "copy", "cdna_det"]
     )
     parser.add_argument("--model_use_mask", type=str2bool, default=False)

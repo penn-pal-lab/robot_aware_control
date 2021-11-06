@@ -16,6 +16,7 @@ from src.prediction.models.dynamics import (
     GripperStatePredictor,
     JointPosPredictor,
     SVGConvModel,
+    SVGModel,
 )
 from src.utils.camera_calibration import camera_to_world_dict
 from src.utils.image import zero_robot_region
@@ -97,7 +98,8 @@ class PredictionTrainer(object):
         - Update save and load ckpt code
         """
         if cf.model == "svg":
-            self.model = SVGConvModel(cf).to(self._device)
+            # self.model = SVGConvModel(cf).to(self._device)
+            self.model = SVGModel(cf).to(self._device)
         elif cf.model == "det":
             self.model = DeterministicConvModel(cf).to(self._device)
         elif cf.model == "copy":
@@ -389,11 +391,23 @@ class PredictionTrainer(object):
                 hm_next_in = hm_i
                 if cf.model_use_future_heatmap:
                     hm_next_in = hm_i.repeat(1, 2, 1, 1)
+                # out = self.model(
+                #     x_j_black,
+                #     m_in,
+                #     r_in,
+                #     hm_in,
+                #     a_j,
+                #     x_i_black,
+                #     m_next_in,
+                #     r_i,
+                #     hm_next_in,
+                #     skip,
+                # )
+                # SVG latent cost version
                 out = self.model(
                     x_j_black,
                     m_in,
                     r_in,
-                    hm_in,
                     a_j,
                     x_i_black,
                     m_next_in,

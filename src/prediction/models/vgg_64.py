@@ -20,8 +20,9 @@ class vgg_layer(nn.Module):
 
 class Encoder(nn.Module):
     name = "encoder_64"
-    def __init__(self, dim, nc=1, multiview=False, dropout=None):
+    def __init__(self, dim, nc=1, multiview=False, dropout=None, use_skip=True):
         super(Encoder, self).__init__()
+        self.use_skip = use_skip
         self._multiview = multiview
         self.dim = dim
         # 64 x 64
@@ -81,7 +82,9 @@ class Encoder(nn.Module):
             h5 = self.c5_multiview(self.mp(h4))
         else:
             h5 = self.c5(self.mp(h4))  # 4 -> 1
-        return h5.view(-1, self.dim), [h1, h2, h3, h4]
+        if self.use_skip:
+            return h5.view(-1, self.dim), [h1, h2, h3, h4]
+        return h5.view(-1, self.dim), None
 
 
 class ConvEncoder(nn.Module):
@@ -144,9 +147,10 @@ def multiview_upsample(x):
 
 
 class Decoder(nn.Module):
-    name = "deoder_64"
-    def __init__(self, dim, nc=1, multiview=False):
+    name = "decoder_64"
+    def __init__(self, dim, nc=1, multiview=False, use_skip=True):
         super(Decoder, self).__init__()
+        self.use_skip = use_skip
         self._multiview = multiview
         self.dim = dim
         if multiview:
@@ -180,16 +184,28 @@ class Decoder(nn.Module):
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
 
     def forward(self, input):
-        vec, skip = input
-        d1 = self.upc1(vec.view(-1, self.dim, 1, 1))  # 1 -> 4
-        up1 = self.up(d1)  # 4 -> 8
-        d2 = self.upc2(torch.cat([up1, skip[3]], 1))  # 8 x 8
-        up2 = self.up(d2)  # 8 -> 16
-        d3 = self.upc3(torch.cat([up2, skip[2]], 1))  # 16 x 16
-        up3 = self.up(d3)  # 8 -> 32
-        d4 = self.upc4(torch.cat([up3, skip[1]], 1))  # 32 x 32
-        up4 = self.up(d4)  # 32 -> 64
-        output = self.upc5(torch.cat([up4, skip[0]], 1))  # 64 x 64
+        if self.use_skip:
+            vec, skip = input
+            d1 = self.upc1(vec.view(-1, self.dim, 1, 1))  # 1 -> 4
+            up1 = self.up(d1)  # 4 -> 8
+            d2 = self.upc2(torch.cat([up1, skip[3]], 1))  # 8 x 8
+            up2 = self.up(d2)  # 8 -> 16
+            d3 = self.upc3(torch.cat([up2, skip[2]], 1))  # 16 x 16
+            up3 = self.up(d3)  # 8 -> 32
+            d4 = self.upc4(torch.cat([up3, skip[1]], 1))  # 32 x 32
+            up4 = self.up(d4)  # 32 -> 64
+            output = self.upc5(torch.cat([up4, skip[0]], 1))  # 64 x 64
+        else:
+            vec = input
+            d1 = self.upc1(vec.view(-1, self.dim, 1, 1))  # 1 -> 4
+            up1 = self.up(d1)  # 4 -> 8
+            d2 = self.upc2(up1)  # 8 x 8
+            up2 = self.up(d2)  # 8 -> 16
+            d3 = self.upc3(up2)  # 16 x 16
+            up3 = self.up(d3)  # 8 -> 32
+            d4 = self.upc4(up3)  # 32 x 32
+            up4 = self.up(d4)  # 32 -> 64
+            output = self.upc5(up4)  # 64 x 64
         return output
 
 
