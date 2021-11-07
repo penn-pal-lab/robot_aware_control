@@ -104,9 +104,13 @@ class DeterministicModel(nn.Module):
             channels += 1
             if cf.model_use_future_mask:
                 channels += 1
-        self.encoder = enc = Encoder(cf.g_dim, channels, cf.multiview, cf.dropout, use_skip=use_skip)
+        self.encoder = enc = Encoder(
+            cf.g_dim, channels, cf.multiview, cf.dropout, use_skip=use_skip
+        )
         # decoder outputs extra channel for attention
-        self.decoder = dec = Decoder(cf.g_dim, cf.channels + 1, cf.multiview, use_skip=use_skip)
+        self.decoder = dec = Decoder(
+            cf.g_dim, cf.channels + 1, cf.multiview, use_skip=use_skip
+        )
         self.action_enc = ac = MLPEncoder(cf.action_dim, cf.action_enc_dim, 32)
         self.all_models = [frame_pred, enc, dec, ac]
         if cf.model_use_robot_state:
@@ -555,7 +559,7 @@ class SVGConvModel(nn.Module):
         next_heatmap=None,
         skip=None,
         force_use_prior=False,
-        sample_mean=False
+        sample_mean=False,
     ):
         """Predict the next state using the learned prior or posterior
         If next_image, next_mask, next_robot are None, learned prior is used

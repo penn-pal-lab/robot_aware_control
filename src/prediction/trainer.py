@@ -158,10 +158,11 @@ class PredictionTrainer(object):
             return dontcare_mse_criterion(prediction, target, mask, robot_weight)
         elif self._config.reconstruction_loss == "dontcare_l1":
             robot_weight = self._config.robot_pixel_weight
-            return dontcare_l1_criterion(prediction, target, mask, robot_weight, batch_weight)
+            return dontcare_l1_criterion(
+                prediction, target, mask, robot_weight, batch_weight
+            )
         else:
             raise NotImplementedError(f"{self._config.reconstruction_loss}")
-
 
     @torch.no_grad()
     def _generate_learned_robot_states(self, data):
@@ -293,10 +294,12 @@ class PredictionTrainer(object):
             if cf.load_movement_info:
                 batch_data["high_movement"] = data["high_movement"]
 
-            if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
+            if "finetune" in cf.experiment and (
+                cf.model_use_mask or cf.model_use_robot_state
+            ):
                 if cf.preprocess_action != "raw":
                     batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
-                    batch_data["raw_states"] = data["raw_states"][s : e]
+                    batch_data["raw_states"] = data["raw_states"][s:e]
                     batch_data["raw_low"] = data["raw_low"]
                     batch_data["raw_high"] = data["raw_high"]
 
@@ -437,7 +440,9 @@ class PredictionTrainer(object):
                     losses["recon_loss"] += view_loss_scalar
             else:
                 if self._config.load_movement_info:
-                    batch_weight = (self._config.movement_weight * movement_info).to(self._device)
+                    batch_weight = (self._config.movement_weight * movement_info).to(
+                        self._device
+                    )
                     batch_weight[~movement_info] = 1.0
                     view_loss = self._recon_loss(x_pred, x_i, m_i, batch_weight)
                 else:
@@ -532,10 +537,12 @@ class PredictionTrainer(object):
             if cf.model_use_heatmap:
                 batch_data["heatmaps"] = data["heatmaps"][s:e]
 
-            if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
+            if "finetune" in cf.experiment and (
+                cf.model_use_mask or cf.model_use_robot_state
+            ):
                 if cf.preprocess_action != "raw":
                     batch_data["raw_actions"] = data["raw_actions"][s : e - 1]
-                    batch_data["raw_states"] = data["raw_states"][s : e]
+                    batch_data["raw_states"] = data["raw_states"][s:e]
                     batch_data["raw_low"] = data["raw_low"]
                     batch_data["raw_high"] = data["raw_high"]
 
@@ -670,7 +677,7 @@ class PredictionTrainer(object):
                         m_next_in,
                         r_i,
                         skip,
-                        force_use_prior=True
+                        force_use_prior=True,
                     )
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
@@ -714,7 +721,7 @@ class PredictionTrainer(object):
                 batch_p = psnr(x_i_black.clamp(0, 1), x_pred_black.clamp(0, 1))
                 # batch_p = world_psnr_criterion(x_pred, x[i], true_masks[i])
                 # for file, p in zip(data["file_path"], batch_p.cpu()):
-                    # self.batch_p[file] += p.item()
+                # self.batch_p[file] += p.item()
 
                 p = batch_p.mean().item()
                 s = ssim(x_i_black, x_pred_black).mean().item()
@@ -959,7 +966,9 @@ class PredictionTrainer(object):
         elif self._config.experiment == "train_locobot_singleview":
             from src.dataset.locobot.locobot_singleview_dataloader import create_loaders
         elif self._config.experiment == "finetune_locobot":
-            from src.dataset.locobot.locobot_singleview_dataloader import create_finetune_loaders as create_loaders
+            from src.dataset.locobot.locobot_singleview_dataloader import (
+                create_finetune_loaders as create_loaders,
+            )
         elif self._config.experiment == "train_locobot_table":
             from src.dataset.locobot.locobot_table_dataloaders import create_loaders
         elif self._config.experiment == "train_locobot_pick":
@@ -1007,16 +1016,28 @@ class PredictionTrainer(object):
             end = start + video_len
         # truncate batch by time and batch dim
         x = torch.stack([x[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
-        states = torch.stack([states[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
-        ac = torch.stack([ac[s:e-1, i] for i, (s, e) in enumerate(zip(start, end))], 1)
-        mask = torch.stack([mask[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
-        qpos = torch.stack([qpos[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
+        states = torch.stack(
+            [states[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1
+        )
+        ac = torch.stack(
+            [ac[s : e - 1, i] for i, (s, e) in enumerate(zip(start, end))], 1
+        )
+        mask = torch.stack(
+            [mask[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1
+        )
+        qpos = torch.stack(
+            [qpos[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1
+        )
         folder = data["folder"][:b]
         robot = robot[:b]
         if cf.model_use_heatmap:
-            heatmaps = torch.stack([heatmaps[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
+            heatmaps = torch.stack(
+                [heatmaps[s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1
+            )
 
-        if "finetune" in cf.experiment and (cf.model_use_mask or cf.model_use_robot_state):
+        if "finetune" in cf.experiment and (
+            cf.model_use_mask or cf.model_use_robot_state
+        ):
             input_data = dict(
                 states=states,
                 actions=ac,
@@ -1030,8 +1051,20 @@ class PredictionTrainer(object):
             if cf.preprocess_action != "raw":
                 input_data["raw_low"] = data["raw_low"][:b]
                 input_data["raw_high"] = data["raw_high"][:b]
-                input_data["raw_actions"] = torch.stack([data["raw_actions"][s:e-1, i] for i, (s, e) in enumerate(zip(start, end))], 1)
-                input_data["raw_states"] = torch.stack([data["raw_states"][s:e, i] for i, (s, e) in enumerate(zip(start, end))], 1)
+                input_data["raw_actions"] = torch.stack(
+                    [
+                        data["raw_actions"][s : e - 1, i]
+                        for i, (s, e) in enumerate(zip(start, end))
+                    ],
+                    1,
+                )
+                input_data["raw_states"] = torch.stack(
+                    [
+                        data["raw_states"][s:e, i]
+                        for i, (s, e) in enumerate(zip(start, end))
+                    ],
+                    1,
+                )
 
             if cf.experiment == "finetune_locobot":
                 out = self.robot_model.predict_batch(input_data)
@@ -1168,7 +1201,9 @@ class PredictionTrainer(object):
             mask_fname = os.path.join(cf.plot_dir, f"{name}_{epoch}_masks.gif")
         else:
             fname = os.path.join(cf.plot_dir, f"{name}_ep{epoch}_{instance}.gif")
-            mask_fname = os.path.join(cf.plot_dir, f"{name}_ep{epoch}_{instance}_masks.gif")
+            mask_fname = os.path.join(
+                cf.plot_dir, f"{name}_ep{epoch}_{instance}_masks.gif"
+            )
         save_gif(fname, gifs)
         # batch_p = []
         # for k,v in self.batch_p.items():
@@ -1177,7 +1212,9 @@ class PredictionTrainer(object):
         # save_gif_with_text(fname, gifs, text)
         # save_gif(mask_fname, mask_gifs)
         if cf.wandb:
-            wandb.log({f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step)
+            wandb.log(
+                {f"{name}/gifs": wandb.Video(fname, format="gif")}, step=self._step
+            )
             # wandb.log(
             # {f"{name}/masks_gifs": wandb.Video(mask_fname, format="gif")}, step=self._step
             # )

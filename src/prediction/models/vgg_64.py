@@ -5,6 +5,7 @@ from src.prediction.models.cdna import apply_cdna_kernels_torch
 
 RELU_SHIFT = 1e-7
 
+
 class vgg_layer(nn.Module):
     def __init__(self, nin, nout):
         super(vgg_layer, self).__init__()
@@ -20,6 +21,7 @@ class vgg_layer(nn.Module):
 
 class Encoder(nn.Module):
     name = "encoder_64"
+
     def __init__(self, dim, nc=1, multiview=False, dropout=None, use_skip=True):
         super(Encoder, self).__init__()
         self.use_skip = use_skip
@@ -62,14 +64,14 @@ class Encoder(nn.Module):
         else:
             # 5 x 5
             self.c5 = nn.Sequential(
-                nn.Conv2d(512, 512, 4, 1, (2, 0)), 
-                nn.BatchNorm2d(512), 
-                nn.LeakyReLU(0.2, inplace=True)
+                nn.Conv2d(512, 512, 4, 1, (2, 0)),
+                nn.BatchNorm2d(512),
+                nn.LeakyReLU(0.2, inplace=True),
             )
             self.c6 = nn.Sequential(
-                nn.Conv2d(512, dim, (4,1), 1), 
-                nn.BatchNorm2d(dim), 
-                nn.LeakyReLU(0.2, inplace=True)
+                nn.Conv2d(512, dim, (4, 1), 1),
+                nn.BatchNorm2d(dim),
+                nn.LeakyReLU(0.2, inplace=True),
             )
         self.mp = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
@@ -81,15 +83,15 @@ class Encoder(nn.Module):
         dropout = lambda x: x
         if self._dropout is not None:
             dropout = self._dropout
-        h1 = dropout(self.c1(input))  # 64 
-        h2 = dropout(self.c2(self.mp(h1)))  # 32 
-        h3 = dropout(self.c3(self.mp(h2)))  # 16 
-        h4 = dropout(self.c4(self.mp(h3)))  # 8 
+        h1 = dropout(self.c1(input))  # 64
+        h2 = dropout(self.c2(self.mp(h1)))  # 32
+        h3 = dropout(self.c3(self.mp(h2)))  # 16
+        h4 = dropout(self.c4(self.mp(h3)))  # 8
         if self._multiview:
             h5 = self.c5_multiview(self.mp(h4))
         else:
-            h5 = self.c5(self.mp(h4))  # 5 
-            h6 = self.c6(h5) # 1
+            h5 = self.c5(self.mp(h4))  # 5
+            h6 = self.c6(h5)  # 1
         if self.use_skip:
             return h6.view(-1, self.dim), [h1, h2, h3, h4]
         return h6.view(-1, self.dim), None
@@ -97,6 +99,7 @@ class Encoder(nn.Module):
 
 class ConvEncoder(nn.Module):
     name = "conv_encoder_64"
+
     def __init__(self, dim, nc=1):
         """Encoder for convolutional lstm
 
@@ -124,15 +127,12 @@ class ConvEncoder(nn.Module):
         )
         # 8 x 8
         self.c4 = nn.Sequential(
-            vgg_layer(256, 512),
-            vgg_layer(512, 512),
-            vgg_layer(512, dim)
+            vgg_layer(256, 512), vgg_layer(512, 512), vgg_layer(512, dim)
         )
         self.mp = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
     def forward(self, input):
-        """Returns an Cx8x8 feature map where C is g_dim
-        """
+        """Returns an Cx8x8 feature map where C is g_dim"""
         h1 = self.c1(input)  # 64
         h2 = self.c2(self.mp(h1))  # 32
         h3 = self.c3(self.mp(h2))  # 16
@@ -156,6 +156,7 @@ def multiview_upsample(x):
 
 class Decoder(nn.Module):
     name = "decoder_64"
+
     def __init__(self, dim, nc=1, multiview=False, use_skip=True):
         super(Decoder, self).__init__()
         self.use_skip = use_skip
@@ -171,7 +172,7 @@ class Decoder(nn.Module):
         else:
             # 1 x 1 -> 4 x 4
             self.upc1 = nn.Sequential(
-                nn.ConvTranspose2d(dim, 512, (3,4), 1, 0),
+                nn.ConvTranspose2d(dim, 512, (3, 4), 1, 0),
                 nn.BatchNorm2d(512),
                 nn.LeakyReLU(0.2, inplace=True),
             )
@@ -235,7 +236,12 @@ class Decoder(nn.Module):
 
 class ConvDecoder(nn.Module):
     name = "conv_decoder_64"
-    def __init__(self, dim, nc=1,):
+
+    def __init__(
+        self,
+        dim,
+        nc=1,
+    ):
         """Input is C x 8 x 8 feature map from LSTM output
 
         Args:
@@ -272,7 +278,7 @@ class ConvDecoder(nn.Module):
         """
         vec, skip = input
         d2 = self.upc2(vec)
-        up2 = self.up(d2) # 256 x 16 x 16
+        up2 = self.up(d2)  # 256 x 16 x 16
         d3 = self.upc3(torch.cat([up2, skip[2]], 1))  # 16 x 16
         up3 = self.up(d3)  # 8 -> 32
         d4 = self.upc4(torch.cat([up3, skip[1]], 1))  # 32 x 32
@@ -282,8 +288,11 @@ class ConvDecoder(nn.Module):
 
 
 """ CDNA MODULES """
+
+
 class MaskDecoder(nn.Module):
     name = "mask_decoder_64"
+
     def __init__(self, dim, nc=1):
         """Input is C x 8 x 8 feature map from LSTM output
 
@@ -305,7 +314,10 @@ class MaskDecoder(nn.Module):
         self.upc4 = nn.Sequential(vgg_layer(128, 128), vgg_layer(128, 64))
         # 64 x 64 x 64 -> nc x 64 x 64
         self.upc5 = nn.Sequential(
-            vgg_layer(64, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.InstanceNorm2d(nc), nn.LeakyReLU(0.2, inplace=True)
+            vgg_layer(64, 64),
+            nn.ConvTranspose2d(64, nc, 3, 1, 1),
+            nn.InstanceNorm2d(nc),
+            nn.LeakyReLU(0.2, inplace=True),
         )
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
 
@@ -320,7 +332,7 @@ class MaskDecoder(nn.Module):
         """
         vec = input
         d2 = self.upc2(vec)
-        up2 = self.up(d2) # 256 x 16 x 16
+        up2 = self.up(d2)  # 256 x 16 x 16
         d3 = self.upc3(up2)  # 16 x 16
         up3 = self.up(d3)  # 8 -> 32
         d4 = self.upc4(up3)  # 32 x 32
@@ -331,12 +343,15 @@ class MaskDecoder(nn.Module):
         kernel_conv, mask_conv = torch.chunk(output, 2, dim=1)
         kernel_shape = kernel_conv.shape
         # softmax mask weights so they add up to 1
-        mask_conv = F.softmax(mask_conv.view(vec.shape[0], -1), dim=1).view(kernel_shape)
+        mask_conv = F.softmax(mask_conv.view(vec.shape[0], -1), dim=1).view(
+            kernel_shape
+        )
         return kernel_conv, mask_conv
 
 
 class CDNADecoder(nn.Module):
     name = "cdna_decoder_64"
+
     def __init__(self, channels, cdna_kernel_size):
         """Makes image using the CDNA compositing strategy from the ConvLSTM latent
 
@@ -359,7 +374,6 @@ class CDNADecoder(nn.Module):
             nn.Linear(image_width ** 2, cdna_kernel_size ** 2)
         )
 
-
     def forward(self, prev_image, pred_image_latent, context_image):
         """Applies learned pixel flow to image to get next image
 
@@ -376,29 +390,37 @@ class CDNADecoder(nn.Module):
         # mask_conv, kernel_conv is B x num_flows x 64 x 64
         # reshape kernel conv to B x num_flows x 4096 for kernel prediction
         if len(kernel_conv.shape) != 4:
-            import ipdb; ipdb.set_trace()
+            import ipdb
+
+            ipdb.set_trace()
         B, num_flows, height, width = kernel_conv.shape
         kernel_conv = kernel_conv.view(B, num_flows, -1)
         # B x  num_flows x 4096 -> B x num_flows x (kernel size)**2
         kernels = F.relu(self.kernel_mlp(kernel_conv - RELU_SHIFT)) + RELU_SHIFT
-        kernels = kernels.permute([0, 2, 1]) # make num_flows last dim
+        kernels = kernels.permute([0, 2, 1])  # make num_flows last dim
         # normalize the kernels so it adds up to 1.
         # the logic is that we can only move at most all the existing pixels.
         kernels /= kernels.sum(dim=1, keepdim=True)
         # Now make it B x kernel_size x kernel_size x num_flows
-        kernels = kernels.view(B, self.cdna_kernel_size, self.cdna_kernel_size, num_flows)
+        kernels = kernels.view(
+            B, self.cdna_kernel_size, self.cdna_kernel_size, num_flows
+        )
 
         # first get warped images from the context images using the first kernel
         # must convert images to B H W C for tensorflow logic
         if len(context_image.shape) != 4:
-            import ipdb; ipdb.set_trace()
-        context_image = context_image.permute(0,2,3,1)
+            import ipdb
+
+            ipdb.set_trace()
+        context_image = context_image.permute(0, 2, 3, 1)
         # B x 64 x 64 x 1 x 3
-        warped_context_img = apply_cdna_kernels_torch(context_image, kernels[:, :, :, :1])
+        warped_context_img = apply_cdna_kernels_torch(
+            context_image, kernels[:, :, :, :1]
+        )
 
         # then get warped images from the previous image using remaining kernels
         # must convert images to BHWC for tensorflow logic
-        prev_image = prev_image.permute(0,2,3,1)
+        prev_image = prev_image.permute(0, 2, 3, 1)
         # B x 64 x 64 x 11 x 3
         warped_prev_img = apply_cdna_kernels_torch(prev_image, kernels[:, :, :, 1:])
         # B x 64 x 64 x 13 x 3
@@ -438,7 +460,6 @@ def encoder_test():
     enc = Encoder(dim=128, nc=3, multiview=True)
     out = enc(tensor)
     print(out[0].shape)
-
 
 
 def conv_encoder_test():
@@ -495,6 +516,7 @@ def conv_decoder_test():
     out = dec(out)
     print(out.shape)
 
+
 def cdna_decoder_test():
     import numpy as np
     from torchvision.transforms import ToTensor
@@ -506,21 +528,37 @@ def cdna_decoder_test():
     # img = np.random.normal(size=(2, 64, 64, 3)).astype(np.float32)
     # tensor = torch.stack([ToTensor()(i) for i in img])
     batch_size = 7
-    prev_image = torch.from_numpy(np.random.normal(size=(batch_size, 3, 64, 64)).astype(np.float32)).to(device)
-    curr_image_latent = torch.from_numpy(np.random.normal(size=(batch_size, 128, 8, 8)).astype(np.float32)).to(device)
+    prev_image = torch.from_numpy(
+        np.random.normal(size=(batch_size, 3, 64, 64)).astype(np.float32)
+    ).to(device)
+    curr_image_latent = torch.from_numpy(
+        np.random.normal(size=(batch_size, 128, 8, 8)).astype(np.float32)
+    ).to(device)
     prev_image_skip = [
-        torch.from_numpy(np.random.normal(size=(batch_size, 64, 64, 64)).astype(np.float32)).to(device),
-        torch.from_numpy(np.random.normal(size=(batch_size, 128, 32, 32)).astype(np.float32)).to(device),
-        torch.from_numpy(np.random.normal(size=(batch_size, 256, 16, 16)).astype(np.float32)).to(device),
-        torch.from_numpy(np.random.normal(size=(batch_size, 128, 8, 8)).astype(np.float32)).to(device)
+        torch.from_numpy(
+            np.random.normal(size=(batch_size, 64, 64, 64)).astype(np.float32)
+        ).to(device),
+        torch.from_numpy(
+            np.random.normal(size=(batch_size, 128, 32, 32)).astype(np.float32)
+        ).to(device),
+        torch.from_numpy(
+            np.random.normal(size=(batch_size, 256, 16, 16)).astype(np.float32)
+        ).to(device),
+        torch.from_numpy(
+            np.random.normal(size=(batch_size, 128, 8, 8)).astype(np.float32)
+        ).to(device),
     ]
-    context_image =torch.from_numpy(np.random.normal(size=(batch_size, 3, 64, 64)).astype(np.float32)).to(device)
+    context_image = torch.from_numpy(
+        np.random.normal(size=(batch_size, 3, 64, 64)).astype(np.float32)
+    ).to(device)
     dec = CDNADecoder(dim=128).to(device)
     out = dec(prev_image, curr_image_latent, prev_image_skip, context_image)
     print(out.shape)
 
+
 if __name__ == "__main__":
     import ipdb
+
     # encoder_test()
     # decoder_test()
     # conv_encoder_test()
