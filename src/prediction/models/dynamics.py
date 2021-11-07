@@ -105,7 +105,8 @@ class DeterministicModel(nn.Module):
             if cf.model_use_future_mask:
                 channels += 1
         self.encoder = enc = Encoder(cf.g_dim, channels, cf.multiview, cf.dropout, use_skip=use_skip)
-        self.decoder = dec = Decoder(cf.g_dim, cf.channels, cf.multiview, use_skip=use_skip)
+        # decoder outputs extra channel for attention
+        self.decoder = dec = Decoder(cf.g_dim, cf.channels + 1, cf.multiview, use_skip=use_skip)
         self.action_enc = ac = MLPEncoder(cf.action_dim, cf.action_enc_dim, 32)
         self.all_models = [frame_pred, enc, dec, ac]
         if cf.model_use_robot_state:

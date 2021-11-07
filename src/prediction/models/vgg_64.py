@@ -60,9 +60,16 @@ class Encoder(nn.Module):
             )
             # 5 x 1 for multiview 2 image
         else:
-            # 4 x 4
+            # 5 x 5
             self.c5 = nn.Sequential(
-                nn.Conv2d(512, dim, 4, 1, 0), nn.BatchNorm2d(dim), nn.Tanh()
+                nn.Conv2d(512, 512, 4, 1, (2, 0)), 
+                nn.BatchNorm2d(512), 
+                nn.LeakyReLU(0.2, inplace=True)
+            )
+            self.c6 = nn.Sequential(
+                nn.Conv2d(512, dim, (4,1), 1), 
+                nn.BatchNorm2d(dim), 
+                nn.LeakyReLU(0.2, inplace=True)
             )
         self.mp = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
@@ -74,17 +81,18 @@ class Encoder(nn.Module):
         dropout = lambda x: x
         if self._dropout is not None:
             dropout = self._dropout
-        h1 = dropout(self.c1(input))  # 64 -> 32
-        h2 = dropout(self.c2(self.mp(h1)))  # 32 -> 16
-        h3 = dropout(self.c3(self.mp(h2)))  # 16 -> 8
-        h4 = dropout(self.c4(self.mp(h3)))  # 8 -> 4
+        h1 = dropout(self.c1(input))  # 64 
+        h2 = dropout(self.c2(self.mp(h1)))  # 32 
+        h3 = dropout(self.c3(self.mp(h2)))  # 16 
+        h4 = dropout(self.c4(self.mp(h3)))  # 8 
         if self._multiview:
             h5 = self.c5_multiview(self.mp(h4))
         else:
-            h5 = self.c5(self.mp(h4))  # 4 -> 1
+            h5 = self.c5(self.mp(h4))  # 5 
+            h6 = self.c6(h5) # 1
         if self.use_skip:
-            return h5.view(-1, self.dim), [h1, h2, h3, h4]
-        return h5.view(-1, self.dim), None
+            return h6.view(-1, self.dim), [h1, h2, h3, h4]
+        return h6.view(-1, self.dim), None
 
 
 class ConvEncoder(nn.Module):
@@ -163,24 +171,40 @@ class Decoder(nn.Module):
         else:
             # 1 x 1 -> 4 x 4
             self.upc1 = nn.Sequential(
-                nn.ConvTranspose2d(dim, 512, 4, 1, 0),
+                nn.ConvTranspose2d(dim, 512, (3,4), 1, 0),
                 nn.BatchNorm2d(512),
                 nn.LeakyReLU(0.2, inplace=True),
             )
-        # 8 x 8
-        self.upc2 = nn.Sequential(
-            vgg_layer(512 * 2, 512), vgg_layer(512, 512), vgg_layer(512, 256)
-        )
-        # 16 x 16
-        self.upc3 = nn.Sequential(
-            vgg_layer(256 * 2, 256), vgg_layer(256, 256), vgg_layer(256, 128)
-        )
-        # 32 x 32
-        self.upc4 = nn.Sequential(vgg_layer(128 * 2, 128), vgg_layer(128, 64))
-        # 64 x 64
-        self.upc5 = nn.Sequential(
-            vgg_layer(64 * 2, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.Sigmoid()
-        )
+        if use_skip:
+            # 8 x 8
+            self.upc2 = nn.Sequential(
+                vgg_layer(512 * 2, 512), vgg_layer(512, 512), vgg_layer(512, 256)
+            )
+            # 16 x 16
+            self.upc3 = nn.Sequential(
+                vgg_layer(256 * 2, 256), vgg_layer(256, 256), vgg_layer(256, 128)
+            )
+            # 32 x 32
+            self.upc4 = nn.Sequential(vgg_layer(128 * 2, 128), vgg_layer(128, 64))
+            # 64 x 64
+            self.upc5 = nn.Sequential(
+                vgg_layer(64 * 2, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.Sigmoid()
+            )
+        else:
+            # 8 x 8
+            self.upc2 = nn.Sequential(
+                vgg_layer(512, 512), vgg_layer(512, 512), vgg_layer(512, 256)
+            )
+            # 16 x 16
+            self.upc3 = nn.Sequential(
+                vgg_layer(256, 256), vgg_layer(256, 256), vgg_layer(256, 128)
+            )
+            # 32 x 32
+            self.upc4 = nn.Sequential(vgg_layer(128, 128), vgg_layer(128, 64))
+            # 64 x 64
+            self.upc5 = nn.Sequential(
+                vgg_layer(64, 64), nn.ConvTranspose2d(64, nc, 3, 1, 1), nn.Sigmoid()
+            )
         self.up = nn.UpsamplingNearest2d(scale_factor=2)
 
     def forward(self, input):
@@ -196,7 +220,7 @@ class Decoder(nn.Module):
             up4 = self.up(d4)  # 32 -> 64
             output = self.upc5(torch.cat([up4, skip[0]], 1))  # 64 x 64
         else:
-            vec = input
+            vec, _ = input
             d1 = self.upc1(vec.view(-1, self.dim, 1, 1))  # 1 -> 4
             up1 = self.up(d1)  # 4 -> 8
             d2 = self.upc2(up1)  # 8 x 8

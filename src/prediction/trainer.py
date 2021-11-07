@@ -416,7 +416,6 @@ class PredictionTrainer(object):
                     skip,
                 )
                 x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
-
             x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
             x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
 
@@ -648,18 +647,30 @@ class PredictionTrainer(object):
                     hm_next_in = hm_i
                     if cf.model_use_future_heatmap:
                         hm_next_in = hm_i.repeat(1, 2, 1, 1)
+                    # out = self.model(
+                    #     x_j_black,
+                    #     m_in,
+                    #     r_in,
+                    #     hm_in,
+                    #     a_j,
+                    #     x_i_black,
+                    #     m_next_in,
+                    #     r_i,
+                    #     hm_next_in,
+                    #     skip,
+                    #     force_use_prior=True,
+                    # )
+                    # SVG latent cost version
                     out = self.model(
                         x_j_black,
                         m_in,
                         r_in,
-                        hm_in,
                         a_j,
                         x_i_black,
                         m_next_in,
                         r_i,
-                        hm_next_in,
                         skip,
-                        force_use_prior=True,
+                        force_use_prior=True
                     )
                     x_pred, curr_skip, mu, logvar, mu_p, logvar_p = out
 
@@ -1080,11 +1091,23 @@ class PredictionTrainer(object):
                     elif cf.model == "svg":
                         # don't use posterior.
                         x_i_black, m_next_in, r_i, hm_next_in = None, None, None, None
+                        # out = self.model(
+                        #     x_j_black,
+                        #     m_in,
+                        #     r_in,
+                        #     hm_in,
+                        #     a_j,
+                        #     x_i_black,
+                        #     m_next_in,
+                        #     r_i,
+                        #     hm_next_in,
+                        #     skip,
+                        # )
+                        # SVG latent cost version
                         out = self.model(
                             x_j_black,
                             m_in,
                             r_in,
-                            hm_in,
                             a_j,
                             x_i_black,
                             m_next_in,
@@ -1093,7 +1116,6 @@ class PredictionTrainer(object):
                             skip,
                         )
                         x_pred, curr_skip, _, _, _, _ = out
-
                     x_pred, x_pred_mask = x_pred[:, :3], x_pred[:, 3].unsqueeze(1)
                     x_pred = (1 - x_pred_mask) * x_j + (x_pred_mask) * x_pred
 
