@@ -1,4 +1,5 @@
 # project artifacts
+depth_exp
 .DS_Store
 data/
 franka_test_imgs
