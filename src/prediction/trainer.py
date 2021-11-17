@@ -473,6 +473,8 @@ class PredictionTrainer(object):
         """
         losses = defaultdict(list)
         progress = tqdm(total=len(data_loader), desc=f"computing {name} epoch")
+        # dictionary of lists like { "psnr": [1,2,3,2,1]} where each entry in the list is the metric for a video. used for computing std of the metric.
+        self.all_metrics = defaultdict(list)
         for data in data_loader:
             data = process_batch(data, self._device)
             info = self._eval_video(data, autoregressive=True)
@@ -591,6 +593,8 @@ class PredictionTrainer(object):
         x_pred = skip = None
         prefix = "autoreg" if autoregressive else "1step"
 
+        mean_metrics_per_video = defaultdict(list)
+
         for i in range(1, cf.n_eval):
             if autoregressive and i > 1:
                 x_j = x_pred.clone()
@@ -690,9 +694,11 @@ class PredictionTrainer(object):
                 # batch_p = world_psnr_criterion(x_pred, x[i], true_masks[i])
                 # for file, p in zip(data["file_path"], batch_p.cpu()):
                     # self.batch_p[file] += p.item()
-
+                mean_metrics_per_video["psnr"].extend(batch_p.cpu().numpy().tolist())
                 p = batch_p.mean().item()
-                s = ssim(x_i_black, x_pred_black).mean().item()
+                batch_s = ssim(x_i_black, x_pred_black).mean((1,2,3))
+                mean_metrics_per_video["ssim"].extend(batch_s.tolist())
+                s = batch_s.mean().item()
                 losses[f"{prefix}_psnr"] += p
                 losses[f"{prefix}_ssim"] += s
 
@@ -726,6 +732,8 @@ class PredictionTrainer(object):
         for k, v in losses.items():
             losses[k] = v / (cf.n_eval - 1)  # don't count the first step
 
+        for k, v in mean_metrics_per_video.items():
+            self.all_metrics[k].extend(v)
         # temp_k_losses = {}
         # for k, v in k_losses.items():
         #     num_steps = float(k[0])
