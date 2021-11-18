@@ -3,7 +3,6 @@ from src.prediction.trainer import (
     PredictionTrainer,
     make_log_folder,
 )
-# from src.dataset.locobot.locobot_table_dataloaders import create_locobot_modified_loader
 from src.dataset.locobot.locobot_singleview_dataloader import create_locobot_modified_loader
 # from src.dataset.franka.franka_dataloader import create_transfer_loader
 import ipdb
@@ -11,6 +10,8 @@ import numpy as np
 from time import time
 from tqdm import tqdm
 from collections import defaultdict
+import pickle
+import os
 
 
 def compute_metrics(cf):
@@ -25,14 +26,17 @@ def compute_metrics(cf):
     metrics = trainer.all_metrics
     print("PSNR:", info["test/autoreg_psnr"], "std:", np.std(metrics["psnr"]))
     print("SSIM:", info["test/autoreg_ssim"], "std:", np.std(metrics["ssim"]))
-    print("World Loss:", info["test/autoreg_world_loss"])
-    world_mse = info["test/autoreg_world_loss"]
-    psnr = 10 * np.log((1/world_mse)) / np.log(10)
-    print("World PSNR", psnr)
-    testing_batch_generator = get_batch(test_loader, trainer._device)
-    for i in range(1):
-       test_data = next(testing_batch_generator)
-       trainer.plot(test_data, 0, "test", instance=i)
+    pickle_path = os.path.join(cf.log_dir, "metrics.pkl")
+    with open(pickle_path, "wb") as f:
+        pickle.dump(metrics, f)
+    # print("World Loss:", info["test/autoreg_world_loss"])
+    # world_mse = info["test/autoreg_world_loss"]
+    # psnr = 10 * np.log((1/world_mse)) / np.log(10)
+    # print("World PSNR", psnr)
+    # testing_batch_generator = get_batch(test_loader, trainer._device)
+    # for i in range(1):
+    #    test_data = next(testing_batch_generator)
+    #    trainer.plot(test_data, 0, "test", instance=i)
 
 
 if __name__ == "__main__":
