@@ -5,6 +5,9 @@ from src.prediction.trainer import (
 )
 from src.dataset.locobot.locobot_singleview_dataloader import create_locobot_modified_loader
 # from src.dataset.franka.franka_dataloader import create_transfer_loader
+from src.dataset.widowx.widowx_dataloaders import (
+    create_finetune_loaders as create_loaders
+)
 import ipdb
 import numpy as np
 from time import time
@@ -21,7 +24,7 @@ def compute_metrics(cf):
     trainer.batch_p = defaultdict(float)
 
     # test_loader = create_transfer_loader(cf)
-    test_loader = create_locobot_modified_loader(cf)
+    test_loader = create_loaders(cf)[1]
     info = trainer._compute_epoch_metrics(test_loader, "test")
     metrics = trainer.all_metrics
     print("PSNR:", info["test/autoreg_psnr"], "std:", np.std(metrics["psnr"]))
