@@ -1,0 +1,68 @@
+<mujoco model="wx250s">
+    <compiler angle="radian" meshdir="../stls/wx250s/" />
+    <size njmax="500" nconmax="100" />
+    <asset>
+        <mesh name="wx250s_1_base" file="wx250s_1_base.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wx250s_2_shoulder" file="wx250s_2_shoulder.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wx250s_3_upper_arm" file="wx250s_3_upper_arm.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wx250s_4_upper_forearm" file="wx250s_4_upper_forearm.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wx250s_5_lower_forearm" file="wx250s_5_lower_forearm.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wx250s_6_wrist" file="wx250s_6_wrist.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wx250s_7_gripper" file="wx250s_7_gripper.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wx250s_8_gripper_prop" file="wx250s_8_gripper_prop.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wx250s_9_gripper_bar" file="wx250s_9_gripper_bar.stl" scale="0.001 0.001 0.001" />
+        <mesh name="wx250s_10_gripper_finger" file="wx250s_10_gripper_finger.stl" scale="0.001 0.001 0.001" />
+        <mesh name="ar_tag" file="ar_tag.stl" scale="1 1 1"/>
+    </asset>
+    <worldbody>
+        <camera fovy="43.3" name="main_cam" pos="0.81822263 -0.05511966  0.45810006" quat="-0.3351224   0.6429879   0.61176364 -0.31623533" ></camera>
+        <geom quat="0.707107 0 0 0.707107" type="mesh" mesh="wx250s_1_base" />
+        <body name="wx250s/shoulder_link" pos="0 0 0.072">
+            <inertial pos="2.23482e-05 4.14609e-05 0.0066287" quat="-0.491122 0.490302 0.508681 0.509556" mass="0.480879" diaginertia="0.000588946 0.000555655 0.000378999" />
+            <joint name="waist" pos="0 0 0" axis="0 0 1" limited="true" range="-3.14158 3.14158" frictionloss="0.1" />
+            <geom pos="0 0 -0.003" quat="0.707107 0 0 0.707107" type="mesh" mesh="wx250s_2_shoulder" />
+            <body name="wx250s/upper_arm_link" pos="0 0 0.03865">
+                <inertial pos="0.0171605 2.725e-07 0.191323" quat="0 0.0665624 0 0.997782" mass="0.430811" diaginertia="0.00364425 0.003463 0.000399348" />
+                <joint name="shoulder" pos="0 0 0" axis="0 1 0" limited="true" range="-1.88496 1.98968" frictionloss="0.1" />
+                <geom quat="0.707107 0 0 0.707107" type="mesh" mesh="wx250s_3_upper_arm" />
+                <body name="wx250s/upper_forearm_link" pos="0.04975 0 0.25">
+                    <inertial pos="0.107963 0.000115876 0" quat="0.000980829 0.707106 -0.000980829 0.707106" mass="0.234589" diaginertia="0.000888 0.000887807 3.97035e-05" />
+                    <joint name="elbow" pos="0 0 0" axis="0 1 0" limited="true" range="-2.14675 1.6057" frictionloss="0.1" />
+                    <geom type="mesh" mesh="wx250s_4_upper_forearm" />
+                    <body name="wx250s/lower_forearm_link" pos="0.175 0 0">
+                        <inertial pos="0.0374395 0.00522252 0" quat="-0.703302 -0.0732511 -0.703302 0.0732511" mass="0.220991" diaginertia="0.0001834 0.000172527 5.88633e-05" />
+                        <joint name="forearm_roll" pos="0 0 0" axis="1 0 0" limited="true" range="-3.14158 3.14158" frictionloss="0.1" />
+                        <geom quat="0 1 0 0" type="mesh" mesh="wx250s_5_lower_forearm" />
+                        <body name="wx250s/wrist_link" pos="0.075 0 0">
+                            <inertial pos="0.04236 -1.0663e-05 0.010577" quat="0.00129144 0.511007 0.00305617 0.85957" mass="0.084957" diaginertia="3.29057e-05 3.082e-05 2.68343e-05" />
+                            <joint name="wrist_angle" pos="0 0 0" axis="0 1 0" limited="true" range="-1.74533 2.14675" frictionloss="0.1" />
+                            <geom quat="0.707107 0 0 0.707107" type="mesh" mesh="wx250s_6_wrist" />
+                            <body name="wx250s/gripper_link" pos="0.065 0 0">
+                                <geom name="ar_tag_geom" pos="0.02695 0 0.04315" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="ar_tag" />
+                                <inertial pos="0.0325296 4.2061e-07 0.0090959" quat="4.5806e-06 0.787961 -2.3346e-05 0.615725" mass="0.110084" diaginertia="0.00307449 0.00306151 0.00304637" />
+                                <joint name="wrist_rotate" pos="0 0 0" axis="1 0 0" limited="true" range="-3.14158 3.14158" frictionloss="0.1" />
+                                <geom pos="-0.02 0 0" quat="0.707107 0 0 0.707107" type="mesh" mesh="wx250s_7_gripper" />
+                                <geom pos="-0.02 0 0" quat="0.707107 0 0 0.707107" type="mesh" mesh="wx250s_9_gripper_bar" />
+                                <body name="wx250s/gripper_prop_link" pos="0.0485 0 0">
+                                    <inertial pos="0.000846 -1.6817e-06 4.2e-05" quat="-0.000544073 -0.000402553 -0.376169 0.926551" mass="0.00434" diaginertia="1.1156e-06 9.02926e-07 2.63673e-07" />
+                                    <joint name="gripper" pos="0 0 0" axis="1 0 0" frictionloss="0.1" />
+                                    <geom pos="-0.0685 0 0" quat="0.707107 0 0 0.707107" type="mesh" mesh="wx250s_8_gripper_prop" />
+                                </body>
+                                <body name="wx250s/left_finger_link" pos="0.066 0 0">
+                                    <inertial pos="0.013816 0 0" quat="0.463902 0.463902 -0.533661 -0.533661" mass="0.016246" diaginertia="4.79509e-06 3.7467e-06 1.48651e-06" />
+                                    <joint name="left_finger" pos="0 0 0" axis="0 1 0" type="slide" limited="true" range="0.015 0.037" frictionloss="0.1" />
+                                    <geom pos="0 0.005 0" quat="0 0 0 -1" type="mesh" mesh="wx250s_10_gripper_finger" />
+                                </body>
+                                <body name="wx250s/right_finger_link" pos="0.066 0 0">
+                                    <inertial pos="0.013816 0 0" quat="0.463902 -0.463902 0.533661 -0.533661" mass="0.016246" diaginertia="4.79509e-06 3.7467e-06 1.48651e-06" />
+                                    <joint name="right_finger" pos="0 0 0" axis="0 1 0" type="slide" limited="true" range="-0.037 -0.015" frictionloss="0.1" />
+                                    <geom pos="0 -0.005 0" quat="0 0 1 0" type="mesh" mesh="wx250s_10_gripper_finger" />
+                                </body>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+        </body>
+    </worldbody>
+</mujoco>
