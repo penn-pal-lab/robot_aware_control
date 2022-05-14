@@ -21,7 +21,13 @@ import torchvision.transforms as tf
 from cv_bridge import CvBridge
 
 from eef_control.msg import *
-from locobot_rospkg.nodes.data_collection_client import (
+# from locobot_rospkg.nodes.data_collection_client import (
+#     DEFAULT_PITCH,
+#     DEFAULT_ROLL,
+#     PUSH_HEIGHT,
+#     eef_control_client,
+# )
+from locobot_rospkg.nodes.widowx_data_collection import (
     DEFAULT_PITCH,
     DEFAULT_ROLL,
     PUSH_HEIGHT,
@@ -32,13 +38,12 @@ from scipy.spatial.transform.rotation import Rotation
 from sensor_msgs.msg import Image
 from src.cem.cem import CEMPolicy
 from src.config import create_parser, str2bool
-from src.env.robotics.masks.locobot_analytical_ik import (
-    AnalyticInverseKinematics as AIK,
-)
-from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
+# from src.env.robotics.masks.locobot_mask_env import LocobotMaskEnv
+from src.env.robotics.masks.wx250s_mask_env import WX250sMaskEnv
 from src.prediction.models.dynamics import SVGConvModel
 from src.utils.camera_calibration import camera_to_world_dict
 from src.utils.state import DemoGoalState, State
+from interbotix_xs_modules.arm import InterbotixManipulatorXS
 
 start_offset = 0.15
 START_POS = {
@@ -49,20 +54,21 @@ START_POS = {
 
 CAMERA_CALIB = np.array(
     [
-        [0.008716, 0.75080825, -0.66046272, 0.77440888],
-        [0.99985879, 0.00294645, 0.01654445, 0.02565873],
-        [0.01436773, -0.66051366, -0.75067655, 0.64211797],
-        [0.0, 0.0, 0.0, 1.0],
+        [-0.25364321,  0.78460755, -0.56573502,  0.78209567],
+        [ 0.96598404,  0.17498666, -0.19040617,  0.21711075],
+        [-0.05039804, -0.59478623, -0.80230255,  0.62565119],
+        [ 0.,          0.,          0.,          1.0        ],
     ]
 )
+
 
 
 class Visual_MPC(object):
     def __init__(self, config, device="cuda"):
         # Creates the SimpleActionClient, passing the type of the action
-        self.control_client = actionlib.SimpleActionClient(
-            "eef_control", eef_control.msg.PoseControlAction
-        )
+        # self.control_client = actionlib.SimpleActionClient(
+        #     "eef_control", eef_control.msg.PoseControlAction
+        # )
 
         self.img_sub = rospy.Subscriber(
             "/camera/color/image_raw", Image, self.img_callback
@@ -83,19 +89,27 @@ class Visual_MPC(object):
         self.t = 1
         self.target_img = None
 
+        self.bot = InterbotixManipulatorXS("wx250s", "arm", "gripper")
+        self.env_thick = WX250sMaskEnv()
+        camTbase = CAMERA_CALIB
+        if config.new_camera_calibration:
+            camTbase = self.get_cam_calibration()
+        self.set_camera_calibration(camTbase)
+        # mask = self.env_thick.get_robot_mask(width=640, height=480)
+        # curr_img = np.copy(self.img)
+        # curr_img[mask] = 255
+        # imageio.imwrite("test.png", curr_img)
+
+        # sys.exit(0)
+
         model = SVGConvModel(config)
         ckpt = torch.load(config.dynamics_model_ckpt, map_location=config.device)
         model.load_state_dict(ckpt["model"])
         model.eval()
 
-        self.ik_solver = AIK()
+        # self.ik_solver = AIK()
         # self.env = LocobotMaskEnv(thick=False)
-        self.env_thick = LocobotMaskEnv(thick=True)
 
-        camTbase = CAMERA_CALIB
-        if config.new_camera_calibration:
-            camTbase = self.get_cam_calibration()
-        self.set_camera_calibration(camTbase)
 
         self.policy = CEMPolicy(
             config,
@@ -104,7 +118,12 @@ class Visual_MPC(object):
             action_candidates=config.action_candidates,
             horizon=config.horizon,
             cam_ext=camTbase,
+            wx250s_bot=self.bot,
+            push_height=PUSH_HEIGHT,
+            default_pitch=DEFAULT_PITCH,
+            default_roll=DEFAULT_ROLL,
         )
+        ipdb.set_trace()
 
     def img_callback(self, data):
         self.img = self.cv_bridge.imgmsg_to_cv2(data)
@@ -132,7 +151,7 @@ class Visual_MPC(object):
             gray,
             estimate_tag_pose=True,
             camera_params=[612.45, 612.45, 330.55, 248.61],
-            tag_size=0.0353,
+            tag_size=0.0286,
         )
         print("[INFO] {} total AprilTags detected".format(len(results)))
 
@@ -150,17 +169,18 @@ class Visual_MPC(object):
 
     def get_cam_calibration(self):
         control_result = eef_control_client(
-            self.control_client,
+            self.bot,
             target_pose=[0.35, 0, PUSH_HEIGHT, DEFAULT_PITCH, DEFAULT_ROLL],
+            # target_pose=[0.45, 0.1, 0.3, 0.4, DEFAULT_ROLL],
         )
         time.sleep(5)
         control_result = eef_control_client(
-            self.control_client,
+            self.bot,
             target_pose=[],
         )
-        print(control_result.end_pose)
         # tag to camera transformation
         pose_t, pose_R = self.get_camera_pose_from_apriltag()
+        print(pose_t, pose_R)
         if pose_t is None or pose_R is None:
             return None
         # TODO: figure out qpos / end effector accuracy
@@ -201,8 +221,8 @@ class Visual_MPC(object):
         cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
 
         cam_id = 0
-        offset = [0, -0.015, 0.0125]
-        # offset = [0, -0.007, 0.02]
+        # offset = [0, 0, 0]
+        offset = [0, -0.015, 0.0]
         print("applying offset", offset)
         self.env_thick.sim.model.cam_pos[cam_id] = cam_pos + offset
         cam_quat = cam_rot.as_quat()
@@ -349,6 +369,33 @@ class Visual_MPC(object):
 
 
 if __name__ == "__main__":
+
+    # bot = InterbotixManipulatorXS("wx250s", "arm", "gripper")
+    # bot.arm.go_to_home_pose()
+    # bot.arm.go_to_sleep_pose()
+    # bot.gripper.close()
+    # eef_start = [0.3, 0, 0.6]
+    # _ = eef_control_client(
+    #     bot,
+    #     target_pose=[*eef_start, -1, DEFAULT_ROLL],
+    # )
+
+    # bot = InterbotixManipulatorXS("wx250s", "arm", "gripper")
+    # bot.arm.go_to_home_pose()
+    # bot.arm.go_to_sleep_pose()
+    # hover over start
+    # eef_start = [0.3, 0, 0.05]
+    # _ = eef_control_client(
+    #     bot,
+    #     target_pose=[*eef_start, DEFAULT_PITCH, DEFAULT_ROLL],
+    # )
+    # lower arm
+    # eef_start = [0.3, 0, -0.02]
+    # _ = eef_control_client(
+    #     bot,
+    #     target_pose=[*eef_start, DEFAULT_PITCH, DEFAULT_ROLL],
+    # )
+    # bot.arm.go_to_sleep_pose()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     parser = create_parser()
     parser.add_argument("--execute_optimal_traj", type=str2bool, default=False)
@@ -361,16 +408,16 @@ if __name__ == "__main__":
     cf, unparsed = parser.parse_known_args()
     assert len(unparsed) == 0, unparsed
     cf.device = device
-    push_type = cf.push_type
-    dynamics_model = "vanilla"
-    if "roboaware" in cf.dynamics_model_ckpt:
-        dynamics_model = "roboaware"
-    curr_time = strftime("%Y-%m-%d_%H:%M:%S", gmtime())
-    cf.log_dir = os.path.join(
-        cf.log_dir,
-        push_type + "_" + cf.object + "_" + dynamics_model + "_" + cf.reward_type,
-        "debug_cem_" + curr_time,
-    )
+    # push_type = cf.push_type
+    # dynamics_model = "vanilla"
+    # if "roboaware" in cf.dynamics_model_ckpt:
+    #     dynamics_model = "roboaware"
+    # curr_time = strftime("%Y-%m-%d_%H:%M:%S", gmtime())
+    # cf.log_dir = os.path.join(
+    #     cf.log_dir,
+    #     push_type + "_" + cf.object + "_" + dynamics_model + "_" + cf.reward_type,
+    #     "debug_cem_" + curr_time,
+    # )
 
     cf.debug_cem = True
     # cf.cem_init_std = 0.015
@@ -381,9 +428,10 @@ if __name__ == "__main__":
 
     # Initializes a rospy node so that the SimpleActionClient can
     # publish and subscribe over ROS.
-    rospy.init_node("visual_mpc_client")
+    # rospy.init_node("visual_mpc_client")
 
     vmpc = Visual_MPC(config=cf)
+    sys.exit(0)
 
     if cf.goal_img_with_wrong_robot:
         eef_start_pos = START_POS[push_type]

@@ -82,6 +82,19 @@ class WidowXMaskEnv(MaskEnv):
         self.sim.forward()
         return self.sim.data.get_body_xpos("wrist_2_link").copy()
 
+    def generate_masks(self,  qpos_data, width=None, height=None):
+        joint_references = [self.sim.model.get_joint_qpos_addr(x) for x in self._joints]
+        finger_references = [self.sim.model.get_joint_qpos_addr(x) for x in ["joint_6", "joint_7"]]
+        masks = []
+        for qpos in qpos_data:
+            self.sim.data.qpos[joint_references] = qpos
+            self.sim.data.qpos[finger_references] = [-0.025, 0.025]
+            self.sim.forward()
+            mask = self.get_robot_mask(width, height)
+            masks.append(mask)
+        masks = np.asarray(masks, dtype=np.bool)
+        return masks
+
 if __name__ == "__main__":
     import pandas as pd
     from robonet.robonet.datasets.util.hdf5_loader import (

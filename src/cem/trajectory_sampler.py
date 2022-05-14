@@ -5,7 +5,6 @@ from collections import defaultdict
 
 import numpy as np
 import torch
-from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
 from src.prediction.losses import RobotWorldCost
 from src.prediction.models.dynamics import SVGConvModel
 from src.utils.state import DemoGoalState, State
@@ -14,7 +13,7 @@ from src.utils.camera_calibration import LOCO_FRANKA_DIFF
 
 
 class TrajectorySampler(object):
-    def __init__(self, cfg, model, cam_ext=None, franka_ik=None) -> None:
+    def __init__(self, cfg, model, cam_ext=None, franka_ik=None, wx250s_bot=None, push_height, default_pitch, default_roll) -> None:
         super().__init__()
         self.cfg = cfg
         self.model: SVGConvModel = model
@@ -28,7 +27,10 @@ class TrajectorySampler(object):
             if cfg.experiment == "control_franka":
                 self.robot_model = FrankaAnalyticalModel(cfg, franka_ik, cam_ext)
             else:
-                self.robot_model = LocobotAnalyticalModel(cfg, cam_ext=cam_ext)
+                from src.dataset.locobot.locobot_model import LocobotAnalyticalModel
+                from src.dataset.wx250s.wx250s_model import WX250sAnalyticalModel
+                # self.robot_model = LocobotAnalyticalModel(cfg, cam_ext=cam_ext)
+                self.robot_model = WX250sAnalyticalModel(cfg, wx250s_bot, push_height, default_pitch, default_roll, cam_ext=cam_ext)
 
     @torch.no_grad()
     def generate_model_rollouts(
