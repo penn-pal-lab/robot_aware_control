@@ -92,11 +92,11 @@ class WX250sMaskEnv(MaskEnv):
 
     def generate_masks(self,  qpos_data, width=None, height=None):
         joint_references = [self.sim.model.get_joint_qpos_addr(x) for x in self._joints]
-        finger_references = [self.sim.model.get_joint_qpos_addr(x) for x in ["joint_6", "joint_7"]]
+        # finger_references = [self.sim.model.get_joint_qpos_addr(x) for x in ["joint_6", "joint_7"]]
         masks = []
         for qpos in qpos_data:
             self.sim.data.qpos[joint_references] = qpos
-            self.sim.data.qpos[finger_references] = [-0.025, 0.025]
+            # self.sim.data.qpos[finger_references] = [-0.025, 0.025]
             self.sim.forward()
             mask = self.get_robot_mask(width, height)
             masks.append(mask)
@@ -214,95 +214,3 @@ def overlay_trajs(traj_path1, traj_path2):
 
 def get_gripper_pos(self, qpos):
     raise NotImplementedError
-
-
-if __name__ == "__main__":
-    """
-    Load data:
-    """
-
-    data_path = "/mnt/ssd1/pallab/locobot_data/data_2021-03-07_03_48_46"
-
-    traj_path1 = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12_05_00_28"
-    traj_path2 = "/mnt/ssd1/pallab/locobot_data/data_2021-03-12_16_47_37"
-
-    # overlay_trajs(traj_path1, traj_path2)
-
-    qposes, imgs, eef_states, actions = load_data(data_path + ".hdf5")
-
-    K = 0
-    predicted_Kstep_qpos = []
-    for t in range(actions.shape[0] - K + 1):
-        action_Kstep = np.sum(actions[t:t + K, 0:2], axis=0)
-        qpos_next = predict_next_qpos(eef_states[t], qposes[t], action_Kstep)
-        print("prediction:", qpos_next)
-        print("real:", qposes[t + K])
-        predicted_Kstep_qpos.append(qpos_next)
-    predicted_Kstep_qpos = np.stack(predicted_Kstep_qpos)
-
-    """
-    Init Mujoco env:
-    """
-    env = LocobotMaskEnv()
-
-    env._joints = [f"joint_{i}" for i in range(1, 6)]
-    env._joint_references = [
-        env.sim.model.get_joint_qpos_addr(x) for x in env._joints
-    ]
-
-    """
-    camera params:
-    """
-    t = 1
-    target_qpos = qposes[t]
-    env.sim.data.qpos[env._joint_references] = target_qpos
-    env.sim.forward()
-
-    # tag to base transformation
-    print("ar tag position:\n", env.sim.data.get_geom_xpos("ar_tag_geom"))
-    print("ar tag orientation:\n", env.sim.data.get_geom_xmat("ar_tag_geom"))
-    tagTbase = np.column_stack((env.sim.data.get_geom_xmat("ar_tag_geom"), env.sim.data.get_geom_xpos("ar_tag_geom")))
-    tagTbase = np.row_stack((tagTbase, [0, 0, 0, 1]))
-    print("tagTbase:\n", tagTbase)
-
-    # tag to camera transformation
-    pose_t, pose_R = get_camera_pose_from_apriltag(imgs[t])
-    tagTcam = np.column_stack((pose_R, pose_t))
-    tagTcam = np.row_stack((tagTcam, [0, 0, 0, 1]))
-    print("tagTcam:\n", tagTcam)
-
-    # tag in camera to tag in robot transformation
-    # For explanation, refer to Kun's hand drawing
-    tagcTtagw = np.array([[0, 0, -1, 0],
-                          [0, -1, 0, 0],
-                          [-1, 0, 0, 0],
-                          [0, 0, 0, 1]])
-
-    camTbase = tagTbase @ tagcTtagw @ np.linalg.inv(tagTcam)
-    print("camTbase:\n", camTbase)
-
-    rot_matrix = camTbase[:3, :3]
-    cam_pos = camTbase[:3, 3]
-    rel_rot = Rotation.from_quat([0, 1, 0, 0])  # calculated
-    cam_rot = Rotation.from_matrix(rot_matrix) * rel_rot
-
-    cam_id = 0
-    offset = [0, -0.01, 0.01]
-    env.sim.model.cam_pos[cam_id] = cam_pos + offset
-    cam_quat = cam_rot.as_quat()
-    env.sim.model.cam_quat[cam_id] = [
-        cam_quat[3],
-        cam_quat[0],
-        cam_quat[1],
-        cam_quat[2],
-    ]
-    print("camera pose:")
-    print(env.sim.model.cam_pos[cam_id])
-    print(env.sim.model.cam_quat[cam_id])
-
-    env.sim.forward()
-
-    env.compare_traj(data_path, predicted_Kstep_qpos, imgs[K:])
-
-    # while True:
-    #     env.render("human")

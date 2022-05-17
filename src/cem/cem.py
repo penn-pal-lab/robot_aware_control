@@ -107,6 +107,7 @@ class CEMPolicy(object):
         print(
             f"\tMeans of top costs: {mean_top_costs} Opt return: {rollouts['optimal_sum_cost']:.3f}"
         )
+        print("Mean actions:", mean.numpy())
         return mean.numpy()
 
     def _get_rollouts(

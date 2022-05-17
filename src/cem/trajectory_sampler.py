@@ -9,11 +9,11 @@ from src.prediction.losses import RobotWorldCost
 from src.prediction.models.dynamics import SVGConvModel
 from src.utils.state import DemoGoalState, State
 from src.utils.image import zero_robot_region
-from src.utils.camera_calibration import LOCO_FRANKA_DIFF
+from src.utils.camera_calibration import LOCO_FRANKA_DIFF, LOCO_WX250S_DIFF
 
 
 class TrajectorySampler(object):
-    def __init__(self, cfg, model, cam_ext=None, franka_ik=None, wx250s_bot=None, push_height, default_pitch, default_roll) -> None:
+    def __init__(self, cfg, model, cam_ext=None, franka_ik=None, wx250s_bot=None, push_height=None, default_pitch=None, default_roll=None) -> None:
         super().__init__()
         self.cfg = cfg
         self.model: SVGConvModel = model
@@ -92,6 +92,8 @@ class TrajectorySampler(object):
             start_state = torch.tensor(start.state)
             if cfg.experiment == "control_franka": # convert from franka to loco frame
                 start_state[:2] = start_state[:2] + LOCO_FRANKA_DIFF
+            elif cfg.experiment == "control_wx250s": # convert from wx250s to loco frame
+                start_state[:2] = start_state[:2] + LOCO_WX250S_DIFF
 
             states[0, :] = normalize(start_state, self.low, self.high)
             qpos[0, :] = torch.tensor(start.qpos)
@@ -187,7 +189,8 @@ class TrajectorySampler(object):
         rollouts["sum_cost"] = sum_cost
         # just return the top K trajectories
         if ret_obs:
-            topk_idx = np.argsort(sum_cost)[: cfg.topk]
+            # since cost is -dist and arg sort is in ascending order, want to get last of the array.
+            topk_idx = np.argsort(sum_cost)[-cfg.topk:]
             topk_obs = all_obs[topk_idx]
             rollouts["topk_idx"] = topk_idx
             rollouts["obs"] = topk_obs.cpu().numpy()

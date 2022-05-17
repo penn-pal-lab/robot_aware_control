@@ -8,8 +8,6 @@ import imageio
 from src.utils.camera_calibration import camera_to_world_dict, LOCO_WX250S_DIFF
 
 
-# TODO: pass this in through  constructor
-
 class WX250sAnalyticalModel(object):
     """
     Analytical model of the eef state and qpos of WX250s.
@@ -39,21 +37,21 @@ class WX250sAnalyticalModel(object):
         Args:
             eef_curr: (3, ) 3d position of eef
         """
-        self.botset_ee_pose_components(x=0, y=0, z=0, roll=0, pitch=0, yaw=None, custom_guess=None, execute=True, moving_time=None, accel_time=None, blocking=True)
+        # self.bot.set_ee_pose_components(x=0, y=0, z=0, roll=0, pitch=0, yaw=None, custom_guess=None, execute=True, moving_time=None, accel_time=None, blocking=True)
         qpos = self.bot.arm.set_ee_pose_components(
             x=eef_curr[0],
             y=eef_curr[1],
             z=eef_curr[2],
-            pitch=DEFAULT_PITCH,
-            roll=DEFAULT_ROLL,
+            pitch=self.default_pitch,
+            roll=self.default_roll,
             custom_guess=cur_arm_config,
             execute=False,
         )
         # qpos = np.zeros(5)
         # qpos[0:4] = self.ik_solver.ik(
-        #     eef_curr, alpha=-DEFAULT_PITCH, cur_arm_config=cur_arm_config
+        #     eef_curr, alpha=-self.default_pitch, cur_arm_config=cur_arm_config
         # )
-        # qpos[4] = DEFAULT_ROLL
+        # qpos[4] = self.default_roll
         return qpos
 
     def predict_next_state_qpos(self, eef_curr, qpos_curr, action):
@@ -65,20 +63,20 @@ class WX250sAnalyticalModel(object):
 
         eef_next = np.zeros(3)
         eef_next[0:2] = eef_curr[0:2] + action
-        eef_next[2] = PUSH_HEIGHT
+        eef_next[2] = self.push_height
 
         # qpos_next = np.zeros(5)
         # qpos_next[0:4] = self.ik_solver.ik(
-        #     eef_next, alpha=-DEFAULT_PITCH, cur_arm_config=qpos_curr[0:4]
+        #     eef_next, alpha=-self.default_pitch, cur_arm_config=qpos_curr[0:4]
         # )
-        # qpos_next[4] = DEFAULT_ROLL
+        # qpos_next[4] = self.default_roll
         qpos_next = np.zeros(6)
-        qpos_next = self.bot.arm.set_ee_pose_components(
-            x=eef_curr[0],
-            y=eef_curr[1],
-            z=PUSH_HEIGHT,
-            pitch=DEFAULT_PITCH,
-            roll=DEFAULT_ROLL,
+        qpos_next, success = self.bot.arm.set_ee_pose_components(
+            x=eef_next[0],
+            y=eef_next[1],
+            z=self.push_height,
+            pitch=self.default_pitch,
+            roll=self.default_roll,
             custom_guess=qpos_curr,
             execute=False,
         )
@@ -91,7 +89,7 @@ class WX250sAnalyticalModel(object):
 
         Args:
             eef_curr (5,): xyz, rotation, gripper state
-            qpos_curr (5, ): joint angles
+            qpos_curr (6, ): joint angles
             actions (3, ): xyz displacement
 
         Returns:
@@ -130,7 +128,7 @@ class WX250sAnalyticalModel(object):
         pred_states = torch.zeros_like(data["states"])
         w,h = self._config.image_width, self._config.image_height
         pred_masks = torch.zeros((T, B, 1, h, w), dtype=torch.float32, device=device)
-        assert data["qpos"].shape[-1] == 5, f"locobot qpos {data['qpos'].shape[-1]} != 5"
+        assert data["qpos"].shape[-1] == 6, f"wx250s qpos {data['qpos'].shape[-1]} != 6"
         for i in range(B):
             start_qpos = data["qpos"][0, i].cpu().numpy()
             if self._config.preprocess_action != "raw":
@@ -151,16 +149,13 @@ class WX250sAnalyticalModel(object):
 
             # shift points from locobot to wx250s frame.
             # loco - (loco - wx250s) = wx250s
-            import ipdb; ipdb.set_trace()
-            start_state[:,:,:2] -= LOCO_WX250S_DIFF
-
+            start_state[:2] -= LOCO_WX250S_DIFF
             raw_p_states, p_masks = self.predict_trajectory(
                 start_state, start_qpos, actions, thick=thick
             )
             # shift points back to locobot frame.
             # franka + (loco - franka) = loco
-            raw_p_states[:, :, :2] += LOCO_WX250S_DIFF
-            raw_p_states = torch.from_numpy(raw_p_states.transpose(1,0,2)) # T x B x 5
+            raw_p_states[:, :2] += LOCO_WX250S_DIFF
             # normalize the states again
             p_states = normalize(raw_p_states, low, high)
 

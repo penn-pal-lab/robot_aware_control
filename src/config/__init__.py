@@ -287,6 +287,7 @@ def add_dataset_arguments(parser):
             "finetune_locobot",
             "eval_franka",
             "control_franka",
+            "control_wx250s",
         ],
         default="train_robonet",
     )
