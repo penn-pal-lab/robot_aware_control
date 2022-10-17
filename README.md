@@ -1,20 +1,51 @@
-# Robot aware cost and dynamics
+## Know Thyself: Transferable Visual Control Policies Through Robot-Awareness 
 
-This project investigates how we can use our knowledge of the robot in the scene to improve pixel cost functions and pixel dynamics prediction.
+#### [[Project Website]](https://edwardshu.com/rac) [[ICLR Talk]](https://iclr.cc/virtual/2022/poster/6041)
+
+[Edward S. Hu](https://edwardshu.com/), [Kun Huang](https://www.linkedin.com/in/kun-huang-620034171/), [Oleh Rybkin](https://www.seas.upenn.edu/~oleh/), [Dinesh Jayaraman](https://www.seas.upenn.edu/~dineshj/)
+
+
+
+<a href="https://edwardshu.com/rac">
+<p align="center">
+<img src="https://edwardshu.com/rac/img/wide_teaser.jpg" width="600">
+</p>
+</img></a>
+
+Training visual control policies from scratch on a new robot typically requires generating large amounts of robot-specific data. How might we leverage data previously collected on another robot to reduce or even completely remove this need for robot-specific data? We propose a "robot-aware control" paradigm that achieves this by exploiting readily available knowledge about the robot. We then instantiate this in a robot-aware model-based RL policy by training modular dynamics models that couple a transferable, robot-aware world dynamics module with a robot-specific, potentially analytical, robot dynamics module. This also enables us to set up visual planning costs that separately consider the robot agent and the world. Our experiments on tabletop manipulation tasks with simulated and real robots demonstrate that these plug-in improvements dramatically boost the transferability of visual model-based RL policies, even permitting zero-shot transfer of visual manipulation skills onto new robots. 
+
+If you find this work useful in your research, please cite:
+
+```
+@article{hu2022know,
+ author = {Edward S. Hu and Kun Huang and Oleh Rybkin and Dinesh Jayaraman},
+ journal = {ICLR},
+ primaryclass = {cs.LG},
+ title = {Know Thyself: Transferable Visuomotor Control Through Robot-Awareness},
+ year = {2022}
+}
+```
+
+## Note to prospective users
+This codebase is intended to be a reference for researchers. It is not production ready! For example, there are a lot of hard-coded values in the camera calibration / mask annotation part of the pipline. Please contact the authors for any questions.
 
 ## Codebase structure
 
 The codebase is structured as follows:
 
 * `scripts` contains all SLURM scripts for running jobs on cluster
-* `src` contains all source code.
-    * `config` contains all hyperparameter and configuration variables for algorithms, environments, etc.
-    * `env` contains all environments. We mainly use the `fetch` environment, which features a Fetch 7DOF robot with EEF positional control on a tabletop workspace.
-    * `datasets` contains the dataloading and data generation code.
+* `robonet` contains Robonet data loading and annotation code
+* `locobot_rospkg` contains ROS code for running real-world MBRL robotics experiments.
+* `src` contains all python code for training the video prediction model and planning actions
     * `cem` contains the CEM policy for generating actions with a model
-    * `mbrl` contains the policy evaluation code.
+    * `config` contains all hyperparameter and configuration variables for algorithms, environments, etc.
+    * `cyclegan` contains the CycleGAN domain transfer baseline
+    * `datasets` contains the dataloading and data generation code.
+    * `env` contains all simulated environments. 
+    * `mbrl` contains the simulated MBRL experiments.
     * `prediction` contains all predictive model training code. The model is a SVG video prediction model.
-    * `utils` contains some plotting and visualization code.
+    * `utils` contains some logging and visualization code
+    * `visualizations` contains more plotting and visualization code.
 
 ## Installation
 
@@ -55,27 +86,32 @@ run into import errors and have to install the missing packages. Sorry!
 $ pip install -r requirements.txt
 ```
 
-## Running the Code
+## Running Experiments
 
-Here, we will generate some demonstrations, and then run CEM to follow the demonstrations.
+### Datasets
+RAC uses the [Robonet](https://www.robonet.wiki/) dataset as well as several datasets collected in the lab. We annotated a subset of Robonet with the robot masks, and that subset is used for training the robot-aware model. Contact the authors for more details.
 
-### Generating demonstrations
+### Training Video Prediction
 
-For the clutter environment, we will generate block pushing demonstrations.
-
+To train the vanilla SVG prediction:
 ```bash
-python -m src.dataset.collect_clutter_data
+COST="l1"
+ACTION="raw"
+NAME="sawyerallvp_vanilla3_${ACTION}_convsvg_l1"
+
+python -um src.prediction.multirobot_trainer  --jobname $NAME --wandb True --data_root /scratch/edward/Robonet --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --g_dim 512 --z_dim 64 --model svg --niter 1000 --epoch_size 300 --eval_interval 15 --checkpoint_interval 5  --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 5 --lr 0.0001 --experiment singlerobot --preprocess_action raw --world_error_dict widowx1_c0_world_error.pkl --train_val_split 0.95 --model_use_robot_state False --model_use_mask False --random_snippet True >"${NAME}.out" 2>&1 &
 ```
 
-This will generate 100 block pushing demonstrations saved into `demos/straight_push`. You can change the number of demonstrations, inpainting type, etc. in the file.
-
-### Running Demonstration Following Episodes
-
 ```bash
-python -m src.mbrl.episode_runner --wandb False --jobname democem --multiview True --img_dim 64 --reward_type inpaint  --action_candidates 200 --topk 10  --opt_iter 2 --horizon 2  --max_episode_length 10  --norobot_pixels_ob True  --use_env_dynamics True --num_episodes 100 --most_recent_background False --action_repeat 1 --subgoal_threshold 5000 --sequential_subgoal True --demo_cost True --subgoal_start 1 --demo_timescale 2 --camera_ids 0,1 --object_demo_dir demos/straight_push
-```
+COST="dontcare_l1"
+ACTION="raw"
+NAME="sawyerallvp_norobot3_${ACTION}_svg_l1"
 
-Once we have the demonstrations, we can load them and have the CEM policy attempt to follow them.
+python -um src.prediction.multirobot_trainer  --jobname $NAME --wandb True --data_root /scratch/edward/Robonet --batch_size 16 --n_future 5 --n_past 1 --n_eval 6 --g_dim 512 --z_dim 64 --model svg --niter 1000 --epoch_size 300 --eval_interval 15 --checkpoint_interval 5 --reconstruction_loss $COST --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 5 --lr 0.0001 --experiment singlerobot --preprocess_action raw --world_error_dict widowx1_c0_world_error.pkl --train_val_split 0.95 --model_use_robot_state True --model_use_mask True --model_use_future_mask True --random_snippet True >"${NAME}.out" 2>&1 &
+```
+### Visual MPC Experiments
+We provide all the ROS control code in `locobot_rospkg`.
+Contact the authors for more details.
 
 ## Troubleshooting
 
@@ -94,47 +130,3 @@ export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libGLEW.so
 1. Need to root login to the specific node you want to do MuJoCo GPU rendering on, and then
 create a fake /usr/lib/nvidia-000 folder for MuJoCo to detect.
 2. Make sure your LD_PRELOAD contians libGL and libGLEW links
-
-## Training Video Prediction
-
-### LoCoBot Vanilla Model
-
-```bash
-python -m src.prediction.multirobot_trainer --jobname locobot --wandb False --data_root /mnt/ssd1/pallab/locobot_data --batch_size 10 --n_future 5 --n_past 1 --n_eval 10 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --checkpoint_interval 100 --eval_interval 5 --reconstruction_loss l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment train_locobot_singleview --preprocess_action raw --random_snippet True --model_use_mask False --model_use_robot_state False --model_use_heatmap False
-
-CUDA_VISIBLE_DEVICES=0 python -m src.prediction.multirobot_trainer --jobname locobot_1000 --wandb True --data_root /home/huangkun/locobot_data --batch_size 10 --n_future 5 --n_past 1 --n_eval 10 --g_dim 256 --z_dim 64 --model svg --niter 100 --epoch_size 300 --checkpoint_interval 100 --eval_interval 5 --reconstruction_loss l1 --last_frame_skip True --scheduled_sampling True --action_dim 5 --robot_dim 5 --data_threads 4 --lr 0.0001 --experiment train_locobot_singleview --preprocess_action raw --random_snippet True --model_use_mask False --model_use_robot_state False --model_use_heatmap False
-```
-
-## Visual MPC Experiments
-
-### Using LoCoBot Vanilla Model
-
-Finetuned vanilla model
-
-```bash
-python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --lstm_group_norm True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/vanilla_ckpt_10200.pt --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.03 --sparse_cost False --horizon 5 --object shark --push_type right
-```
-
-Finetuned vanilla model with Roboaware cost
-
-```bash
-python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --lstm_group_norm True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/vanilla_ckpt_10200.pt --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.03 --sparse_cost False --horizon 5 --reward_type dontcare --object watermelon --push_type right
-```
-
-Full vanilla model
-
-```bash
-python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/locobot_689_tile_ckpt_136500.pt --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.015 --sparse_cost True
-```
-
-Full vanilla model with Roboaware cost
-
-```bash
-python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask False --model_use_robot_state False --model_use_heatmap False --dynamics_model_ckpt checkpoints/locobot_689_tile_ckpt_136500.pt --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.03 --sparse_cost False --horizon 5 --reward_type dontcare --object shark --push_type right
-```
-
-### Using LoCoBot Roboaware Model
-
-```bash
-python -m locobot_rospkg.nodes.visual_MPC_controller --g_dim 256 --z_dim 64 --model svg --last_frame_skip True --action_dim 5 --robot_dim 5 --preprocess_action raw  --model_use_mask True --model_use_robot_state True --model_use_future_mask True --model_use_future_robot_state True --lstm_group_norm True --robot_joint_dim 5 --dynamics_model_ckpt checkpoints/roboaware_ckpt_10200.pt --reconstruction_loss dontcare_l1 --reward_type dontcare --action_candidates 300 --candidates_batch_size 300 --cem_init_std 0.03 --sparse_cost False --horizon 5 --object shark --push_type right
-```
