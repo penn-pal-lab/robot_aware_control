@@ -17,12 +17,13 @@ Training visual control policies from scratch on a new robot typically requires 
 If you find this work useful in your research, please cite:
 
 ```
-@article{hu2022know,
- author = {Edward S. Hu and Kun Huang and Oleh Rybkin and Dinesh Jayaraman},
- journal = {ICLR},
- primaryclass = {cs.LG},
- title = {Know Thyself: Transferable Visuomotor Control Through Robot-Awareness},
- year = {2022}
+@inproceedings{
+  hu2022know,
+  title={Know Thyself: Transferable Visual Control Policies Through Robot-Awareness},
+  author={Edward S. Hu and Kun Huang and Oleh Rybkin and Dinesh Jayaraman},
+  booktitle={International Conference on Learning Representations},
+  year={2022},
+  url={https://openreview.net/forum?id=o0ehFykKVtr}
 }
 ```
 
